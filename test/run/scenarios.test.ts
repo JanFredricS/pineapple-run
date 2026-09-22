@@ -50,7 +50,7 @@ function record(rc: RunController): RunEvent[] {
 }
 
 describe('S1 run scenarios', () => {
-  it('full run: spike cart takes the funnel load to the blender and delivers all 15', async () => {
+  it('full run at full throttle: the cart crashes into the blender pit, 14 of 15 delivered (one bounces back out)', async () => {
     const w = await world();
     const rc = new RunController(w, loadFixtureCart(), loadFlatGoalLevel());
     const events = record(rc);
@@ -59,27 +59,44 @@ describe('S1 run scenarios', () => {
     driveToEnd(w, rc, null);
     expect(events.map((e) => e.type)).toEqual(['started', 'released', 'goalReached']);
     const goal = events[2] as Extract<RunEvent, { type: 'goalReached' }>;
-    // measured: 7.467 s (step 508 = 448 steps after Release), 15 delivered
-    expect(goal.delivered).toBeGreaterThanOrEqual(14);
-    expect(goal.simTime).toBeGreaterThan(7.467 - 0.25);
-    expect(goal.simTime).toBeLessThan(7.467 + 0.25);
+    // measured: 8.683 s, 14 delivered (the one left bounces back over the goal line)
+    console.info(`[S1 full] goal ${goal.simTime.toFixed(3)} s, delivered ${goal.delivered}`);
+    expect(goal.delivered).toBe(14);
+    expect(goal.simTime).toBeGreaterThan(8.683 - 0.25);
+    expect(goal.simTime).toBeLessThan(8.683 + 0.25);
     expect(rc.delivered).toBe(goal.delivered);
     expect(rc.phase).toBe('ended');
     expect(rc.simTime).toBe(goal.simTime);
   });
 
-  it('full run at a 5 m/s cruise also delivers the whole load (slower)', async () => {
+  it('full run at a gentle 3 m/s: the cart rolls into the pit and delivers all 15', async () => {
+    const w = await world();
+    const rc = new RunController(w, loadFixtureCart(), loadFlatGoalLevel());
+    const events = record(rc);
+    startAndLoad(rc);
+    driveToEnd(w, rc, 3);
+    expect(events.map((e) => e.type)).toEqual(['started', 'released', 'goalReached']);
+    const goal = events.at(-1) as Extract<RunEvent, { type: 'goalReached' }>;
+    console.info(`[S1 cruise3] goal ${goal.simTime.toFixed(3)} s, delivered ${goal.delivered}`);
+    // measured: 17.25 s, 15 delivered
+    expect(goal.delivered).toBe(15);
+    expect(goal.simTime).toBeGreaterThan(17.25 - 0.3);
+    expect(goal.simTime).toBeLessThan(17.25 + 0.3);
+  });
+
+  it('a 5 m/s cruise tips the cart on the blender blade: all 15 delivered', async () => {
     const w = await world();
     const rc = new RunController(w, loadFixtureCart(), loadFlatGoalLevel());
     const events = record(rc);
     startAndLoad(rc);
     driveToEnd(w, rc, 5);
+    expect(events.map((e) => e.type)).toEqual(['started', 'released', 'goalReached']);
     const goal = events.at(-1) as Extract<RunEvent, { type: 'goalReached' }>;
-    expect(goal.type).toBe('goalReached');
-    // measured: 10.783 s, 15 delivered
-    expect(goal.delivered).toBeGreaterThanOrEqual(14);
-    expect(goal.simTime).toBeGreaterThan(10.783 - 0.3);
-    expect(goal.simTime).toBeLessThan(10.783 + 0.3);
+    console.info(`[S1 cruise5] goal ${goal.simTime.toFixed(3)} s, delivered ${goal.delivered}`);
+    // measured: 13.05 s, 15 delivered
+    expect(goal.delivered).toBe(15);
+    expect(goal.simTime).toBeGreaterThan(13.05 - 0.3);
+    expect(goal.simTime).toBeLessThan(13.05 + 0.3);
   });
 
   it('is deterministic: two identical runs emit identical events', async () => {
@@ -88,23 +105,23 @@ describe('S1 run scenarios', () => {
       const rc = new RunController(w, loadOpenBedCart(), loadFlatGoalLevel());
       const events = record(rc);
       startAndLoad(rc);
-      driveToEnd(w, rc, 4);
+      driveToEnd(w, rc, 5);
       return events;
     };
     expect(await run()).toEqual(await run());
   });
 
-  it('pineappleLost: an open bed spills on the way, losses are reported once each and the goal counts only what arrived', async () => {
+  it('pineappleLost: an open bed spills on the way, losses are reported once each and delivered counts what is past the goal line', async () => {
     const w = await world();
     const rc = new RunController(w, loadOpenBedCart(), loadFlatGoalLevel());
     const events = record(rc);
     startAndLoad(rc);
-    driveToEnd(w, rc, 4);
+    driveToEnd(w, rc, 5);
     const lost = events.filter((e): e is Extract<RunEvent, { type: 'pineappleLost' }> => e.type === 'pineappleLost');
     const goal = events.at(-1) as Extract<RunEvent, { type: 'goalReached' }>;
     expect(goal.type).toBe('goalReached');
-    // measured: 10 lost (first at 6 s), goal at 11.98 s with 4 delivered, 5 remaining
-    expect(lost.length).toBeGreaterThanOrEqual(7);
+    // measured: 11 lost (first at 6 s), goal at 11.917 s with 4 delivered, 4 remaining
+    expect(lost.length).toBeGreaterThanOrEqual(9);
     expect(lost.length).toBeLessThanOrEqual(13);
     expect(new Set(lost.map((e) => e.pineappleId)).size).toBe(lost.length);
     lost.forEach((e, i) => {
@@ -114,10 +131,15 @@ describe('S1 run scenarios', () => {
       expect(Number.isInteger(Math.round(e.simTime * 1e6) / 1e6)).toBe(true);
     });
     expect(rc.remaining).toBe(15 - lost.length);
-    expect(goal.delivered).toBeGreaterThanOrEqual(1);
-    expect(goal.delivered).toBeLessThanOrEqual(rc.remaining);
-    expect(goal.delivered).toBeGreaterThanOrEqual(2);
-    expect(goal.delivered).toBeLessThanOrEqual(6);
+    // lost is advisory in level runs: delivered = every pineapple past the
+    // line (lost or not), so it is NOT bounded by remaining
+    const lineX = loadFlatGoalLevel().goal.lineX;
+    const past = rc.pineappleStates().filter((p) => p.alive && w.getTransform(p.handle).x > lineX).length;
+    console.info(`[S1 spill] lost ${lost.length} (first at ${lost[0]?.simTime}), goal ${goal.simTime.toFixed(3)} s, delivered ${goal.delivered}, remaining ${rc.remaining}`);
+    expect(goal.delivered).toBe(past);
+    expect(goal.delivered).toBe(4);
+    expect(goal.simTime).toBeGreaterThan(11.917 - 0.3);
+    expect(goal.simTime).toBeLessThan(11.917 + 0.3);
   });
 
   it('pineappleLost: a cart parked away from the funnel loses the whole load 3 s after it lands (including one resting against a wheel)', async () => {

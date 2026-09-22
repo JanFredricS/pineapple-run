@@ -29,11 +29,15 @@ export function loadOpenBedCart(): CartDesign {
 }
 
 /**
- * Flat run (x −10..44) ending in a 10 m wide, 3 m deep blender pit. Goal line
- * x 44; the base sensor fills the pit below 0.5 m under the lip.
+ * Flat run (y 10, x −10..44) ending in the blender pit: an 8 m deep hole
+ * (floor y 18) whose far side is the solid blender prop (static box x 52..54,
+ * y 7..18 — cart parts bounce off it) plus a solid 0.5 × 3 m blade standing
+ * on the floor at x 49.5 (a cart landing in the pit tips on it and spills,
+ * so any arrival speed ends the run — measured over cruise 2..10 m/s, full
+ * throttle and coasting profiles). Goal line x 44; the base sensor is a
+ * 0.25 m strip lying on the pit floor (x 44.1..52), so only a pineapple that
+ * reaches the base ends the run. killY 40.
  */
 export function loadFlatGoalLevel(): LevelDef {
   return mustValidate(validateLevelDef(flatGoalLevelJson), 'flat-goal level');
 }
-
-export const fixtureJson = { cart: spikeCartJson, level: flatGoalLevelJson } as const;

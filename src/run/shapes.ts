@@ -71,3 +71,83 @@ export function expandBox(b: AABB, m: AboardMargin): AABB {
 export function pointInBox(p: Vec2, b: AABB): boolean {
   return p.x >= b.minX && p.x <= b.maxX && p.y >= b.minY && p.y <= b.maxY;
 }
+
+/** Distance from point p to segment ab. */
+export function pointSegmentDistance(p: Vec2, a: Vec2, b: Vec2): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+/** True when segment ab passes through (or touches) the rect (Liang–Barsky slab test). */
+export function segmentIntersectsRect(a: Vec2, b: Vec2, r: Rect): boolean {
+  let t0 = 0;
+  let t1 = 1;
+  const d = { x: b.x - a.x, y: b.y - a.y };
+  const clip = (p: number, q: number): boolean => {
+    if (p === 0) return q >= 0;
+    const t = q / p;
+    if (p < 0) {
+      if (t > t1) return false;
+      if (t > t0) t0 = t;
+    } else {
+      if (t < t0) return false;
+      if (t < t1) t1 = t;
+    }
+    return true;
+  };
+  return (
+    clip(-d.x, a.x - r.x) && clip(d.x, r.x + r.width - a.x) && clip(-d.y, a.y - r.y) && clip(d.y, r.y + r.height - a.y) && t0 <= t1
+  );
+}
+
+/**
+ * Swept circle test: does a circle of `radius` moving in a straight line from
+ * `from` to `to` touch the rect at any point along the way? Exact (the swept
+ * circle is a capsule; capsule ∩ rect ⇔ distance(segment, rect) ≤ radius).
+ */
+export function sweptCircleTouchesRect(from: Vec2, to: Vec2, radius: number, r: Rect): boolean {
+  if (segmentIntersectsRect(from, to, r)) return true;
+  if (circleTouchesRect(from, radius, r) || circleTouchesRect(to, radius, r)) return true;
+  // otherwise the closest approach is between a rect corner and the segment
+  const corners: Vec2[] = [
+    { x: r.x, y: r.y },
+    { x: r.x + r.width, y: r.y },
+    { x: r.x + r.width, y: r.y + r.height },
+    { x: r.x, y: r.y + r.height },
+  ];
+  return corners.some((c) => pointSegmentDistance(c, from, to) <= radius);
+}
+
+/** True when a circle overlaps (or is within `slop` of) a convex polygon given in world coordinates. */
+export function circleTouchesPolygon(c: Vec2, radius: number, poly: readonly Vec2[], slop = 0): boolean {
+  let inside = true;
+  let sign = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i]!;
+    const b = poly[(i + 1) % poly.length]!;
+    if (pointSegmentDistance(c, a, b) <= radius + slop) return true;
+    const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    if (cross !== 0) {
+      if (sign === 0) sign = Math.sign(cross);
+      else if (Math.sign(cross) !== sign) inside = false;
+    }
+  }
+  return inside;
+}
+
+/** Corners of a w×h box centred at `center`, rotated by `angle` (y-down, radians). */
+export function boxPolygon(center: Vec2, size: Vec2, angle = 0): Vec2[] {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const hx = size.x / 2;
+  const hy = size.y / 2;
+  return [
+    [-hx, -hy],
+    [hx, -hy],
+    [hx, hy],
+    [-hx, hy],
+  ].map(([x, y]) => ({ x: center.x + c * x! - s * y!, y: center.y + s * x! + c * y! }));
+}
