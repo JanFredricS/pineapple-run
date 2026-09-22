@@ -33,6 +33,7 @@ export default defineConfig({
         styleguide: fileURLToPath(new URL('./styleguide.html', import.meta.url)),
         'terrain-harness': fileURLToPath(new URL('./terrain-harness.html', import.meta.url)),
         mapbuilder: fileURLToPath(new URL('./mapbuilder.html', import.meta.url)),
+        audioHarness: fileURLToPath(new URL('./audio-harness.html', import.meta.url)),
       },
     },
   },

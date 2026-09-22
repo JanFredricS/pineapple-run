@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Pineapple Run — S7 audio harness</title>
+    <style>
+      html, body { margin: 0; background: #1d2330; color: #eee; font-family: system-ui, sans-serif; }
+      main { max-width: 760px; margin: 0 auto; padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 32px; }
+      h1 { font-size: 18px; margin: 4px 0 8px; }
+      h2 { font-size: 14px; margin: 16px 0 6px; color: #9fd3ff; }
+      .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
+      button { font: inherit; font-size: 13px; padding: 8px 12px; border-radius: 6px; border: 1px solid #fff5; background: #2a3550; color: #fff; cursor: pointer; }
+      button.on { background: #2f6f4f; border-color: #8f8; }
+      label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+      input[type='range'] { width: 160px; }
+      #status { font-family: ui-monospace, monospace; font-size: 12px; white-space: pre; background: #0006; border-radius: 6px; padding: 8px; overflow-x: auto; }
+      details { margin-top: 16px; font-size: 13px; } summary { cursor: pointer; }
+      .hint { color: #bbb; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>S7 audio harness</h1>
+      <p class="hint">Tap anywhere once to unlock audio (mobile). Everything here is synthesized in code.</p>
+      <div id="status">…</div>
+
+      <h2>Music</h2>
+      <div class="row" id="themes"></div>
+      <div class="row" id="stages"></div>
+      <div class="row">
+        <label>Course progress <input id="progress" type="range" min="0" max="1" step="0.01" value="0" /></label>
+        <span id="progressOut" class="hint">0.00 → stage 0</span>
+      </div>
+
+      <h2>SFX</h2>
+      <div class="row">
+        <button id="clatter">Straw clatter</button>
+        <button id="bounce">Pineapple bounce</button>
+        <label>speed m/s <input id="bounceSpeed" type="range" min="0" max="10" step="0.1" value="4" /></label>
+        <span id="bounceOut" class="hint">4.0</span>
+      </div>
+      <div class="row">
+        <button id="storm">Bounce storm ×100 (throttle)</button>
+        <button id="boing">Spring boing</button>
+        <button id="click">UI click</button>
+        <button id="goal">Goal sting</button>
+        <button id="lose">Lose sting</button>
+      </div>
+      <div class="row">
+        <button id="motor">Wheel motor</button>
+        <label>speed <input id="motorSpeed" type="range" min="0" max="1" step="0.01" value="0" /></label>
+        <button id="blender">Blender whir</button>
+      </div>
+
+      <h2>Run events</h2>
+      <div class="row">
+        <button data-event="started">started</button>
+        <button data-event="released">released</button>
+        <button data-event="goalReached">goalReached</button>
+        <button data-event="gaveUp">gaveUp</button>
+        <button data-event="allLost">allLost</button>
+      </div>
+
+      <h2>Mix</h2>
+      <div class="row">
+        <label><input id="mute" type="checkbox" /> Mute</label>
+        <label>Music <input id="musicVol" type="range" min="0" max="1" step="0.01" /></label>
+        <label>SFX <input id="sfxVol" type="range" min="0" max="1" step="0.01" /></label>
+        <span id="persist" class="hint"></span>
+      </div>
+      <div class="row"><button id="destroy">Destroy (teardown) + recreate</button></div>
+
+      <details>
+        <summary>Listening checklist</summary>
+        <ul>
+          <li>Nothing plays before the first tap/click/key; after it the status shows <code>running</code>.</li>
+          <li>Each theme is recognisably different (beach marimba + shaker, kitchen bouncy squares + woodblocks, workbench muted saw riff + clank, endless steel drum, title ukulele) and never harsh.</li>
+          <li>Stages 0→3 add groove, melody, sparkle; switching is a smooth 2 s cross-fade in time with the beat; rapid clicking never clicks or jumps.</li>
+          <li>The 8-bar loop repeats with no gap or hiccup at the seam (listen across ~20 s).</li>
+          <li>Switching theme cross-fades; Stop fades out.</li>
+          <li>Bounce volume follows the speed slider and is silent below ~0.6 m/s; the storm plays only a few bounces.</li>
+          <li>Motor pitch follows the speed slider smoothly; stop fades without a click. Blender whir starts/stops cleanly.</li>
+          <li>Switch tabs: sound suspends; come back: it resumes. Mute + volumes survive a reload.</li>
+          <li>Destroy: all sound stops immediately; recreate works after another tap.</li>
+        </ul>
+      </details>
+    </main>
+    <script type="module" src="/src/audio/harness.ts"></script>
+  </body>
+</html>
