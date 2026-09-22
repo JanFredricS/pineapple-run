@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "id": "s1-flat-goal",
+  "name": "S1 flat run to the blender",
+  "theme": "test",
+  "terrain": {
+    "spans": [
+      {
+        "id": "left-wall",
+        "points": [
+          {
+            "x": -10,
+            "y": 0
+          },
+          {
+            "x": -9.9,
+            "y": 10
+          }
+        ]
+      },
+      {
+        "id": "main",
+        "points": [
+          {
+            "x": -9.9,
+            "y": 10
+          },
+          {
+            "x": 44,
+            "y": 10
+          },
+          {
+            "x": 44.1,
+            "y": 13
+          },
+          {
+            "x": 54,
+            "y": 13
+          },
+          {
+            "x": 54.1,
+            "y": 7
+          },
+          {
+            "x": 64,
+            "y": 7
+          }
+        ]
+      },
+      {
+        "id": "right-wall",
+        "points": [
+          {
+            "x": 64,
+            "y": 7
+          },
+          {
+            "x": 64.1,
+            "y": 0
+          }
+        ]
+      }
+    ],
+    "friction": 0.9,
+    "restitution": 0.3
+  },
+  "cartStart": {
+    "x": 2,
+    "y": 8.2
+  },
+  "funnel": {
+    "x": 5,
+    "y": 4.5
+  },
+  "goal": {
+    "sensor": {
+      "x": 44.1,
+      "y": 10.5,
+      "width": 9.9,
+      "height": 2.5
+    },
+    "lineX": 44
+  },
+  "props": [
+    {
+      "id": "blender",
+      "art": "blender",
+      "position": {
+        "x": 49,
+        "y": 13
+      }
+    }
+  ],
+  "zones": [],
+  "killY": 30
+}
