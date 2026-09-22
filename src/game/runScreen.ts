@@ -11,7 +11,8 @@
  *
  * Drive = keyboard (S1 DriveInput: ←/→, A/D) OR the HUD's touch buttons.
  * Escape goes back to the builder. Audio goes through the AudioHooks seam
- * (no-op until S7).
+ * (S6V: the App passes S7's GameAudio adapted by gameAudioHooks; every hook
+ * is wrapped by safeHooks, so audio can never break the run).
  */
 
 import { Application } from 'pixi.js';
@@ -32,7 +33,8 @@ import { mountRunHudScreen } from '../ui/appScreens';
 import { el } from '../ui/dom';
 import { isPortraitBlocked, onPortraitChange } from '../ui/orientation';
 import type { DriveIntent } from '../ui/screens/runHud';
-import { NO_AUDIO, type AudioHooks } from './audioHooks';
+import type { SoundControl } from '../ui/sound';
+import { NO_AUDIO, RunAudioFeed, safeHooks, type AudioHooks } from './audioHooks';
 import { mountMissingCourse } from './buildScreen';
 import { mountScreenError } from './errorScreen';
 import { testedDesign } from './cartState';
@@ -44,8 +46,10 @@ import './game.css';
 type Dispatch = (action: AppAction) => Promise<void> | void;
 
 export interface RunScreenDeps {
-  /** S7 plugs in here (TODO(S7)); default no-op. */
+  /** Run audio (the App's GameAudio via gameAudioHooks); default silent. */
   audio?: AudioHooks;
+  /** Mute toggle shown in the HUD. */
+  sound?: SoundControl;
   /** HUD end-banner delay before results (ms). */
   endDelayMs?: number;
   /** Loader overrides (tests: fail a loader to exercise the error screen). */
@@ -170,7 +174,7 @@ async function mountRunOnce(
 ): Promise<Screen> {
   const course = courseFor(state.levelId);
   if (!course) return mountMissingCourse(host, state.levelId, 'Back', () => void dispatch({ type: 'backToBuild' }));
-  const audio = deps.audio ?? NO_AUDIO;
+  const audio = safeHooks(deps.audio ?? NO_AUDIO);
   const level = course.level;
   const design = testedDesign();
 
@@ -265,8 +269,12 @@ async function mountRunOnce(
         setDrive: (d) => (hudDrive = d),
       },
       ...(deps.endDelayMs !== undefined ? { endDelayMs: deps.endDelayMs } : {}),
+      ...(deps.sound ? { sound: deps.sound } : {}),
     });
     cleanup.push(() => hud.destroy());
+
+    // --------------------------------------------------------- audio feed
+    const audioFeed = new RunAudioFeed(audio, s.spawn.x, level.goal.lineX);
 
     // ---------------------------------------------------------------- loop
     let lastRenderMs = performance.now();
@@ -279,6 +287,7 @@ async function mountRunOnce(
         }
         s.setDrive(dir);
         s.step();
+        audioFeed.step(s.controller.rightmostCartBody()?.x ?? null, s.furthestMetres());
         if (goalAt !== null) goalAt += 1 / 60;
       },
       render(alpha) {
@@ -309,7 +318,7 @@ async function mountRunOnce(
     loop.setPaused(isPortraitBlocked());
     cleanup.push(onPortraitChange((portrait) => loop.setPaused(portrait)));
 
-    audio.runStarted?.({ levelId: state.levelId, theme: level.theme });
+    audio.runStarted?.({ levelId: state.levelId, mode: course.mode });
     started = true;
     s.start(); // physics on, `started` -> HUD shows Release
     loop.start();

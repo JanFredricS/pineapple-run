@@ -21,6 +21,7 @@ import {
   type HudState,
   type RunMode,
 } from '../hud';
+import { soundToggle, type SoundControl } from '../sound';
 import { ARROW_LEFT_SVG, ARROW_RIGHT_SVG, CLOCK_SVG, DISTANCE_SVG, PINEAPPLE_SVG, STOP_SVG } from '../icons';
 
 export type DriveIntent = -1 | 0 | 1;
@@ -71,6 +72,8 @@ export interface RunHudOptions {
   /** Touch drive buttons: 'auto' = coarse pointers only. */
   touchControls?: 'auto' | 'always' | 'never';
   courseName?: string;
+  /** Mute toggle (S6V), shown in the top-right cluster; omitted = no button. */
+  sound?: SoundControl;
 }
 
 export interface RunHud {
@@ -101,7 +104,7 @@ export function mountRunHud(host: HTMLElement, opts: RunHudOptions): RunHud {
 
   const tl = el('div', { class: 'pr-hud__tl' }, [countChip, opts.mode === 'endless' ? distChip : null, hint]);
   const tc = el('div', { class: 'pr-hud__tc' }, [release]);
-  const tr = el('div', { class: 'pr-hud__tr' }, [timer, giveUp]);
+  const tr = el('div', { class: 'pr-hud__tr' }, [timer, giveUp, opts.sound ? soundToggle(opts.sound) : null]);
 
   // ------------------------------------------------------ drive buttons
   const pressed = { left: new Set<number>(), right: new Set<number>() };
