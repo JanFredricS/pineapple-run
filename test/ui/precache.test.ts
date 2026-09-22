@@ -27,12 +27,20 @@ const pub = () => [
 ];
 
 describe('precache manifest (pure)', () => {
-  it('assets/: every chunk and asset incl. .wasm; skips html and maps', () => {
-    expect(precacheEntries(bundle())).toEqual([
+  it('assets/: every chunk and asset incl. .wasm, plus every emitted HTML page; skips maps and the manifest', () => {
+    const b = bundle();
+    b['mapbuilder.html'] = { type: 'asset', fileName: 'mapbuilder.html', source: '<html>mb</html>' };
+    b['audio-harness.html'] = { type: 'asset', fileName: 'audio-harness.html', source: '<html>ah</html>' };
+    b[PRECACHE_MANIFEST_FILE] = { type: 'asset', fileName: PRECACHE_MANIFEST_FILE, source: '{}' };
+    b['stray.txt'] = { type: 'asset', fileName: 'stray.txt', source: 'x' };
+    expect(precacheEntries(b)).toEqual([
       'assets/Box2D.compat-DDDDDD.wasm',
       'assets/main-AAAAAA.js',
       'assets/page-BBBBBB.js',
       'assets/ui-CCCCCC.css',
+      'audio-harness.html',
+      'index.html',
+      'mapbuilder.html',
     ]);
   });
 
@@ -85,9 +93,23 @@ describe('production build emits a complete precache manifest', () => {
     const publicPaths = new Set(publicFiles.map((f) => f.path));
 
     const expected = all
-      .filter((f) => (f.startsWith('assets/') || publicPaths.has(f)) && f !== 'sw.js' && !f.endsWith('.map'))
+      .filter((f) => (f.startsWith('assets/') || f.endsWith('.html') || publicPaths.has(f)) && f !== 'sw.js' && !f.endsWith('.map'))
       .sort();
     expect(manifest.assets).toEqual(expected);
+    // every Vite entry page is precached (offline navigation to a tool page)
+    expect(manifest.assets).toEqual(
+      expect.arrayContaining([
+        'index.html',
+        'builder-harness.html',
+        'run-harness.html',
+        'ui-harness.html',
+        'styleguide.html',
+        'terrain-harness.html',
+        'mapbuilder.html',
+        'audio-harness.html',
+      ]),
+    );
+    expect(manifest.assets).not.toContain(PRECACHE_MANIFEST_FILE);
     expect(manifest.assets.some((f) => /\.wasm$/.test(f))).toBe(true);
     expect(manifest.assets).toEqual(expect.arrayContaining(['manifest.json', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png']));
     expect(manifest.assets).not.toContain('sw.js');

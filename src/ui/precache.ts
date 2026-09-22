@@ -6,8 +6,11 @@
  *
  *  - `assets`: EVERY file the SW must cache at install besides the shell
  *    ("./"): all bundle output under `assets/` (entry + lazy JS chunks, CSS,
- *    box2d's .wasm, ...) AND every public/ file (manifest.json, icons, ...)
- *    except the worker itself. Install is all-or-nothing over this list.
+ *    box2d's .wasm, ...), every emitted HTML entry page (index.html and the
+ *    tool pages — mapbuilder.html, audio-harness.html, ... — so an offline
+ *    navigation to one gets that page, not the game shell; S6V) AND every
+ *    public/ file (manifest.json, icons, ...) except the worker itself.
+ *    Install is all-or-nothing over this list.
  *  - `version`: a content digest (sha-256) over EVERY emitted file: bundle
  *    output including the HTML pages, plus every public/ file including
  *    sw.js. Any change to any deployed byte changes it. src/ui/pwa.ts
@@ -52,12 +55,19 @@ export interface PublicFile {
 
 const sha = (data: string | Uint8Array) => createHash('sha256').update(data).digest('hex');
 
-/** Every emitted bundle file under assets/ (chunks + assets incl. .wasm). */
+/** True for an emitted HTML entry page (any directory). */
+export const isHtmlPage = (file: string): boolean => /\.html$/i.test(file);
+
+/**
+ * Every emitted bundle file under assets/ (chunks + assets incl. .wasm) plus
+ * every emitted HTML entry page; never source maps or the manifest itself.
+ */
 export function precacheEntries(bundle: Record<string, BundleEntryLike>): string[] {
   const out = new Set<string>();
   for (const [key, entry] of Object.entries(bundle)) {
     const file = (entry.fileName || key).replace(/^\/+/, '');
-    if (!file.startsWith('assets/') || file.endsWith('.map')) continue;
+    if (file === PRECACHE_MANIFEST_FILE || file.endsWith('.map')) continue;
+    if (!file.startsWith('assets/') && !isHtmlPage(file)) continue;
     out.add(file);
   }
   return [...out].sort();
@@ -65,7 +75,7 @@ export function precacheEntries(bundle: Record<string, BundleEntryLike>): string
 
 /**
  * Pure: the manifest for a bundle + the public files. `assets` = bundle
- * assets/ files + public files (minus the worker); `version` = digest over
+ * assets/ files + HTML pages + public files (minus the worker); `version` = digest over
  * the path and content of every emitted file (bundle incl. HTML, public incl.
  * the worker).
  */

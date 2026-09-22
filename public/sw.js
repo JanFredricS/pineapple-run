@@ -10,7 +10,8 @@
  * version equals our ?v= (a deploy landing mid-install rejects; the page
  * registers the newer digest next load), then cache the shell ("./") and
  * every listed file — all hashed assets/ (every JS chunk incl. lazy ones,
- * CSS, the box2d .wasm) and all public files (manifest.json, icons). The
+ * CSS, the box2d .wasm), every HTML entry page (index.html, mapbuilder.html,
+ * audio-harness.html, ...) and all public files (manifest.json, icons). The
  * install writes ONLY into its own, new digest-named cache; any failure
  * deletes that cache and rejects, leaving the active worker and its cache
  * untouched. Old caches are deleted only on activate.
@@ -19,9 +20,11 @@
  * closed, so an open old page never has its caches deleted under it.
  *
  * Fetch strategies:
- *  - navigations: network-first; offline -> this version's precached shell.
- *    The shell is never rewritten at runtime, so it always matches the
- *    assets precached with it.
+ *  - navigations: network-first; offline -> this version's precached copy of
+ *    the requested page (query ignored) — so mapbuilder.html offline is the
+ *    map builder — falling back to the shell for anything else in scope.
+ *    Precached pages are never rewritten at runtime, so they always match
+ *    the assets precached with them.
  *  - content-hashed assets (/assets/name-<hash>.ext): cache-first (a hashed
  *    URL can never be stale); misses are fetched and cached.
  *  - anything else in scope: network-first with cache fallback, no writes
@@ -117,7 +120,7 @@ self.addEventListener('fetch', (event) => {
           return await fetch(req);
         } catch {
           const cache = await caches.open(CACHE);
-          return (await cache.match(SHELL)) || Response.error();
+          return (await cache.match(req, { ignoreSearch: true })) || (await cache.match(SHELL)) || Response.error();
         }
       })(),
     );
