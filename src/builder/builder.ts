@@ -137,9 +137,38 @@ function pressable(button: HTMLButtonElement, onActivate: () => void, registry: 
   registry.register(button, release);
 }
 
+/**
+ * Mount the builder. Every acquisition (DOM root, Pixi application, renderer,
+ * listeners, observer, animation frames) pushes its release onto one stack;
+ * `destroy()` unwinds it in reverse order, and so does a failure anywhere in
+ * the mount (then the error is rethrown), so a failed mount leaks nothing.
+ */
 export async function mountBuilder(host: HTMLElement, options: BuilderOptions = {}): Promise<BuilderHandle> {
-  const store = options.store ?? browserCartStore();
   const cleanups: Array<() => void> = [];
+  const teardown = () => {
+    while (cleanups.length) {
+      try {
+        cleanups.pop()!();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+  try {
+    return await mountBuilderInto(host, options, cleanups, teardown);
+  } catch (err) {
+    teardown();
+    throw err;
+  }
+}
+
+async function mountBuilderInto(
+  host: HTMLElement,
+  options: BuilderOptions,
+  cleanups: Array<() => void>,
+  teardown: () => void,
+): Promise<BuilderHandle> {
+  const store = options.store ?? browserCartStore();
   const presses = new PressRegistry<HTMLButtonElement>();
   const listen = <T extends EventTarget>(target: T, type: string, fn: EventListenerOrEventListenerObject, opts?: AddEventListenerOptions) => {
     target.addEventListener(type, fn, opts);
@@ -151,8 +180,13 @@ export async function mountBuilder(host: HTMLElement, options: BuilderOptions = 
   const stage = el('div', 'pr-builder__stage');
   root.append(stage);
   host.append(root);
+  cleanups.push(() => root.remove());
 
   const app = new Application();
+  // Pushed before init: a rejected init that produced no renderer has nothing to release.
+  cleanups.push(() => {
+    if (app.renderer) app.destroy(true, { children: true });
+  });
   await app.init({
     resizeTo: stage,
     backgroundAlpha: 0,
@@ -164,9 +198,11 @@ export async function mountBuilder(host: HTMLElement, options: BuilderOptions = 
   canvas.setAttribute('aria-label', 'Cart drawing area');
   stage.append(canvas);
   const renderer = new BuilderRenderer();
+  cleanups.push(() => renderer.destroy());
   renderer.setTheme(themeFromCss(root));
   renderer.setStartArea(options.startArea ?? null);
   app.stage.addChild(renderer.view);
+  cleanups.push(() => app.stage.removeChild(renderer.view));
 
   // ---------------------------------------------------------------- state
   let editor: EditorState = initialEditorState(options.initialDesign ?? undefined);
@@ -517,6 +553,12 @@ export async function mountBuilder(host: HTMLElement, options: BuilderOptions = 
     },
     buildPreview,
   });
+  // Pending draws/input frames would touch the destroyed renderer/router.
+  cleanups.push(() => {
+    if (frame) cancelAnimationFrame(frame);
+    if (inputFrame) cancelAnimationFrame(inputFrame);
+    frame = inputFrame = 0;
+  });
 
   listen(canvas, 'pointerdown', ((e: PointerEvent) => {
     e.preventDefault();
@@ -597,6 +639,8 @@ export async function mountBuilder(host: HTMLElement, options: BuilderOptions = 
       confirmSlot.replaceChildren();
     }
   }) as EventListener);
+  // Unwound first: clear live gestures/presses before anything is released.
+  cleanups.push(() => resetInput());
 
   // ---------------------------------------------------------- test cart
   const testCart = () => {
@@ -632,15 +676,7 @@ export async function mountBuilder(host: HTMLElement, options: BuilderOptions = 
     getDesign: () => structuredClone(editor.design),
     setDesign: (d) => dispatch({ type: 'load', design: structuredClone(d) }),
     resetInput,
-    destroy() {
-      resetInput();
-      if (frame) cancelAnimationFrame(frame);
-      if (inputFrame) cancelAnimationFrame(inputFrame);
-      for (const c of cleanups) c();
-      app.stage.removeChild(renderer.view);
-      renderer.destroy();
-      app.destroy(true, { children: true });
-      root.remove();
-    },
+    // Reverse-order unwind (idempotent: the stack is empty afterwards).
+    destroy: teardown,
   };
 }

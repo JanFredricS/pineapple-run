@@ -239,6 +239,131 @@ describe('build screen: a failed builder mount shows an error with recovery', ()
   });
 });
 
+/** A promise the test settles by hand (holds a mount attempt mid-flight). */
+function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: (e: Error) => void } {
+  let resolve!: (v: T) => void;
+  let reject!: (e: Error) => void;
+  const promise = new Promise<T>((res, rej) => ((resolve = res), (reject = rej)));
+  return { promise, resolve, reject };
+}
+
+describe('S6 audit round 3, finding 2: retry is guarded against concurrent / stale attempts', () => {
+  function spySessions(): RunSession[] {
+    const sessions: RunSession[] = [];
+    const create = RunSession.create.bind(RunSession);
+    vi.spyOn(RunSession, 'create').mockImplementation(async (d, c) => {
+      const s = await create(d, c);
+      sessions.push(s);
+      return s;
+    });
+    return sessions;
+  }
+
+  it('run: a second retry activation while the first attempt is in flight is a no-op', async () => {
+    const sessions = spySessions();
+    const held = deferred<never>();
+    let appCalls = 0;
+    const host = new FakeEl('div');
+    const screen = await mountRunScreen(host as unknown as HTMLElement, { name: 'run', levelId: 'beach' }, () => {}, { isCurrent: () => true }, {
+      loaders: {
+        app: () => (++appCalls === 1 ? Promise.reject(new Error('WebGL unavailable')) : held.promise),
+        assets: async () => ({}) as never,
+      },
+    });
+    const retry = host.find('run-error-retry')!;
+    retry.click();
+    retry.click(); // queued / programmatic second activation of the same control
+    await until(() => sessions.length === 2, 'retry session');
+    for (let i = 0; i < 10; i++) await tick();
+    expect(appCalls).toBe(2); // exactly one retry attempt started
+    expect(sessions).toHaveLength(2);
+    expect(host.count('screen-error')).toBe(0);
+    expect(host.children).toHaveLength(1); // the single in-flight run root
+
+    held.reject(new Error('still no WebGL'));
+    await until(() => host.count('screen-error') === 1, 'second error');
+    expect(host.children).toHaveLength(1);
+    expect(sessions.every((s) => s.isDestroyed)).toBe(true);
+    screen.destroy();
+    expect(host.children).toHaveLength(0);
+  });
+
+  it('run: an attempt that completes after the screen was destroyed releases its own session and root', async () => {
+    const sessions = spySessions();
+    const held = deferred<never>();
+    let assetCalls = 0;
+    const host = new FakeEl('div');
+    const screen = await mountRunScreen(host as unknown as HTMLElement, { name: 'run', levelId: 'beach' }, () => {}, { isCurrent: () => true }, {
+      loaders: {
+        app: async () => ({}) as never,
+        assets: () => (++assetCalls === 1 ? Promise.reject(new Error('missing texture')) : held.promise),
+      },
+    });
+    host.find('run-error-retry')!.click();
+    await until(() => sessions.length === 2 && assetCalls === 2, 'retry in flight');
+    screen.destroy(); // e.g. the player navigated away mid-load
+    expect(sessions[1]!.isDestroyed).toBe(false); // still owned by the in-flight attempt
+    held.resolve({} as never); // the stale attempt now completes successfully
+    for (let i = 0; i < 20; i++) await tick();
+    expect(host.children).toHaveLength(0); // it did not install itself
+    expect(sessions).toHaveLength(2);
+    expect(sessions.every((s) => s.isDestroyed)).toBe(true);
+  });
+
+  it('build: double retry mounts exactly one builder; destroy releases it; nothing else survives', async () => {
+    const held = deferred<BuilderHandle>();
+    const handles: { destroy: ReturnType<typeof vi.fn> }[] = [];
+    const mountBuilder = vi.fn(async () => {
+      if (mountBuilder.mock.calls.length === 1) throw new Error('canvas init failed');
+      const h = await held.promise;
+      handles.push(h as never);
+      return h;
+    });
+    const host = new FakeEl('div');
+    const screen = await mountBuildScreen(host as unknown as HTMLElement, { name: 'build', levelId: 'workbench' }, () => {}, { isCurrent: () => true }, {
+      mountBuilder,
+    });
+    const retry = host.find('build-error-retry')!;
+    retry.click();
+    retry.click();
+    for (let i = 0; i < 10; i++) await tick();
+    expect(mountBuilder).toHaveBeenCalledTimes(2); // one failure + one retry, not two
+    held.resolve({ destroy: vi.fn() } as unknown as BuilderHandle);
+    await until(() => handles.length === 1 && host.count('build-back') === 1, 'builder mounted');
+    await tick();
+    expect(host.children).toHaveLength(1);
+    expect(host.count('build-back')).toBe(1);
+    retry.click(); // a stale error screen's button stays inert after success
+    for (let i = 0; i < 10; i++) await tick();
+    expect(mountBuilder).toHaveBeenCalledTimes(2);
+    expect(host.count('build-back')).toBe(1);
+    screen.destroy();
+    expect(handles[0]!.destroy).toHaveBeenCalledTimes(1);
+    expect(host.children).toHaveLength(0);
+  });
+
+  it('build: a builder mount that completes after destroy is destroyed, not installed', async () => {
+    const held = deferred<BuilderHandle>();
+    const handle = { destroy: vi.fn() } as unknown as BuilderHandle;
+    let calls = 0;
+    const mountBuilder = vi.fn(async () => {
+      if (++calls === 1) throw new Error('canvas init failed');
+      return held.promise;
+    });
+    const host = new FakeEl('div');
+    const screen = await mountBuildScreen(host as unknown as HTMLElement, { name: 'build', levelId: 'workbench' }, () => {}, { isCurrent: () => true }, {
+      mountBuilder,
+    });
+    host.find('build-error-retry')!.click();
+    await until(() => calls === 2, 'retry in flight');
+    screen.destroy();
+    held.resolve(handle);
+    for (let i = 0; i < 20; i++) await tick();
+    expect(handle.destroy).toHaveBeenCalledTimes(1);
+    expect(host.children).toHaveLength(0);
+  });
+});
+
 describe('App fallback', () => {
   it('a screen factory that throws (e.g. a lazy chunk failed) renders a reload prompt, not a blank host', async () => {
     const host = new FakeEl('div');

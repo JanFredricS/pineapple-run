@@ -117,21 +117,30 @@ export async function mountRunScreen(
 ): Promise<Screen> {
   let current: Screen | null = null;
   let dead = false;
+  // Attempt generation: only the newest attempt may install itself, and only
+  // the newest attempt's error screen may retry (once) — so a second retry
+  // activation while an attempt is in flight, or a stale error screen's
+  // button, is a no-op, and a superseded/destroyed attempt releases its own
+  // resources instead of overwriting `current`.
+  let generation = 0;
   const attempt = async (): Promise<void> => {
+    const gen = ++generation;
+    const live = () => !dead && gen === generation;
+    const attemptCtx: MountContext = { isCurrent: () => live() && ctx.isCurrent() };
     try {
-      const screen = await mountRunOnce(host, state, dispatch, ctx, deps);
-      if (dead) screen.destroy();
-      else current = screen;
+      const screen = await mountRunOnce(host, state, dispatch, attemptCtx, deps);
+      if (live()) current = screen;
+      else screen.destroy();
     } catch (err) {
       console.error('[run] failed to start', err);
-      if (dead || !ctx.isCurrent()) return;
+      if (!attemptCtx.isCurrent()) return;
       current = mountScreenError(host, 'Could not start the run', err, [
         {
           label: 'Try again',
           primary: true,
           testId: 'run-error-retry',
           onClick: () => {
-            if (dead) return;
+            if (!live()) return; // destroyed, or a retry already started
             current?.destroy();
             current = null;
             void attempt();
