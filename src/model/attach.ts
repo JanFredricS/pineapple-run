@@ -125,11 +125,14 @@ export interface CompoundSpec {
   version: typeof COMPOUND_SPEC_VERSION;
   bodies: BodySpec[];
   joints: JointSpec[];
-  /** partId -> bodyId for every non-shock part. */
-  partBody: Record<string, string>;
+  /**
+   * partId -> bodyId for every non-shock part. Maps (not plain objects) so
+   * user-supplied part ids such as "__proto__" are ordinary keys.
+   */
+  partBody: Map<string, string>;
   /** wheel partId -> partId it is pinned to (null = free wheel). */
-  wheelPins: Record<string, string | null>;
-  shockEnds: Record<string, { a: ShockEndResolution; b: ShockEndResolution }>;
+  wheelPins: Map<string, string | null>;
+  shockEnds: Map<string, { a: ShockEndResolution; b: ShockEndResolution }>;
   errors: AttachmentError[];
   /** True when `errors` is empty (the cart may be started). */
   valid: boolean;
@@ -233,7 +236,7 @@ export function resolveAttachments(design: CartDesign): CompoundSpec {
   }
   const groups = [...groupOf.values()].sort((a, b) => a[0]! - b[0]!);
 
-  const partBody: Record<string, string> = {};
+  const partBody = new Map<string, string>();
   const bodies: BodySpec[] = groups.map((members) => {
     const first = parts[members[0]!]!;
     const id = `body:${first.id}`;
@@ -253,7 +256,7 @@ export function resolveAttachments(design: CartDesign): CompoundSpec {
         vertices: s.vertices.map((v) => toM({ x: v.x - originPx.x, y: v.y - originPx.y })),
       };
     });
-    for (const m of members) partBody[parts[m]!.id] = id;
+    for (const m of members) partBody.set(parts[m]!.id, id);
     const isWheel = first.kind === 'wheel';
     return {
       id,
@@ -279,25 +282,25 @@ export function resolveAttachments(design: CartDesign): CompoundSpec {
   const edges: Array<[string, string]> = [];
 
   // --- 2. Wheel pins ------------------------------------------------------
-  const wheelPins: Record<string, string | null> = {};
+  const wheelPins = new Map<string, string | null>();
   for (let i = 0; i < parts.length; i++) {
     const w = parts[i]!;
     if (w.kind !== 'wheel') continue;
     const target = topmostAt(w.center, i);
     if (target < 0) {
-      wheelPins[w.id] = null;
+      wheelPins.set(w.id, null);
       continue;
     }
     const targetPart = parts[target]!;
-    wheelPins[w.id] = targetPart.id;
-    const bodyA = partBody[targetPart.id]!;
-    const bodyB = partBody[w.id]!;
+    wheelPins.set(w.id, targetPart.id);
+    const bodyA = partBody.get(targetPart.id)!;
+    const bodyB = partBody.get(w.id)!;
     joints.push({ type: 'revolute', partId: w.id, bodyA, bodyB, anchor: toM(w.center), powered: true });
     edges.push([bodyA, bodyB]);
   }
 
   // --- 3. Shocks ----------------------------------------------------------
-  const shockEnds: CompoundSpec['shockEnds'] = {};
+  const shockEnds: CompoundSpec['shockEnds'] = new Map();
   const resolveEnd = (p: Vec2, shockIndex: number): ShockEndResolution => {
     let best = -1;
     let bestD = Infinity;
@@ -313,12 +316,12 @@ export function resolveAttachments(design: CartDesign): CompoundSpec {
     }
     if (best >= 0) {
       const c = parts[best]! as Extract<CartPart, { kind: 'wheel' | 'lime' }>;
-      return { point: { ...c.center }, bodyId: partBody[c.id]!, partId: c.id, snapped: true };
+      return { point: { ...c.center }, bodyId: partBody.get(c.id)!, partId: c.id, snapped: true };
     }
     const t = topmostAt(p, shockIndex);
     if (t >= 0) {
       const tp = parts[t]!;
-      return { point: { ...p }, bodyId: partBody[tp.id]!, partId: tp.id, snapped: false };
+      return { point: { ...p }, bodyId: partBody.get(tp.id)!, partId: tp.id, snapped: false };
     }
     return { point: { ...p }, bodyId: null, partId: null, snapped: false };
   };
@@ -328,7 +331,7 @@ export function resolveAttachments(design: CartDesign): CompoundSpec {
     if (s.kind !== 'shock') continue;
     const a = resolveEnd(s.a, i);
     const b = resolveEnd(s.b, i);
-    shockEnds[s.id] = { a, b };
+    shockEnds.set(s.id, { a, b });
     const floating: Array<'a' | 'b'> = [];
     if (!a.bodyId) floating.push('a');
     if (!b.bodyId) floating.push('b');

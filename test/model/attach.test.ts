@@ -35,7 +35,7 @@ describe('resolveAttachments — welding', () => {
     expect(rigid).toHaveLength(1);
     expect(rigid[0]!.partIds).toEqual(['a', 'b']);
     expect(rigid[0]!.shapes).toHaveLength(2);
-    expect(spec.partBody.a).toBe(spec.partBody.b);
+    expect(spec.partBody.get('a')).toBe(spec.partBody.get('b'));
   });
 
   it('welds straws that only share an endpoint (straw ends are capped by thickness)', () => {
@@ -85,7 +85,7 @@ describe('resolveAttachments — welding', () => {
 describe('resolveAttachments — wheel pinning', () => {
   it('pins a wheel whose centre is over a part (revolute at the wheel centre)', () => {
     const spec = resolveAttachments(design(straw('a', 0, 0, 90, 0), wheel('w', 30, 0)));
-    expect(spec.wheelPins.w).toBe('a');
+    expect(spec.wheelPins.get('w')).toBe('a');
     const j = spec.joints.find((j) => j.type === 'revolute')!;
     expect(j).toMatchObject({ type: 'revolute', partId: 'w', bodyA: 'body:a', bodyB: 'body:w', anchor: { x: 1, y: 0 } });
   });
@@ -95,24 +95,24 @@ describe('resolveAttachments — wheel pinning', () => {
     const d = design(straw('under', -50, 0, 50, 0), cube('top', 100, 0, 30, 30), wheel('w', 0, 0), straw('over', 0, -50, 0, 50));
     // 'under' and 'over' cross at the wheel centre -> they weld, but the pin
     // target part must be the most recent one.
-    expect(resolveAttachments(d).wheelPins.w).toBe('over');
+    expect(resolveAttachments(d).wheelPins.get('w')).toBe('over');
   });
 
   it('topmost considers parts drawn after the wheel too', () => {
     const d = design(straw('a', -50, 0, 50, 0), wheel('w', 0, 0), lime('l', 0, 0, 10));
-    expect(resolveAttachments(d).wheelPins.w).toBe('l');
+    expect(resolveAttachments(d).wheelPins.get('w')).toBe('l');
   });
 
   it('can pin a wheel to another wheel', () => {
     const d = design(straw('a', -50, 0, 50, 0), wheel('big', 0, 0, 30), wheel('small', 10, 10, 8));
     const spec = resolveAttachments(d);
-    expect(spec.wheelPins.small).toBe('big');
+    expect(spec.wheelPins.get('small')).toBe('big');
     expect(spec.valid).toBe(true);
   });
 
   it('a wheel over nothing is a free body (no pin)', () => {
     const spec = resolveAttachments(design(straw('a', 0, 0, 90, 0), wheel('w', 300, 300)));
-    expect(spec.wheelPins.w).toBeNull();
+    expect(spec.wheelPins.get('w')).toBeNull();
     expect(spec.joints).toHaveLength(0);
   });
 });
@@ -121,19 +121,19 @@ describe('resolveAttachments — shocks', () => {
   it('snaps an end within 10 px of a wheel centre to that centre', () => {
     const d = design(straw('a', 0, 0, 100, 0), wheel('w', 200, 100), shock('s', 50, 0, 207, 106));
     const spec = resolveAttachments(d);
-    expect(spec.shockEnds.s!.b).toMatchObject({ point: { x: 200, y: 100 }, partId: 'w', snapped: true });
+    expect(spec.shockEnds.get('s')!.b).toMatchObject({ point: { x: 200, y: 100 }, partId: 'w', snapped: true });
     const j = spec.joints.find((j) => j.type === 'distance')!;
     expect(j).toMatchObject({ bodyA: 'body:a', bodyB: 'body:w' });
   });
 
   it('snaps to lime centres too', () => {
     const d = design(straw('a', 0, 0, 100, 0), lime('l', 200, 100), wheel('w', 50, 0), shock('s', 50, 0, 195, 95));
-    expect(resolveAttachments(d).shockEnds.s!.b.partId).toBe('l');
+    expect(resolveAttachments(d).shockEnds.get('s')!.b.partId).toBe('l');
   });
 
   it('does not snap beyond 10 px; attaches to the topmost overlapped part instead', () => {
     const d = design(straw('a', 0, 0, 100, 0), cube('big', 200, 100, 60, 60), wheel('w', 200, 100, 8), shock('s', 50, 0, 215, 100));
-    const end = resolveAttachments(d).shockEnds.s!.b;
+    const end = resolveAttachments(d).shockEnds.get('s')!.b;
     expect(end.snapped).toBe(false);
     expect(end.partId).toBe('big');
     expect(end.point).toEqual({ x: 215, y: 100 });
@@ -141,12 +141,12 @@ describe('resolveAttachments — shocks', () => {
 
   it('nearest snap target wins', () => {
     const d = design(straw('a', 0, 0, 100, 0), wheel('w1', 200, 100, 8), wheel('w2', 212, 100, 8), shock('s', 50, 0, 209, 100));
-    expect(resolveAttachments(d).shockEnds.s!.b.partId).toBe('w2');
+    expect(resolveAttachments(d).shockEnds.get('s')!.b.partId).toBe('w2');
   });
 
   it('equal-distance snap ties resolve to the topmost', () => {
     const d = design(straw('a', 0, 0, 100, 0), wheel('w1', 200, 100, 8), wheel('w2', 210, 100, 8), shock('s', 50, 0, 205, 100));
-    expect(resolveAttachments(d).shockEnds.s!.b.partId).toBe('w2');
+    expect(resolveAttachments(d).shockEnds.get('s')!.b.partId).toBe('w2');
   });
 
   it('floating shock end => floatingShock error and no joint', () => {
@@ -167,7 +167,7 @@ describe('resolveAttachments — shocks', () => {
     // w2 is free, hung on the shock (like the original's example cart).
     const spec = resolveAttachments(d);
     expect(spec.valid).toBe(true);
-    expect(spec.wheelPins.w2).toBeNull();
+    expect(spec.wheelPins.get('w2')).toBeNull();
   });
 });
 
@@ -207,8 +207,8 @@ describe('resolveAttachments — delete re-resolution', () => {
 
   it('deleting a pinned part re-pins the wheel to the next topmost part', () => {
     const d = design(straw('a', -50, 0, 50, 0), wheel('w', 0, 0), lime('l', 0, 0, 10));
-    expect(resolveAttachments(d).wheelPins.w).toBe('l');
-    expect(resolveAttachments(deletePart(d, 'l')).wheelPins.w).toBe('a');
+    expect(resolveAttachments(d).wheelPins.get('w')).toBe('l');
+    expect(resolveAttachments(deletePart(d, 'l')).wheelPins.get('w')).toBe('a');
   });
 
   it('deleting a snapped wheel makes its shock re-resolve (floating here)', () => {
@@ -235,6 +235,33 @@ describe('spike cart', () => {
     const wheels = spec.bodies.filter((b) => b.kind === 'wheel');
     expect(wheels).toHaveLength(4);
     expect(spec.joints.filter((j) => j.type === 'revolute')).toHaveLength(4);
-    expect(Object.values(spec.wheelPins).every((p) => p !== null)).toBe(true);
+    expect([...spec.wheelPins.values()].every((p) => p !== null)).toBe(true);
+  });
+});
+
+describe('untrusted part ids', () => {
+  it('a validated cart with parts named "__proto__" / "constructor" resolves normally', async () => {
+    const { validateCartDesign } = await import('../../src/model/validate');
+    const raw = JSON.parse(
+      '{"version":1,"parts":[' +
+        '{"id":"__proto__","kind":"straw","a":{"x":0,"y":0},"b":{"x":100,"y":0}},' +
+        '{"id":"constructor","kind":"wheel","center":{"x":10,"y":0},"radius":20},' +
+        '{"id":"toString","kind":"wheel","center":{"x":90,"y":0},"radius":20},' +
+        '{"id":"hasOwnProperty","kind":"shock","a":{"x":50,"y":0},"b":{"x":90,"y":0}}]}',
+    );
+    const v = validateCartDesign(raw);
+    expect(v.ok).toBe(true);
+    if (!v.ok) return;
+    const spec = resolveAttachments(v.value);
+    expect(spec.valid).toBe(true);
+    expect(spec.partBody.get('__proto__')).toBe('body:__proto__');
+    expect(spec.wheelPins.get('constructor')).toBe('__proto__');
+    expect(spec.wheelPins.get('toString')).toBe('__proto__');
+    expect(spec.shockEnds.get('hasOwnProperty')!.b.partId).toBe('toString');
+    for (const j of spec.joints) {
+      expect(typeof j.bodyA).toBe('string');
+      expect(spec.bodies.some((b) => b.id === j.bodyA)).toBe(true);
+      expect(spec.bodies.some((b) => b.id === j.bodyB)).toBe(true);
+    }
   });
 });
