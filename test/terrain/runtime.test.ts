@@ -1,0 +1,382 @@
+/**
+ * Streaming runtime against the real physics wrapper (box2d3-wasm, headless).
+ */
+import { describe, expect, it } from 'vitest';
+import type { Vec2 } from '../../src/model/geometry';
+import type { TerrainDef } from '../../src/model/level';
+import { PhysicsWorld } from '../../src/physics/engine';
+import { LevelChunkSource, type ChunkLifecycleListener, type ReadonlyTerrainChunk } from '../../src/terrain/chunks';
+import { ProceduralChunkSource } from '../../src/terrain/generator';
+import { TerrainStreamer } from '../../src/terrain/runtime';
+import { auditorProfile, auditorProfileConvex, denseArcCorner, denseKinks, zigZagComb, truncatedWindowProfile } from './profiles';
+
+const terrainOf = (...spans: Vec2[][]): TerrainDef => ({
+  spans: spans.map((points, i) => ({ id: `s${i}`, points })),
+  friction: 0.9,
+  restitution: 0,
+});
+
+function ball(w: PhysicsWorld, x: number, y: number, vx = 0) {
+  const b = w.createBody({ type: 'dynamic', position: { x, y }, linearVelocity: { x: vx, y: 0 }, bullet: true });
+  w.addCircle(b, { x: 0, y: 0 }, 0.4, { friction: 0.9, restitution: 0 });
+  return b;
+}
+
+class Recorder implements ChunkLifecycleListener {
+  events: string[] = [];
+  live = new Map<number, ReadonlyTerrainChunk>();
+  chunkCreated(chunk: ReadonlyTerrainChunk, body: number) {
+    this.events.push(`+${chunk.index}`);
+    expect(this.live.has(chunk.index)).toBe(false);
+    this.live.set(chunk.index, chunk);
+    expect(body).toBeGreaterThan(0);
+  }
+  chunkDestroyed(index: number) {
+    this.events.push(`-${index}`);
+    expect(this.live.delete(index)).toBe(true);
+  }
+}
+
+describe('TerrainStreamer', () => {
+  it('creates/destroys chunk bodies following live bodies and mirrors every change to listeners', async () => {
+    const w = await PhysicsWorld.create();
+    const src = new ProceduralChunkSource(7);
+    const t = new TerrainStreamer(w, src);
+    const rec = new Recorder();
+    t.addListener(rec);
+
+    const p1 = t.update([10]);
+    expect(p1.create).toEqual([0, 1, 2]);
+    expect(t.loadedChunks()).toEqual([0, 1, 2]);
+    expect(rec.events).toEqual(['+0', '+1', '+2']);
+    const terrainBodies = w.manifest().bodies.filter((b) => b.role === 'terrain');
+    expect(terrainBodies).toHaveLength(3);
+    const firstManifest = JSON.stringify(terrainBodies.find((b) => b.id === t.bodyOf(1))!.shapes);
+
+    rec.events = [];
+    t.update([400]); // cart drove on, nothing live behind
+    expect(rec.events.filter((e) => e.startsWith('-'))).toEqual(['-0', '-1', '-2']);
+    expect(rec.events.indexOf('-2')).toBeLessThan(rec.events.indexOf('+9')); // destroys first
+    expect([...rec.live.keys()].sort((a, b) => a - b)).toEqual(t.loadedChunks());
+    expect(w.manifest().bodies.filter((b) => b.role === 'terrain')).toHaveLength(t.loadedChunks().length);
+
+    t.update([10]); // reverse all the way back
+    const again = w.manifest().bodies.find((b) => b.id === t.bodyOf(1))!;
+    expect(JSON.stringify(again.shapes)).toBe(firstManifest); // identical regeneration
+    expect([...rec.live.keys()].sort((a, b) => a - b)).toEqual(t.loadedChunks());
+
+    t.destroyAll();
+    expect(rec.live.size).toBe(0);
+    expect(w.manifest().bodies.filter((b) => b.role === 'terrain')).toHaveLength(0);
+    w.destroy();
+  });
+
+  it('loadAll loads a finite level and refuses an endless one', async () => {
+    const w = await PhysicsWorld.create();
+    const src = new LevelChunkSource(terrainOf([{ x: -50, y: 10 }, { x: 130, y: 10 }]));
+    const t = new TerrainStreamer(w, src);
+    t.loadAll();
+    expect(t.loadedChunks()).toEqual([-2, -1, 0, 1, 2, 3]);
+    expect(() => new TerrainStreamer(w, new ProceduralChunkSource(1)).loadAll()).toThrow(/unbounded/);
+    w.destroy();
+  });
+
+  it('audit S3-1 #3: loadAll on far-apart spans creates bodies only for occupied chunks; empty chunks get none', async () => {
+    const w = await PhysicsWorld.create();
+    const src = new LevelChunkSource(
+      terrainOf(
+        [{ x: -1_000_000, y: 10 }, { x: -999_990, y: 10 }],
+        [{ x: 1_000_000, y: 10 }, { x: 1_000_010, y: 10 }],
+      ),
+    );
+    expect(src.lastChunk - src.firstChunk).toBeGreaterThan(49_000);
+    expect(src.occupiedChunks()).toEqual([-25_000, 25_000]);
+    const t = new TerrainStreamer(w, src);
+    const rec = new Recorder();
+    t.addListener(rec);
+    t.loadAll();
+    expect(t.loadedChunks()).toEqual([-25_000, 25_000]);
+    expect(w.manifest().bodies.filter((b) => b.role === 'terrain')).toHaveLength(2);
+    // streaming through empty chunks: loaded (not re-requested) but no body, never announced
+    rec.events = [];
+    t.update([0]);
+    expect(t.isLoaded(0)).toBe(true);
+    expect(t.bodyOf(0)).toBeUndefined();
+    expect(rec.events.filter((e) => e.startsWith('+'))).toEqual([]);
+    expect(t.update([0]).create).toEqual([]);
+    expect(w.manifest().bodies.filter((b) => b.role === 'terrain')).toHaveLength(0); // far chunks released
+    expect(t.loadedChunkData()).toEqual([]);
+    t.destroyAll();
+    expect(t.loadedChunks()).toEqual([]);
+    w.destroy();
+  });
+
+  it('audit S3-1 #4: listeners get one deep-frozen chunk; mutation throws and cannot desync physics', async () => {
+    const w = await PhysicsWorld.create();
+    const t = new TerrainStreamer(w, new ProceduralChunkSource(3));
+    const seen: ReadonlyTerrainChunk[] = [];
+    t.addListener({ chunkCreated: (c) => seen.push(c), chunkDestroyed: () => {} });
+    t.update([10]);
+    const c = seen[0]!;
+    expect(Object.isFrozen(c) && Object.isFrozen(c.pieces) && Object.isFrozen(c.pieces[0]) && Object.isFrozen(c.pieces[0]![0])).toBe(true);
+    expect(Object.isFrozen(c.extent)).toBe(true);
+    const y0 = c.pieces[0]![0]!.y;
+    expect(() => {
+      (c.pieces[0]![0] as { y: number }).y = 999;
+    }).toThrow(TypeError);
+    expect(() => {
+      (c as { index: number }).index = 42;
+    }).toThrow(TypeError);
+    expect(c.pieces[0]![0]!.y).toBe(y0);
+    // late subscribers see the same (unmodified) object
+    expect(t.loadedChunkData()[0]!.chunk).toBe(c);
+    w.destroy();
+  });
+
+  it('chunk seams are invisible to physics: bodies cross bends that sit exactly on chunk boundaries as on one chain', async () => {
+    // Bends exactly at x = 40 and x = 80 (the chunk boundaries): concave, convex, and a near-flat kink.
+    // (A naive cut AT those vertices lets the engine's extrapolated ghost disagree with the real
+    // neighbour; on the convex case that measurably changes a sliding box's path.)
+    const profiles: Vec2[][] = [
+      [{ x: -5, y: 10 }, { x: 40, y: 10 }, { x: 80, y: 6 }, { x: 150, y: 6 }],
+      [{ x: -5, y: 10 }, { x: 40, y: 10 }, { x: 80, y: 12 }, { x: 150, y: 12 }],
+      [{ x: -5, y: 8 }, { x: 40, y: 10.25 }, { x: 80, y: 10.25 }, { x: 150, y: 13 }],
+    ];
+    const run = async (pts: Vec2[], chunked: boolean, body: 'box' | 'ball') => {
+      const w = await PhysicsWorld.create();
+      const mat = { friction: 0.2, restitution: 0 };
+      if (chunked) new TerrainStreamer(w, new LevelChunkSource({ spans: [{ id: 'a', points: pts }], ...mat })).loadAll();
+      else w.addChain(w.createBody({ type: 'static', position: { x: 0, y: 0 }, role: 'terrain' }), pts, mat);
+      let b: number;
+      if (body === 'ball') b = ball(w, 34, pts[1]!.y - 1, 8);
+      else {
+        b = w.createBody({ type: 'dynamic', position: { x: 34, y: pts[1]!.y - 0.8 }, linearVelocity: { x: 12, y: 0 } });
+        w.addPolygon(b, [{ x: -1, y: -0.5 }, { x: 1, y: -0.5 }, { x: 1, y: 0.5 }, { x: -1, y: 0.5 }], mat);
+      }
+      const trace: { x: number; y: number; angle: number }[] = [];
+      for (let i = 0; i < 400; i++) {
+        w.step();
+        trace.push(w.getTransform(b));
+      }
+      w.destroy();
+      return trace;
+    };
+    for (const pts of profiles) {
+      for (const body of ['box', 'ball'] as const) {
+        const one = await run(pts, false, body);
+        const many = await run(pts, true, body);
+        expect(one.at(-1)!.x).toBeGreaterThan(45); // crossed the first seam at least
+        let worst = 0;
+        for (let i = 0; i < one.length; i++) {
+          worst = Math.max(worst, Math.hypot(one[i]!.x - many[i]!.x, one[i]!.y - many[i]!.y), Math.abs(one[i]!.angle - many[i]!.angle));
+        }
+        expect(worst).toBeLessThan(0.005);
+      }
+    }
+  });
+
+  it('audit S3-2 #1: a body rolls across a vertex-fallback seam (flat -> dense 45° incline at x = 40) as on one chain', async () => {
+    // The auditor's exact (concave) profile. A concave seam is physically forgiving (the next
+    // chain's surface masks a wrong ghost), so this is a regression check; the convex test below
+    // is the discriminating one.
+    const pts = auditorProfile();
+    // the seam really is a vertex-fallback cut (no segment in the window is cuttable)
+    const src = new LevelChunkSource({ spans: [{ id: 'a', points: pts }], friction: 0.9, restitution: 0 });
+    const seam = src.chunk(0).pieces.at(-1)!.at(-1)!;
+    expect(pts.some((v) => v.x === seam.x && v.y === seam.y)).toBe(true);
+    const run = async (chunked: boolean, body: 'ball' | 'box', vx: number) => {
+      const w = await PhysicsWorld.create();
+      const mat = { friction: 0.9, restitution: 0 };
+      if (chunked) new TerrainStreamer(w, new LevelChunkSource({ spans: [{ id: 'a', points: pts }], ...mat })).loadAll();
+      else w.addChain(w.createBody({ type: 'static', position: { x: 0, y: 0 }, role: 'terrain' }), pts, mat);
+      let b: number;
+      if (body === 'ball') b = ball(w, 36, 9.6, vx);
+      else {
+        // low-friction box (mixed friction ≈ 0.2) so it slides up to and onto the seam
+        b = w.createBody({ type: 'dynamic', position: { x: 38.5, y: 9.5 }, linearVelocity: { x: vx, y: 0 } });
+        w.addPolygon(b, [{ x: -0.5, y: -0.5 }, { x: 0.5, y: -0.5 }, { x: 0.5, y: 0.5 }, { x: -0.5, y: 0.5 }], { friction: 0.05, restitution: 0 });
+      }
+      const trace: { x: number; y: number; angle: number }[] = [];
+      for (let i = 0; i < 360; i++) {
+        w.step();
+        trace.push(w.getTransform(b));
+      }
+      w.destroy();
+      return trace;
+    };
+    for (const body of ['ball', 'box'] as const) {
+      for (const vx of [3, 6, 8]) {
+        const one = await run(false, body, vx);
+        const many = await run(true, body, vx);
+        // reached the seam: in contact with the incline past x = 40.005 (ball: contact point on a
+        // 45° slope is r·sin45 ≈ 0.28 m ahead of the centre; box: front face 0.5 m ahead)
+        expect(Math.max(...one.map((t) => t.x))).toBeGreaterThan(body === 'ball' ? 39.75 : 39.5);
+        let worst = 0;
+        for (let i = 0; i < one.length; i++) {
+          const da = Math.abs(one[i]!.angle - many[i]!.angle);
+          worst = Math.max(worst, Math.hypot(one[i]!.x - many[i]!.x, one[i]!.y - many[i]!.y), Math.min(da, 2 * Math.PI - da));
+        }
+        expect(worst, `${body} @ ${vx} m/s`).toBeLessThan(0.005);
+        // ... and it came back down across the seam too
+        expect(one.at(-1)!.x).toBeLessThan(40);
+      }
+    }
+  });
+
+  it('audit S3-2 #1: convex vertex-fallback seam (flat -> dense 45° decline at x = 40) matches one chain', async () => {
+    // Discriminating case (mutation-checked): with the old first-vertex fallback the cut sits ON the
+    // corner at x = 40, each chain extrapolates its own ghost, and these runs deviate by 0.08..2.1
+    // (spin/path change at the corner); with the straightest-vertex fallback they stay < 0.005.
+    const pts = auditorProfileConvex();
+    const src = new LevelChunkSource({ spans: [{ id: 'a', points: pts }], friction: 0.9, restitution: 0 });
+    const seam = src.chunk(0).pieces.at(-1)!.at(-1)!;
+    expect(seam.x).toBeGreaterThan(40); // not the corner
+    const run = async (chunked: boolean, body: 'ball' | 'box', vx: number) => {
+      const w = await PhysicsWorld.create();
+      const mat = { friction: 0.9, restitution: 0 };
+      if (chunked) new TerrainStreamer(w, new LevelChunkSource({ spans: [{ id: 'a', points: pts }], ...mat })).loadAll();
+      else w.addChain(w.createBody({ type: 'static', position: { x: 0, y: 0 }, role: 'terrain' }), pts, mat);
+      let b: number;
+      if (body === 'ball') b = ball(w, 39, 9.6, vx);
+      else {
+        b = w.createBody({ type: 'dynamic', position: { x: 39, y: 9.5 }, linearVelocity: { x: vx, y: 0 } });
+        w.addPolygon(b, [{ x: -0.5, y: -0.5 }, { x: 0.5, y: -0.5 }, { x: 0.5, y: 0.5 }, { x: -0.5, y: 0.5 }], { friction: 0.05, restitution: 0 });
+      }
+      const trace: { x: number; y: number; angle: number }[] = [];
+      for (let i = 0; i < 240; i++) {
+        w.step();
+        trace.push(w.getTransform(b));
+      }
+      w.destroy();
+      return trace;
+    };
+    for (const [body, vx] of [['ball', 0.5], ['ball', 1], ['box', 4]] as const) {
+      const one = await run(false, body, vx);
+      const many = await run(true, body, vx);
+      expect(one.at(-1)!.x).toBeGreaterThan(41); // went over the corner and down the slope
+      let worst = 0;
+      for (let i = 0; i < one.length; i++) {
+        const da = Math.abs(one[i]!.angle - many[i]!.angle);
+        worst = Math.max(worst, Math.hypot(one[i]!.x - many[i]!.x, one[i]!.y - many[i]!.y), Math.min(da, 2 * Math.PI - da));
+      }
+      expect(worst, `${body} @ ${vx} m/s`).toBeLessThan(0.005);
+    }
+  });
+
+  it('audit S3-3 #1: dense-window safe seams and merged unsafe windows match one chain', async () => {
+    // Every profile is too dense at x = 40 for the normal clearance cut. Discriminating (measured):
+    // cutting the fine combs at a convex tip instead of a valley deviates up to 0.06; overlapping
+    // the chains at the seam deviates 0.08 (fine comb) and 0.22 (kinks, box).
+    const profiles: { name: string; pts: Vec2[]; y0: number; kind: 'segment' | 'merged' }[] = [
+      { name: 'auditor comb 9<->11', pts: zigZagComb(38, 43, 9, 11), y0: 8.6, kind: 'segment' },
+      { name: 'fine comb', pts: zigZagComb(38, 43, 10, 10.004), y0: 9.6, kind: 'merged' },
+      { name: 'fine comb, tip at x = 40', pts: zigZagComb(37.995, 43, 10, 10.004), y0: 9.6, kind: 'merged' },
+      { name: 'dense convex/flat kinks', pts: denseKinks(), y0: 9.6, kind: 'merged' },
+      { name: 'dense convex arc', pts: denseArcCorner(), y0: 9.6, kind: 'merged' },
+    ];
+    const run = async (pts: Vec2[], chunked: boolean, body: 'ball' | 'box', x0: number, y0: number, vx: number) => {
+      const w = await PhysicsWorld.create();
+      const mat = { friction: 0.9, restitution: 0 };
+      if (chunked) new TerrainStreamer(w, new LevelChunkSource({ spans: [{ id: 'a', points: pts }], ...mat })).loadAll();
+      else w.addChain(w.createBody({ type: 'static', position: { x: 0, y: 0 }, role: 'terrain' }), pts, mat);
+      let b: number;
+      if (body === 'ball') b = ball(w, x0, y0, vx);
+      else {
+        b = w.createBody({ type: 'dynamic', position: { x: x0, y: y0 - 0.1 }, linearVelocity: { x: vx, y: 0 } });
+        w.addPolygon(b, [{ x: -0.5, y: -0.5 }, { x: 0.5, y: -0.5 }, { x: 0.5, y: 0.5 }, { x: -0.5, y: 0.5 }], { friction: 0.05, restitution: 0 });
+      }
+      const trace: { x: number; y: number; angle: number }[] = [];
+      for (let i = 0; i < 240; i++) {
+        w.step();
+        trace.push(w.getTransform(b));
+      }
+      w.destroy();
+      return trace;
+    };
+    for (const { name, pts, y0, kind } of profiles) {
+      const src = new LevelChunkSource({ spans: [{ id: 'a', points: pts }], friction: 0.9, restitution: 0 });
+      const seam = src.chunk(0).pieces.at(-1)!.at(-1)!;
+      if (kind === 'segment') expect(src.chunk(1).pieces[0]![0], name).toEqual(seam);
+      else expect(src.chunk(1).pieces, name).toEqual([]);
+      for (const [body, x0, vx] of [['ball', 39, 1], ['ball', 38.6, 4], ['box', 38.8, 4], ['ball', 39.5, 0.3]] as const) {
+        if (body === 'box' && kind === 'segment') continue; // a box stalls against the 2 m teeth before the seam
+        const one = await run(pts, false, body, x0, y0, vx);
+        const many = await run(pts, true, body, x0, y0, vx);
+        // reached the seam (ball: its contact point; box: its front face)
+        expect(Math.max(...one.map((t) => t.x)) + (body === 'box' ? 0.5 : 0.4), `${name} ${body} @ ${vx}`).toBeGreaterThan(kind === 'merged' ? 40 : seam.x);
+        let worst = 0;
+        for (let i = 0; i < one.length; i++) {
+          const da = Math.abs(one[i]!.angle - many[i]!.angle);
+          worst = Math.max(worst, Math.hypot(one[i]!.x - many[i]!.x, one[i]!.y - many[i]!.y), Math.min(da, 2 * Math.PI - da));
+        }
+        expect(worst, `${name} ${body} @ ${vx} m/s`).toBeLessThan(0.005);
+      }
+    }
+  });
+
+  it('audit S3-4: rolling over the truncated-window crest matches one continuous chain', async () => {
+    const pts = truncatedWindowProfile();
+    const run = async (chunked: boolean) => {
+      const w = await PhysicsWorld.create();
+      if (chunked) new TerrainStreamer(w, new LevelChunkSource(terrainOf(pts))).loadAll();
+      else w.addChain(w.createBody({ type: 'static', position: { x: 0, y: 0 }, role: 'terrain' }), pts, { friction: 0.9, restitution: 0 });
+      const b = ball(w, 39.3, 9.606, 1);
+      const trace: Vec2[] = [];
+      for (let i = 0; i < 180; i++) {
+        w.step();
+        trace.push(w.getTransform(b));
+      }
+      w.destroy();
+      return trace;
+    };
+    const one = await run(false);
+    const many = await run(true);
+    expect(Math.max(...one.map((p) => p.x))).toBeGreaterThan(40.05);
+    expect(Math.max(...one.map((p, i) => Math.hypot(p.x - many[i]!.x, p.y - many[i]!.y)))).toBeLessThan(0.005);
+  });
+
+  it('retains one owner of an unsplittable piece across multiple boundaries and releases it beyond its extent', async () => {
+    const pts = zigZagComb(38, 165, 10, 10.004);
+    const w = await PhysicsWorld.create();
+    const source = new LevelChunkSource(terrainOf(pts));
+    const t = new TerrainStreamer(w, source, { maxChunks: 1 });
+    expect(source.occupiedChunks()).toEqual([0]);
+    for (const xs of [[150], [10, 150], [150], [10]]) {
+      t.update(xs);
+      expect(t.loadedChunks()).toEqual([0]);
+      expect(t.loadedChunkData()[0]!.chunk.pieces).toEqual([pts]);
+      expect(w.manifest().bodies.filter((b) => b.role === 'terrain')).toHaveLength(1);
+    }
+    t.update([1000]);
+    expect(t.loadedChunks()).toEqual([]);
+    t.update([150]); // load directly inside the overhang, without visiting owner chunk
+    expect(t.loadedChunks()).toEqual([0]);
+    w.destroy();
+  });
+
+  it('gaps are real holes: a ball over the gap falls through, one beside it does not', async () => {
+    const w = await PhysicsWorld.create();
+    const t = new TerrainStreamer(
+      w,
+      new LevelChunkSource(
+        terrainOf(
+          [
+            { x: 0, y: 10 },
+            { x: 38, y: 10 },
+          ],
+          [
+            { x: 41, y: 10 },
+            { x: 90, y: 10 },
+          ],
+        ),
+      ),
+    );
+    t.loadAll();
+    const over = ball(w, 39.5, 8);
+    const beside = ball(w, 36, 8);
+    for (let i = 0; i < 120; i++) w.step();
+    expect(w.getTransform(over).y).toBeGreaterThan(14);
+    expect(w.getTransform(beside).y).toBeCloseTo(9.6, 1);
+    w.destroy();
+  });
+});
