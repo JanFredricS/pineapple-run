@@ -172,6 +172,12 @@ export interface FakeContextBehaviour {
   deferSuspend?: boolean;
   /** The next N resume() calls reject (then behave normally). */
   resumeRejectCount?: number;
+  /**
+   * resume() stays pending (state unchanged) until the test calls
+   * `settleResume()`. Checked at call time, so a test can flip it on just
+   * before the call it wants to hold.
+   */
+  deferResume?: boolean;
 }
 
 export class FakeAudioContext implements AudioContextLike {
@@ -217,8 +223,27 @@ export class FakeAudioContext implements AudioContextLike {
       this.behaviour.resumeRejectCount--;
       return Promise.reject(new Error('transient'));
     }
+    if (this.behaviour.deferResume) {
+      return new Promise<void>((resolve, reject) => {
+        this.pendingResumes.push((fail) => {
+          if (fail) return reject(new Error('not allowed'));
+          if (this.state !== 'closed' && !this.behaviour.resumeNoop) this.state = 'running';
+          resolve();
+        });
+      });
+    }
     if (!this.behaviour.resumeNoop) this.state = 'running';
     return Promise.resolve();
+  }
+  private pendingResumes: Array<(fail: boolean) => void> = [];
+  /** Completes every pending deferred resume() (rejecting them if `fail`). */
+  settleResume(fail = false) {
+    const pending = this.pendingResumes;
+    this.pendingResumes = [];
+    for (const f of pending) f(fail);
+  }
+  get resumePending() {
+    return this.pendingResumes.length;
   }
   private pendingSuspends: Array<() => void> = [];
   suspend() {

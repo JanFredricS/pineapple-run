@@ -284,25 +284,40 @@ export class AudioEngine {
     } catch {
       /* best effort */
     }
-    let p: Promise<void>;
+    // resume() is CALLED synchronously (it must run inside the gesture for
+    // user activation / iOS unlock), but its OUTCOME is handled as a step of
+    // the serialized visibility chain — see gestureStep().
+    let settled: Promise<boolean>;
     try {
-      p = ctx.resume();
+      settled = ctx.resume().then(
+        () => true,
+        () => false,
+      );
     } catch {
-      return;
+      settled = Promise.resolve(false);
     }
-    p.then(
-      () => {
-        if (this.destroyedFlag || this.graphState?.ctx !== ctx) return;
-        if (ctx.state === 'running') {
-          this.unlockedFlag = true;
-          this.resumeSucceeded();
-        }
-      },
-      () => {
-        /* keep listening for the next gesture */
-      },
-    );
+    this.visibilityChain = this.visibilityChain.then(() => this.gestureStep(ctx, settled));
   };
+
+  /**
+   * Chain step for a gesture-initiated resume. Because it sits on
+   * visibilityChain, any visibilitychange that arrives while the gesture's
+   * resume is still pending is queued BEHIND this step, so it observes the
+   * settled state. And this step itself finishes with a full reconcile
+   * against the CURRENT visibility, so a resume that lands after the page was
+   * hidden is suspended again.
+   */
+  private async gestureStep(ctx: AudioContextLike, settled: Promise<boolean>): Promise<void> {
+    const resolved = await settled;
+    if (this.destroyedFlag || this.graphState?.ctx !== ctx) return;
+    const ok = resolved && ctx.state === 'running';
+    if (ok) this.resumeSucceeded();
+    // A failed gesture resume on a visible page: keep the listeners armed for
+    // the next gesture instead of immediately re-calling resume() without
+    // user activation. Every other outcome reconciles to current visibility.
+    if (!ok && this.visibility?.visibilityState !== 'hidden') return;
+    await this.reconcileVisibility();
+  }
 
   /**
    * Suspend/resume are async and a hide→show can arrive before a pending
@@ -311,7 +326,11 @@ export class AudioEngine {
    * visibilitychange appends a reconcile step to one promise chain (each
    * step awaits the previous transition), and each step loops — after every
    * settled suspend/resume it re-reads the CURRENT visibility and acts again
-   * until context state and visibility agree.
+   * until context state and visibility agree. Invariant: every resume()
+   * whose outcome matters (visibility step, timer retry, gesture) settles
+   * inside a chain step that ends in a reconcile, and every visibilitychange
+   * appends a step at the tail — so the last thing the chain does after any
+   * transition is re-check the current visibility.
    */
   private readonly onVisibility: ListenerLike = () => {
     if (!this.graphState || this.destroyedFlag || !this.visibility) return;

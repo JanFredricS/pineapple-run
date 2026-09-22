@@ -261,6 +261,119 @@ describe('AudioEngine: visibility', () => {
     expect(el.count()).toBe(0);
   });
 
+  /** Unlocked → hidden → visible with every resume rejected until the retry budget is spent. */
+  async function exhaustedRetries() {
+    const env = await unlockedWithTimers();
+    const { engine, created, doc, timers, el } = env;
+    const ctx = created[0]!;
+    doc.visibilityState = 'hidden';
+    doc.dispatch('visibilitychange');
+    await engine.visibilitySettled;
+    ctx.behaviour.resumeRejects = true;
+    doc.visibilityState = 'visible';
+    doc.dispatch('visibilitychange');
+    await engine.visibilitySettled;
+    for (const d of RESUME_RETRY_DELAYS_MS) {
+      timers.advance(d);
+      await engine.visibilitySettled;
+      await flush();
+    }
+    expect(engine.resumeRetryPending).toBe(false);
+    expect(ctx.state).toBe('suspended');
+    expect(el.count()).toBe(UNLOCK_EVENTS.length);
+    return { ...env, ctx };
+  }
+
+  it('audit race: gesture resume pending → hide → resume settles → reconciled to suspended', async () => {
+    const { engine, ctx, doc, timers, el } = await exhaustedRetries();
+    ctx.behaviour.resumeRejects = false;
+    ctx.behaviour.deferResume = true;
+    const resumesBefore = ctx.resumeCalls;
+    el.dispatch('pointerdown');
+    expect(ctx.resumeCalls).toBe(resumesBefore + 1); // still called inside the gesture
+    expect(ctx.resumePending).toBe(1);
+    doc.visibilityState = 'hidden';
+    doc.dispatch('visibilitychange');
+    await flush();
+    // The hide step is queued behind the pending gesture resume, not racing it.
+    expect(ctx.suspendCalls).toBe(1);
+    expect(ctx.state).toBe('suspended');
+    ctx.behaviour.deferResume = false;
+    ctx.settleResume(); // the gesture's resume lands while hidden
+    await engine.visibilitySettled;
+    await flush();
+    expect(ctx.state).toBe('suspended');
+    expect(ctx.suspendCalls).toBe(2); // reconciliation re-suspended it
+    expect(el.count()).toBe(0); // the gesture did succeed: healing listeners gone
+    expect(engine.resumeRetryPending).toBe(false);
+    expect(timers.pending).toBe(0);
+    // And a later show resumes normally.
+    doc.visibilityState = 'visible';
+    doc.dispatch('visibilitychange');
+    await engine.visibilitySettled;
+    expect(ctx.state).toBe('running');
+  });
+
+  it('audit race, converse: gesture resume pending → hide → show → settle ends running', async () => {
+    const { engine, ctx, doc, el } = await exhaustedRetries();
+    ctx.behaviour.resumeRejects = false;
+    ctx.behaviour.deferResume = true;
+    el.dispatch('pointerdown');
+    doc.visibilityState = 'hidden';
+    doc.dispatch('visibilitychange');
+    doc.visibilityState = 'visible';
+    doc.dispatch('visibilitychange');
+    await flush();
+    ctx.behaviour.deferResume = false;
+    ctx.settleResume();
+    await engine.visibilitySettled;
+    await flush();
+    expect(ctx.state).toBe('running');
+    expect(ctx.suspendCalls).toBe(1); // only the original hide; no spurious suspend
+    expect(el.count()).toBe(0);
+  });
+
+  it('gesture resume pending → hide → resume rejects: stays suspended, listeners kept, no retry', async () => {
+    const { engine, ctx, doc, timers, el } = await exhaustedRetries();
+    ctx.behaviour.resumeRejects = false;
+    ctx.behaviour.deferResume = true;
+    el.dispatch('pointerdown');
+    doc.visibilityState = 'hidden';
+    doc.dispatch('visibilitychange');
+    await flush();
+    ctx.behaviour.deferResume = false;
+    ctx.settleResume(true);
+    await engine.visibilitySettled;
+    await flush();
+    expect(ctx.state).toBe('suspended');
+    expect(el.count()).toBe(UNLOCK_EVENTS.length);
+    expect(timers.pending).toBe(0);
+  });
+
+  it('first-ever unlock gesture resolving after the page hid is reconciled to suspended', async () => {
+    const { engine, created, doc } = make({ behaviour: { deferResume: true } });
+    const el = new FakeTarget();
+    engine.attach(el);
+    el.dispatch('pointerdown');
+    const ctx = created[0]!;
+    expect(ctx.resumePending).toBe(1);
+    doc.visibilityState = 'hidden';
+    doc.dispatch('visibilitychange');
+    await flush();
+    expect(ctx.suspendCalls).toBe(0); // hide step waits behind the gesture
+    ctx.behaviour.deferResume = false;
+    ctx.settleResume();
+    await engine.visibilitySettled;
+    await flush();
+    expect(engine.unlocked).toBe(true);
+    expect(el.count()).toBe(0);
+    expect(ctx.state).toBe('suspended');
+    doc.visibilityState = 'visible';
+    doc.dispatch('visibilitychange');
+    await engine.visibilitySettled;
+    expect(ctx.state).toBe('running');
+  });
+
   it('show then immediately hide: no resume attempt and no retry', async () => {
     const { engine, created, doc, timers } = await unlockedWithTimers();
     const ctx = created[0]!;
