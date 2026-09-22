@@ -67,6 +67,9 @@ Flagged so "faithful" stays honest:
    infinite rolling on flats. Tuned during the S0 spike.
 3. **Pineapple visuals are oval, collision stays a circle** (sprite ≠ shape) —
    circle collision matches original behaviour and is cheaper.
+4. **Wheel/part friction & restitution (0.9/0.2 and 0.6/0.2)** were not
+   recovered from the original and are our own tuning constants; golden
+   scenario thresholds depend on them, so changing them re-baselines tests.
 
 ## Architecture
 
@@ -111,7 +114,8 @@ each with a mock implementation so every slice can run standalone:
    within 10 px of a wheel/circle centre snaps to that centre, else attaches
    to the topmost overlapping body, else the shock is invalid; deleting a part
    re-resolves the whole design; enumerated validation errors (no wheels,
-   floating shock, disconnected islands).
+   floating shock, disconnected islands, shock-within-one-body, part too
+   small). The error union is closed: widening it later is a contract change.
 3. **Run lifecycle interface** — S1 owns simulation and **emits events**
    (`started`, `released`, `pineappleLost`, `goalReached(delivered)`,
    `gaveUp`); S5 owns UI state, consumes events, and calls into `model/score`.
