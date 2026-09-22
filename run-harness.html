@@ -24,7 +24,7 @@
       #log { font-family: ui-monospace, monospace; font-size: 11px; max-height: 180px; overflow: auto; background: #0006;
         border-radius: 4px; padding: 4px; margin: 0; list-style: none; }
       #log li { padding: 1px 0; border-bottom: 1px solid #fff1; }
-      #log li.goalReached { color: #8f8; } #log li.gaveUp { color: #fc8; } #log li.pineappleLost { color: #f99; }
+      #log li.goalReached { color: #8f8; } #log li.gaveUp { color: #fc8; } #log li.allLost { color: #f99; font-weight: 600; } #log li.pineappleLost { color: #f99; }
       details { margin-top: 6px; } summary { cursor: pointer; }
       details ul { padding-left: 16px; margin: 4px 0; }
     </style>
@@ -51,17 +51,18 @@
       <ol id="log"></ol>
       <details>
         <summary>Keys &amp; acceptance checklist</summary>
-        <p>←/→ or A/D drive (or hold the on-screen buttons). Enter: Start, then Release. G: Give Up. R: Reset.</p>
+        <p>←/→ or A/D drive (or hold the on-screen buttons). Enter: Start, then Release. G: Give Up. R: Reset. Add <code>?mode=endless</code> to the URL for the endless end rule.</p>
         <ul>
           <li>Before Start nothing moves; Start logs <code>started</code> and the cart settles under the funnel.</li>
           <li>Pineapples rest in the V funnel on the plug until Release.</li>
           <li>Release logs <code>released</code>, removes the plug, the load drops into the cart and the clock starts at 0.</li>
-          <li>Driving works with ←/→, A/D and touch buttons; switching tab / clicking outside the window pauses and stops the drive.</li>
+          <li>Driving works with ←/→, A/D and touch buttons; switching tab / clicking outside the window / a cancelled touch stops the drive.</li>
           <li>Camera follows the right-most cart body smoothly.</li>
           <li>A pineapple left on the ground logs <code>pineappleLost</code> about 3 s later; remaining counts down once per pineapple.</li>
-          <li>Driving into the blender pit logs <code>goalReached</code> with the delivered count; nothing is logged after it.</li>
+          <li>A pineapple reaching the blender pit's base logs <code>goalReached</code> with the delivered count (pineapples past the line, lost ones included); nothing is logged after it. Cart parts bounce off the blender.</li>
+          <li>Endless mode: losing the last pineapple logs <code>allLost</code> and ends the run.</li>
           <li>Give Up logs <code>gaveUp</code> with the sim time; the cart stops driving.</li>
-          <li>Loading a broken cart or level JSON shows an error and keeps the current run.</li>
+          <li>Loading a broken cart or level JSON (including a schema-valid cart that cannot start) shows an error and keeps the current run.</li>
         </ul>
       </details>
     </details>

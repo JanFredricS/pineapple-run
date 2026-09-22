@@ -1,6 +1,7 @@
 /**
  * S1 run harness page (run-harness.html): loads a CartDesign + LevelDef
- * (fixtures by default, or JSON files through model/validate), runs the
+ * (fixtures by default, or JSON files through run/loadCheck: schema +
+ * attachments, rejected files never replace the current run), runs the
  * RunController with the debug-draw overlay, drive keys / touch buttons,
  * Start / Release / Give Up, and an overlay log of every lifecycle event.
  */
@@ -9,14 +10,14 @@ import { Application, Graphics } from 'pixi.js';
 import type { CartDesign } from '../model/cart';
 import { cameraTransform, type Camera } from '../model/coords';
 import type { LevelDef } from '../model/level';
-import type { RunEvent } from '../model/runEvents';
-import { parseCartDesign, parseLevelDef } from '../model/validate';
+import { isTerminalRunEvent, type RunEvent } from '../model/runEvents';
 import { FrameLoop } from '../physics/clock';
 import { PhysicsWorld } from '../physics/engine';
 import { DebugDraw } from '../render/debugDraw';
-import { RunController } from './controller';
+import { RunController, type RunMode } from './controller';
 import { loadFixtureCart, loadFlatGoalLevel } from './fixtures';
-import { DriveInput, type DriveSide } from './input';
+import { DriveInput, bindTouchButton, type DriveSide } from './input';
+import { checkCartJson, checkLevelJson } from './loadCheck';
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -53,38 +54,49 @@ async function main(): Promise<void> {
   let sourceLabel = { cart: 'fixture: spike cart', level: 'fixture: flat-goal level' };
 
   const input = new DriveInput();
+  // ?mode=endless runs the endless end rule (last pineapple lost -> allLost; no goal)
+  const mode: RunMode = new URLSearchParams(location.search).get('mode') === 'endless' ? 'endless' : 'level';
   let world: PhysicsWorld | null = null;
   let run: RunController | null = null;
 
   // ----------------------------------------------------------- run setup
   // Worlds are created asynchronously; a generation token lets only the
-  // latest (re)build win, and stale worlds are destroyed immediately.
+  // latest (re)build win, and stale worlds are destroyed immediately. A new
+  // run is built BEFORE the current one is torn down: if the candidate cart /
+  // level cannot be built, the error is shown and the current run is kept.
   let generation = 0;
-  const rebuild = async (): Promise<void> => {
+  const rebuild = async (
+    next: { design: CartDesign; level: LevelDef; label: typeof sourceLabel } = { design, level, label: sourceLabel },
+  ): Promise<boolean> => {
     const gen = ++generation;
-    input.clear();
-    run?.destroy();
-    run = null;
-    if (world && !world.isDestroyed) world.destroy();
-    world = null;
-    ui.log.replaceChildren();
     const w = await PhysicsWorld.create();
     if (gen !== generation) {
       w.destroy();
-      return;
+      return false;
     }
+    let r: RunController;
     try {
-      const r = new RunController(w, design, level);
-      r.on(onEvent);
-      world = w;
-      run = r;
-      loop.clock.reset();
-      ui.error.textContent = '';
+      r = new RunController(w, next.design, next.level, { mode });
     } catch (err) {
       w.destroy();
-      ui.error.textContent = `Cannot build run: ${err instanceof Error ? err.message : String(err)}`;
+      ui.error.textContent = `Cannot build run: ${err instanceof Error ? err.message : String(err)} (kept the current run)`;
+      return false;
     }
+    // commit: tear down the old run, adopt the new one
+    input.clear();
+    run?.destroy();
+    if (world && !world.isDestroyed) world.destroy();
+    ui.log.replaceChildren();
+    design = next.design;
+    level = next.level;
+    sourceLabel = next.label;
+    r.on(onEvent);
+    world = w;
+    run = r;
+    loop.clock.reset();
+    ui.error.textContent = '';
     ui.source.textContent = `${sourceLabel.cart} · ${sourceLabel.level}`;
+    return true;
   };
 
   const onEvent = (e: RunEvent): void => {
@@ -96,7 +108,7 @@ async function main(): Promise<void> {
     ui.log.scrollTop = ui.log.scrollHeight;
     console.info('[run event]', JSON.stringify(e));
     // phase changes drop any held input
-    if (e.type === 'goalReached' || e.type === 'gaveUp') input.clear();
+    if (isTerminalRunEvent(e)) input.clear();
   };
 
   // ------------------------------------------------------------ controls
@@ -108,10 +120,11 @@ async function main(): Promise<void> {
   ui.giveUp.addEventListener('click', doGiveUp);
   ui.reset.addEventListener('click', () => void rebuild());
   ui.fixtures.addEventListener('click', () => {
-    design = loadFixtureCart();
-    level = loadFlatGoalLevel();
-    sourceLabel = { cart: 'fixture: spike cart', level: 'fixture: flat-goal level' };
-    void rebuild();
+    void rebuild({
+      design: loadFixtureCart(),
+      level: loadFlatGoalLevel(),
+      label: { cart: 'fixture: spike cart', level: 'fixture: flat-goal level' },
+    });
   });
   const loadFile = (el: HTMLInputElement, kind: 'cart' | 'level') => {
     el.addEventListener('change', () => {
@@ -119,15 +132,17 @@ async function main(): Promise<void> {
       el.value = '';
       if (!file) return;
       void file.text().then((text) => {
-        const r = kind === 'cart' ? parseCartDesign(text) : parseLevelDef(text);
-        if (!r.ok) {
-          ui.error.textContent = `${kind} ${file.name}: ${r.error.message}`;
-          return;
+        // validate fully (schema + attachments) before touching the current run
+        const label = { ...sourceLabel, [kind]: `${kind}: ${file.name}` };
+        if (kind === 'cart') {
+          const r = checkCartJson(text);
+          if (!r.ok) ui.error.textContent = `cart ${file.name}: ${r.message}`;
+          else void rebuild({ design: r.value, level, label });
+        } else {
+          const r = checkLevelJson(text);
+          if (!r.ok) ui.error.textContent = `level ${file.name}: ${r.message}`;
+          else void rebuild({ design, level: r.value, label });
         }
-        if (kind === 'cart') design = r.value as CartDesign;
-        else level = r.value as LevelDef;
-        sourceLabel[kind] = `${kind}: ${file.name}`;
-        void rebuild();
       });
     });
   };
@@ -180,7 +195,7 @@ async function main(): Promise<void> {
       ui.giveUp.disabled = run.phase === 'ended';
       const rm = run.rightmostCartBody();
       ui.hud.textContent =
-        `phase ${run.phase}${loop.clock.paused ? '  [paused]' : ''}   fps ${fps.toFixed(0)}\n` +
+        `${run.mode} · phase ${run.phase}${loop.clock.paused ? '  [paused]' : ''}   fps ${fps.toFixed(0)}\n` +
         `sim ${run.simTime.toFixed(2)} s since Release  (step ${run.steps})\n` +
         `remaining ${run.remaining}/${run.total}  aboard ${run.aboard}  delivered ${run.delivered ?? '–'}\n` +
         `drive ${input.direction}  cart x ${rm ? rm.x.toFixed(1) : 'lost'} m`;
@@ -228,7 +243,7 @@ function drawOverlay(g: Graphics, camera: Camera, run: RunController): void {
   if (box) g.rect(box.minX, box.minY, box.maxX - box.minX, box.maxY - box.minY).stroke({ width: 1 * px, color: 0xffffff, alpha: 0.35 });
 }
 
-/** Hold-to-drive buttons; each pointer is tracked so lifting one finger never strands a drive. */
+/** Hold-to-drive buttons (wiring: input.bindTouchButton — pointerup releases one finger, cancel clears all). */
 function touchButtons(host: HTMLElement, input: DriveInput): void {
   const bar = document.createElement('div');
   bar.style.cssText =
@@ -239,16 +254,7 @@ function touchButtons(host: HTMLElement, input: DriveInput): void {
     b.setAttribute('aria-label', side === 'left' ? 'Drive left' : 'Drive right');
     b.style.cssText =
       'pointer-events:auto;width:72px;height:72px;border-radius:50%;border:2px solid #fff6;background:#fff2;color:#fff;font-size:28px;touch-action:none';
-    b.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      b.setPointerCapture(e.pointerId);
-      input.touchStart(side, e.pointerId);
-    });
-    const end = (e: PointerEvent) => input.touchEnd(e.pointerId);
-    b.addEventListener('pointerup', end);
-    b.addEventListener('pointercancel', end);
-    b.addEventListener('lostpointercapture', end);
-    b.addEventListener('contextmenu', (e) => e.preventDefault());
+    bindTouchButton(b, side, input);
     return b;
   };
   bar.append(mk('◀', 'left'), mk('▶', 'right'));

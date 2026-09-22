@@ -37,6 +37,11 @@ export class DriveInput {
     return this.held[side].size > 0;
   }
 
+  /** Is this source (`key:<code>` / `pointer:<id>`) currently held? */
+  hasSource(source: string): boolean {
+    return this.held.left.has(source) || this.held.right.has(source);
+  }
+
   /** Mark a source (key code or `pointer:<id>`) as pressing `side`. */
   press(side: DriveSide, source: string): void {
     this.held[side === 'left' ? 'right' : 'left'].delete(source);
@@ -75,9 +80,18 @@ export class DriveInput {
     this.press(side, `pointer:${pointerId}`);
   }
 
-  /** pointerup / pointercancel / lostpointercapture all end a touch. */
+  /** A finger lifted normally (pointerup): releases just that pointer. */
   touchEnd(pointerId: number): void {
     this.release(`pointer:${pointerId}`);
+  }
+
+  /**
+   * A touch was CANCELLED (pointercancel, or capture lost while the pointer
+   * was still held — a system gesture / interruption): full input clear, as
+   * for blur, so no other stale key or finger can keep the cart driving.
+   */
+  touchCancel(): void {
+    this.clear();
   }
 
   /** Listen for drive keys on `target` (usually window). Returns an unbind function. */
@@ -95,6 +109,52 @@ export class DriveInput {
       target.removeEventListener('keyup', up);
     };
   }
+}
+
+/** Minimal element surface the touch-button binding needs (a button in the browser). */
+export interface TouchButtonTarget extends ListenerTarget {
+  setPointerCapture?(pointerId: number): void;
+}
+
+/**
+ * Hold-to-drive wiring for an on-screen button:
+ *   pointerdown        -> touchStart(side, id) (+ pointer capture)
+ *   pointerup          -> touchEnd(id)          (only that finger)
+ *   pointercancel      -> touchCancel()         (FULL clear)
+ *   lostpointercapture -> touchCancel() if that pointer was still held (a
+ *                         capture lost without pointerup is a cancellation;
+ *                         after a normal pointerup it is already released and
+ *                         this is a no-op, so other fingers/keys survive).
+ * Returns an unbind function.
+ */
+export function bindTouchButton(el: TouchButtonTarget, side: DriveSide, input: DriveInput): () => void {
+  const id = (e: Event) => (e as PointerEvent).pointerId;
+  const down = (e: Event) => {
+    e.preventDefault();
+    try {
+      el.setPointerCapture?.(id(e));
+    } catch {
+      // capture can fail for a pointer that is already gone; input still works
+    }
+    input.touchStart(side, id(e));
+  };
+  const up = (e: Event) => input.touchEnd(id(e));
+  const cancel = () => input.touchCancel();
+  const lost = (e: Event) => {
+    if (input.hasSource(`pointer:${id(e)}`)) input.touchCancel();
+  };
+  const menu = (e: Event) => e.preventDefault();
+  const pairs: Array<[string, (e: Event) => void]> = [
+    ['pointerdown', down],
+    ['pointerup', up],
+    ['pointercancel', cancel],
+    ['lostpointercapture', lost],
+    ['contextmenu', menu],
+  ];
+  for (const [t, f] of pairs) el.addEventListener(t, f);
+  return () => {
+    for (const [t, f] of pairs) el.removeEventListener(t, f);
+  };
 }
 
 export function sideForKey(code: string): DriveSide | null {

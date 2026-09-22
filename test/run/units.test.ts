@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { PINEAPPLE_RADIUS } from '../../src/physics/cargo';
 import { CAMERA_OFFSET_PX, CameraFollow } from '../../src/run/camera';
 import { FUNNEL_HEIGHT, FUNNEL_OUTLET_HALF_WIDTH, FUNNEL_WALL_ANGLE, funnelGeometry } from '../../src/run/funnel';
-import { DriveInput, sideForKey } from '../../src/run/input';
+import { DriveInput, bindTouchButton, sideForKey } from '../../src/run/input';
 import { circleTouchesRect, expandBox, pointInBox, shapesWorldAABB, unionBoxes } from '../../src/run/shapes';
 import { TerrainIndex } from '../../src/run/terrainQuery';
 
@@ -46,7 +46,7 @@ describe('DriveInput', () => {
     expect(i.isHeld('left')).toBe(false);
   });
 
-  it('clear() drops every held key and pointer (blur / visibility / cancel)', () => {
+  it('clear() drops every held key and pointer (blur / visibility)', () => {
     const i = new DriveInput();
     i.keyDown('ArrowRight');
     i.touchStart('right', 7);
@@ -55,6 +55,67 @@ describe('DriveInput', () => {
     // a stale keyup after the clear is harmless
     i.keyUp('ArrowRight');
     expect(i.direction).toBe(0);
+  });
+
+  describe('bindTouchButton wiring (the harness buttons use exactly this)', () => {
+    const setup = () => {
+      const input = new DriveInput();
+      const right = Object.assign(new EventTarget(), { captured: [] as number[], setPointerCapture(id: number) { this.captured.push(id); } });
+      const left = new EventTarget();
+      const unbindR = bindTouchButton(right, 'right', input);
+      const unbindL = bindTouchButton(left, 'left', input);
+      const fire = (el: EventTarget, type: string, pointerId: number) => {
+        const e = Object.assign(new Event(type, { cancelable: true }), { pointerId });
+        el.dispatchEvent(e);
+        return e;
+      };
+      return { input, right, left, fire, unbind: () => (unbindR(), unbindL()) };
+    };
+
+    it('pointerdown drives (with capture); pointerup releases only that finger', () => {
+      const { input, right, fire } = setup();
+      expect(fire(right, 'pointerdown', 1).defaultPrevented).toBe(true);
+      expect(right.captured).toEqual([1]);
+      fire(right, 'pointerdown', 2);
+      fire(right, 'pointerup', 1);
+      expect(input.direction).toBe(1); // finger 2 still down
+      fire(right, 'pointerup', 2);
+      expect(input.direction).toBe(0);
+    });
+
+    it('pointercancel clears ALL input: other fingers and held keys too', () => {
+      const { input, right, left, fire } = setup();
+      input.keyDown('KeyD');
+      fire(right, 'pointerdown', 1);
+      fire(left, 'pointerdown', 2);
+      fire(left, 'pointerup', 2);
+      fire(right, 'pointerdown', 3);
+      fire(right, 'pointercancel', 1);
+      expect(input.direction).toBe(0);
+      expect(input.isHeld('right')).toBe(false);
+      expect(input.hasSource('key:KeyD')).toBe(false);
+      expect(input.hasSource('pointer:3')).toBe(false);
+    });
+
+    it('lostpointercapture while the pointer is still held is a cancellation (full clear); after a normal pointerup it is a no-op', () => {
+      const { input, right, left, fire } = setup();
+      input.keyDown('ArrowRight');
+      fire(left, 'pointerdown', 4);
+      fire(left, 'pointerup', 4);
+      fire(left, 'lostpointercapture', 4); // browsers fire this after every pointerup
+      expect(input.direction).toBe(1); // the held key survives
+      fire(right, 'pointerdown', 5);
+      fire(right, 'lostpointercapture', 5); // capture stolen mid-press
+      expect(input.direction).toBe(0);
+      expect(input.hasSource('key:ArrowRight')).toBe(false);
+    });
+
+    it('unbinds', () => {
+      const { input, right, fire, unbind } = setup();
+      unbind();
+      fire(right, 'pointerdown', 1);
+      expect(input.direction).toBe(0);
+    });
   });
 
   it('bindKeyboard listens for keydown/keyup, prevents default for drive keys only, and unbinds', () => {
