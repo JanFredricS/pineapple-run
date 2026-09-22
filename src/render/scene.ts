@@ -49,7 +49,7 @@ import { resolveAttachments, type CompoundSpec, type ShapeSpec } from '../model/
 import type { CartDesign, PartKind } from '../model/cart';
 import { cameraTransform, type Camera } from '../model/coords';
 import type { Vec2 } from '../model/geometry';
-import type { LevelDef, ThemeId } from '../model/level';
+import { hasSolidBody, type LevelDef, type PropDef, type ThemeId } from '../model/level';
 import type { BodyTransform, RenderBodyInfo, RenderShape, RenderSnapshot, SceneManifest } from '../model/snapshot';
 import { ART, BLENDER_LAYOUT, PROP_ART } from './artCatalog';
 import { BlenderView } from './blender';
@@ -597,15 +597,20 @@ export class SceneRenderer {
       return;
     }
     // S6 (INTEGRATION #7): the level's 'blender' prop is the goal's SOLID
-    // body (position = box centre); the animated BlenderView stands on its
-    // bottom-centre. Without one, it stands on the goal sensor's bottom-centre.
-    const blenderProp = level.props.find((p) => p.art === BLENDER_ART);
-    for (const prop of level.props) {
+    // body (position = box centre, rotated by angle about it); the animated
+    // BlenderView stands on that rotated box's bottom-centre, tilted with it.
+    // Without one, it stands on the goal sensor's bottom-centre.
+    // S6V: a solid prop with no physics body (model hasSolidBody false — only
+    // possible in an unvalidated level) is skipped exactly as physics skips
+    // it: never drawn, never the blender.
+    const props = level.props.filter((p) => !p.solid || hasSolidBody(p));
+    const blenderProp = props.find((p) => p.art === BLENDER_ART);
+    for (const prop of props) {
       if (prop === blenderProp) continue;
       const art = PROP_ART.get(prop.art);
       let v: Container;
       const hasArt = !!art && this.textures.has(art.id);
-      if (prop.solid && prop.size) {
+      if (hasSolidBody(prop)) {
         // S6 (INTEGRATION #12): solid props are boxes CENTRED on `position`,
         // rotated by `angle` — the same convention as src/run/props.ts. Art
         // (anchored at its foot) stands on the box's bottom edge; without
@@ -638,8 +643,9 @@ export class SceneRenderer {
     const g = level.goal.sensor;
     this.blender = new BlenderView(this.textures, hexToNumber(this.theme.palette.blenderFill));
     if (blenderProp) {
-      const half = (blenderProp.size?.y ?? 0) / 2;
-      this.blender.view.position.set(blenderProp.position.x, blenderProp.position.y + half);
+      const foot = blenderFoot(blenderProp);
+      this.blender.view.position.set(foot.x, foot.y);
+      this.blender.view.rotation = blenderProp.angle ?? 0;
     } else {
       this.blender.view.position.set(g.x + g.width / 2, g.y + g.height);
     }
@@ -747,4 +753,17 @@ export class SceneRenderer {
 
 function mesh(data: MeshData, texture: Texture): MeshSimple {
   return new MeshSimple({ texture, vertices: data.positions, uvs: data.uvs, indices: data.indices });
+}
+
+/**
+ * Where the BlenderView's foot goes for a blender prop: for a solid one, the
+ * bottom-centre of its collider box — centre `position`, rotated by `angle`
+ * (src/run/props.ts boxPolygon convention: local (0, +h/2) rotated); a
+ * non-solid (decor) blender stands on its position.
+ */
+export function blenderFoot(prop: PropDef): Vec2 {
+  if (!hasSolidBody(prop)) return { x: prop.position.x, y: prop.position.y };
+  const a = prop.angle ?? 0;
+  const half = prop.size.y / 2;
+  return { x: prop.position.x - Math.sin(a) * half, y: prop.position.y + Math.cos(a) * half };
 }

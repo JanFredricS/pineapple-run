@@ -5,14 +5,15 @@
  * case they are a static box of `size`. S1 interprets `position` as the box
  * CENTRE and `angle` as its rotation about that centre (radians, y-down), the
  * usual Box2D box convention. A solid prop without a usable size (missing, or
- * a non-positive dimension) is skipped — the validator does not require it.
+ * a non-positive dimension) is skipped; the validator rejects such props and
+ * the renderer skips them too — all three share model/level hasSolidBody().
  *
  * The blender is expected to be one of these, so cart parts bounce off it as
  * in the original.
  */
 
 import type { Vec2 } from '../model/geometry';
-import type { PropDef } from '../model/level';
+import { hasSolidBody, type PropDef } from '../model/level';
 import type { BodyHandle, PhysicsWorld } from '../physics/engine';
 import { boxPolygon } from './shapes';
 
@@ -27,7 +28,7 @@ export interface SolidProp {
 }
 
 export function isSolidProp(p: PropDef): p is PropDef & { solid: true; size: Vec2 } {
-  return p.solid === true && !!p.size && p.size.x > 0 && p.size.y > 0;
+  return hasSolidBody(p);
 }
 
 export function buildSolidProps(world: PhysicsWorld, props: readonly PropDef[]): SolidProp[] {
