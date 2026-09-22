@@ -85,7 +85,7 @@ describe('two-box spring-only cart', () => {
 
     // After settling, the sprung box is still carried above the wheeled box
     // near (but not exactly at) the rest length.
-    const settled = sep[sep.length - 1];
+    const settled = sep[sep.length - 1]!;
     expect(Math.abs(settled - rest)).toBeLessThan(0.4);
     const tl = w.getTransform(l);
     const tu = w.getTransform(u);
