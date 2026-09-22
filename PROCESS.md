@@ -16,6 +16,12 @@ How slices from PLAN.md get implemented and verified.
 4. **Fresh-context fixer** — if findings survive 2 fix cycles, a NEW Opus
    agent (fresh context, no attachment to the original implementation) gets
    the findings + diff and fixes them. One round.
+   - **Escalation (user directive 2026-09-22):** if issues remain after the
+     fresh-context fixer's round, escalate once more with EITHER another
+     fresh-context Opus fixer OR a fresh Codex astra-medium solving pass
+     (astra family = different family from the sol-medium auditor as well
+     as from the Opus implementer). Pick per-defect: astra for gnarly
+     algorithmic/spec problems, Opus for repo-wide mechanical fixes.
 5. **Residuals** — anything still open after the fixer is written to
    RESIDUALS.md (finding, slice, severity, why it's parked) and work
    continues. Residuals are revisited at S8 (hardening) or when they block a

@@ -220,7 +220,44 @@ level); difficulty pass; endless mode entry with seed display/entry.
 cart completes each premade level; scoring boundary cases (0 delivered,
 15/15, >115 s); retry fully resets physics/render/input state; save → reload
 → rerun a cart is identical; gap levels have no invisible bridges; endless
-reverse-then-forward drive is seamless.
+reverse-then-forward drive is seamless; a cart of two boxes that do NOT
+touch, connected only by springs, builds as two rigid bodies whose
+relative motion is real (spring compresses/extends under load and
+bounce — the original's articulated-cart charm; amendment 2026-09-22).
+
+### S6V — Whole-game verification (after S6; plan amendment 2026-09-22)
+Two independent checks of the integrated game, per the user's directive:
+1. **Wide cross-seam audit (Codex sol-medium)**: one fresh-context review
+   of the COMPLETE merged main — not per-slice; explicitly across the
+   seams (builder→attach→physics, physics→snapshot→render, terrain
+   streaming→render chunks, run events→UI/scoring, SW/precache→deploy),
+   the INTEGRATION.md ledger items as its checklist, and the premade
+   level data.
+2. **Live playtest (Opus agent, browser)**: actually play each premade
+   level and endless with several cart designs (example cart, minimal
+   cart, spring-heavy cart); verify feel against the recovered original
+   constants; screenshot each level; report tuning issues into S6T's
+   backlog rather than fixing inline.
+
+### S6T — Tuning & playability (after S6V; plan amendment 2026-09-22)
+A dedicated slice for making it FUN, driven by S6V's playtest backlog:
+- Physics feel pass: torque cap, shock frequency/damping, friction,
+  restitution — small, recorded deviations from the original allowed
+  where they play better; each change re-run against the S1 scenario
+  timings.
+- **Level excitement validation**: each premade level must contain
+  tricky, distinct challenges (washboards, clearable-but-scary gaps,
+  launch lips, at least one risk/reward shortcut); an automated
+  "excitement audit" (feature census per level: counts + spacing of
+  hazards vs. flat stretches) plus playtest judgment. Endless generator
+  difficulty ramp checked at 3 depths.
+- Builder part tuning: sizes, masses, costs of straws/boxes/wheels/
+  springs so varied carts are viable.
+- Spring/shock ART decision: umbrella-spring concept is under review
+  (user doubt, 2026-09-22); replacement candidates are drink-native
+  coils — Hawthorne-strainer coil spring, bendy-straw bellows, curly
+  straw, citrus-peel spiral. Swap is art-only (artCatalog + SVGs);
+  physics untouched.
 
 ### S7 — Audio (parallel with S6)
 Per-theme music loops (cross-fade by course quarter, like the original), SFX:
