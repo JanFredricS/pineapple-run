@@ -8,7 +8,7 @@ import { PhysicsWorld } from '../../src/physics/engine';
 import { LevelChunkSource, type ChunkLifecycleListener, type ReadonlyTerrainChunk } from '../../src/terrain/chunks';
 import { ProceduralChunkSource } from '../../src/terrain/generator';
 import { TerrainStreamer } from '../../src/terrain/runtime';
-import { auditorProfile, auditorProfileConvex, denseArcCorner, denseKinks, zigZagComb } from './profiles';
+import { auditorProfile, auditorProfileConvex, denseArcCorner, denseKinks, zigZagComb, truncatedWindowProfile } from './profiles';
 
 const terrainOf = (...spans: Vec2[][]): TerrainDef => ({
   spans: spans.map((points, i) => ({ id: `s${i}`, points })),
@@ -263,16 +263,16 @@ describe('TerrainStreamer', () => {
     }
   });
 
-  it('audit S3-3 #1: dense-window seams (mid-tooth, concave valley, straightest convex) match one chain', async () => {
+  it('audit S3-3 #1: dense-window safe seams and merged unsafe windows match one chain', async () => {
     // Every profile is too dense at x = 40 for the normal clearance cut. Discriminating (measured):
     // cutting the fine combs at a convex tip instead of a valley deviates up to 0.06; overlapping
     // the chains at the seam deviates 0.08 (fine comb) and 0.22 (kinks, box).
-    const profiles: { name: string; pts: Vec2[]; y0: number; kind: 'segment' | 'vertex' }[] = [
+    const profiles: { name: string; pts: Vec2[]; y0: number; kind: 'segment' | 'merged' }[] = [
       { name: 'auditor comb 9<->11', pts: zigZagComb(38, 43, 9, 11), y0: 8.6, kind: 'segment' },
-      { name: 'fine comb', pts: zigZagComb(38, 43, 10, 10.004), y0: 9.6, kind: 'vertex' },
-      { name: 'fine comb, tip at x = 40', pts: zigZagComb(37.995, 43, 10, 10.004), y0: 9.6, kind: 'vertex' },
-      { name: 'dense convex/flat kinks', pts: denseKinks(), y0: 9.6, kind: 'vertex' },
-      { name: 'dense convex arc', pts: denseArcCorner(), y0: 9.6, kind: 'vertex' },
+      { name: 'fine comb', pts: zigZagComb(38, 43, 10, 10.004), y0: 9.6, kind: 'merged' },
+      { name: 'fine comb, tip at x = 40', pts: zigZagComb(37.995, 43, 10, 10.004), y0: 9.6, kind: 'merged' },
+      { name: 'dense convex/flat kinks', pts: denseKinks(), y0: 9.6, kind: 'merged' },
+      { name: 'dense convex arc', pts: denseArcCorner(), y0: 9.6, kind: 'merged' },
     ];
     const run = async (pts: Vec2[], chunked: boolean, body: 'ball' | 'box', x0: number, y0: number, vx: number) => {
       const w = await PhysicsWorld.create();
@@ -296,14 +296,14 @@ describe('TerrainStreamer', () => {
     for (const { name, pts, y0, kind } of profiles) {
       const src = new LevelChunkSource({ spans: [{ id: 'a', points: pts }], friction: 0.9, restitution: 0 });
       const seam = src.chunk(0).pieces.at(-1)!.at(-1)!;
-      expect(src.chunk(1).pieces[0]![0], name).toEqual(seam);
-      expect(pts.some((v) => v.x === seam.x && v.y === seam.y) ? 'vertex' : 'segment', name).toBe(kind);
+      if (kind === 'segment') expect(src.chunk(1).pieces[0]![0], name).toEqual(seam);
+      else expect(src.chunk(1).pieces, name).toEqual([]);
       for (const [body, x0, vx] of [['ball', 39, 1], ['ball', 38.6, 4], ['box', 38.8, 4], ['ball', 39.5, 0.3]] as const) {
         if (body === 'box' && kind === 'segment') continue; // a box stalls against the 2 m teeth before the seam
         const one = await run(pts, false, body, x0, y0, vx);
         const many = await run(pts, true, body, x0, y0, vx);
         // reached the seam (ball: its contact point; box: its front face)
-        expect(Math.max(...one.map((t) => t.x)) + (body === 'box' ? 0.5 : 0.4), `${name} ${body} @ ${vx}`).toBeGreaterThan(seam.x);
+        expect(Math.max(...one.map((t) => t.x)) + (body === 'box' ? 0.5 : 0.4), `${name} ${body} @ ${vx}`).toBeGreaterThan(kind === 'merged' ? 40 : seam.x);
         let worst = 0;
         for (let i = 0; i < one.length; i++) {
           const da = Math.abs(one[i]!.angle - many[i]!.angle);
@@ -312,6 +312,46 @@ describe('TerrainStreamer', () => {
         expect(worst, `${name} ${body} @ ${vx} m/s`).toBeLessThan(0.005);
       }
     }
+  });
+
+  it('audit S3-4: rolling over the truncated-window crest matches one continuous chain', async () => {
+    const pts = truncatedWindowProfile();
+    const run = async (chunked: boolean) => {
+      const w = await PhysicsWorld.create();
+      if (chunked) new TerrainStreamer(w, new LevelChunkSource(terrainOf(pts))).loadAll();
+      else w.addChain(w.createBody({ type: 'static', position: { x: 0, y: 0 }, role: 'terrain' }), pts, { friction: 0.9, restitution: 0 });
+      const b = ball(w, 39.3, 9.606, 1);
+      const trace: Vec2[] = [];
+      for (let i = 0; i < 180; i++) {
+        w.step();
+        trace.push(w.getTransform(b));
+      }
+      w.destroy();
+      return trace;
+    };
+    const one = await run(false);
+    const many = await run(true);
+    expect(Math.max(...one.map((p) => p.x))).toBeGreaterThan(40.05);
+    expect(Math.max(...one.map((p, i) => Math.hypot(p.x - many[i]!.x, p.y - many[i]!.y)))).toBeLessThan(0.005);
+  });
+
+  it('retains one owner of an unsplittable piece across multiple boundaries and releases it beyond its extent', async () => {
+    const pts = zigZagComb(38, 165, 10, 10.004);
+    const w = await PhysicsWorld.create();
+    const source = new LevelChunkSource(terrainOf(pts));
+    const t = new TerrainStreamer(w, source, { maxChunks: 1 });
+    expect(source.occupiedChunks()).toEqual([0]);
+    for (const xs of [[150], [10, 150], [150], [10]]) {
+      t.update(xs);
+      expect(t.loadedChunks()).toEqual([0]);
+      expect(t.loadedChunkData()[0]!.chunk.pieces).toEqual([pts]);
+      expect(w.manifest().bodies.filter((b) => b.role === 'terrain')).toHaveLength(1);
+    }
+    t.update([1000]);
+    expect(t.loadedChunks()).toEqual([]);
+    t.update([150]); // load directly inside the overhang, without visiting owner chunk
+    expect(t.loadedChunks()).toEqual([0]);
+    w.destroy();
   });
 
   it('gaps are real holes: a ball over the gap falls through, one beside it does not', async () => {

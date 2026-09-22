@@ -79,3 +79,10 @@ export function denseKinks(): Vec2[] {
   span.push({ x: 120, y: last.y + 1 });
   return span;
 }
+
+/** Round-4 auditor: only the ~176 degree crest has 5 cm of tail clearance. */
+export function truncatedWindowProfile(): Vec2[] {
+  const pts = [{ x: 38, y: 10.006 }, { x: 39.9998, y: 10.006 }, { x: 40, y: 10 }, { x: 40.0002, y: 10.006 }];
+  for (let i = 1; i <= 10; i++) pts.push({ x: 40.0002 + i * 0.00499, y: 10.006 + (i % 2) * 0.004 });
+  return pts; // end x=40.0501; all dense segments 6–6.4 mm, preserved by sanitization
+}

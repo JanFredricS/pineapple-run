@@ -64,6 +64,7 @@ export interface ChunkRange {
 export interface ChunkBounds {
   firstChunk: number;
   lastChunk: number;
+  overlappingChunks?(minX: number, maxX: number): readonly number[];
 }
 
 export interface StreamingPlan {
@@ -118,10 +119,15 @@ function windowRanges(xs: readonly number[], bounds: ChunkBounds, cfg: Streaming
   const win = retentionWindow(xs, cfg)!;
   const full = chunkRangeForWindow({ min: win.min - extra, max: win.max + extra }, cfg.chunkWidth, bounds);
   const cap = Math.max(1, Math.floor(cfg.maxChunks));
-  if (full.to - full.from + 1 <= cap) return full.from <= full.to ? [full] : [];
-  return mergeRanges(
-    xs.map((x) => chunkRangeForWindow({ min: x - cfg.behind - extra, max: x + cfg.ahead + extra }, cfg.chunkWidth, bounds)),
-  );
+  const nominal = full.to - full.from + 1 <= cap ? [full] :
+    xs.map((x) => chunkRangeForWindow({ min: x - cfg.behind - extra, max: x + cfg.ahead + extra }, cfg.chunkWidth, bounds));
+  // An unsafe seam can leave a piece spanning many nominal chunks. Keep its
+  // single owner for each live body's actual window, including under the cap
+  // fallback and hysteresis. Never duplicate its chain into other chunks.
+  const owners = xs.flatMap((x) =>
+    (bounds.overlappingChunks?.(x - cfg.behind - extra, x + cfg.ahead + extra) ?? [])
+      .map((k) => ({ from: k, to: k })));
+  return mergeRanges([...nominal, ...owners]);
 }
 
 /**

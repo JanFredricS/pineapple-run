@@ -17,7 +17,7 @@
  *   (the same computed numbers, bit-for-bit). Real span ends (gap edges) keep
  *   the engine's straight ghost extension, as before. Where the span is too
  *   dense near a boundary for that, cutAt falls back to a vertex seam chosen
- *   to keep the ghost error harmless (see cutAt).
+ *   only when its ghost error is bounded (see cutAt), otherwise it stays uncut.
  *
  * Determinism: every cut decision is LOCAL (the segment containing the
  * nominal boundary's window, plus the span's own ends, on the once-sanitized
@@ -50,7 +50,7 @@ export interface TerrainChunk {
   /** Nominal bounds [index*W, (index+1)*W). */
   x0: number;
   x1: number;
-  /** Actual geometric x-extent of the pieces (may overhang nominal bounds by a few cm); null if empty. */
+  /** Actual geometric x-extent of the pieces (may overhang nominal bounds when no safe seam exists); null if empty. */
   extent: { minX: number; maxX: number } | null;
   /** Polylines, left -> right, >= 2 points each, y-down metres. */
   pieces: Vec2[][];
@@ -75,6 +75,8 @@ export interface TerrainSource {
    * enumerate (and allocate) every empty chunk in between.
    */
   occupiedChunks?(): readonly number[];
+  /** Owners of uncut pieces intersecting this window outside their nominal chunk. */
+  overlappingChunks?(minX: number, maxX: number): readonly number[];
 }
 
 /** A chunk as handed to listeners: deep-frozen, shared by every listener (never mutate). */
@@ -125,16 +127,15 @@ interface Piece {
 }
 
 /**
- * Furthest a cut may be pushed past its nominal boundary (m). Past this the
- * cut falls back to a segment midpoint or a vertex (see cutAt), so a piece never strays far from
- * its chunk's nominal bounds whatever the input's vertex density.
+ * Furthest a cut may be pushed past its nominal boundary (m). If no safe
+ * cut exists in this window, retain the unsplit piece by its actual extent.
  */
 export const MAX_CUT_SHIFT = 0.5;
 
 const maxShift = (width: number) => Math.min(MAX_CUT_SHIFT, width / 8);
 
 /**
- * Largest |sin(turn)| at which a vertex counts as straight (an exact vertex
+ * Largest |sin(turn)| at which a vertex counts as straight (a bounded-error vertex
  * seam, see cutAt). The engine's 1 m ghost then deviates from the true
  * neighbour segment's line by <= 1 mm, and the angle is 10x inside Box2D's own
  * chain-normal tolerance (sinTol = 0.01 in Box2D v3's chain-segment manifold).
@@ -160,61 +161,29 @@ interface Cut {
 }
 
 /**
- * Choose the cut for nominal boundary X inside `pts` (one SANITIZED span, see
- * cutSpan), or null when this boundary is not cut (the span starts or ends
- * within MIN_PIECE_WIDTH of it — that boundary's sliver stays with its
- * neighbour). The window is [lowX, limit] = [max(X, afterX +
- * MIN_PIECE_WIDTH), X + maxShift]. In order of preference:
+ * Choose a cut in [max(X, afterX + MIN_PIECE_WIDTH), X + maxShift].
+ * Try x-clearance interpolation, then a >=11 mm segment midpoint, then the
+ * leftmost straight vertex. Otherwise do NOT cut, even for a full window.
  *
- * 1. Segment cut, x-clearance (the normal case): interpolated strictly inside
- *    a segment, >= MIN_CUT_CLEARANCE in x from both of its vertices, at the
- *    first such position at or after X. Exact seam (the seam rule above).
+ * Seam bound, independent of window size/count and distance to either end:
+ * an interior segment cut has collinear neighbours. A vertex is accepted
+ * only if dot(u,w)>0 and cross(u,w)^2 <= 1e-6 |u|^2 |w|^2. Thus its turn
+ * satisfies |theta| <= asin(1e-3), and either one-metre ghost is at most
+ * 1 mm from the true neighbour's ray. No concave/convex exception exists.
+ * Segment cuts also pass this predicate on the ACTUAL interpolated point,
+ * guarding coordinate-rounding on very steep segments. With validated
+ * coordinates (|coordinate|<=1e6), spacing >=5 mm, and IEEE double arithmetic,
+ * squared norms/products neither overflow nor approach underflow. The
+ * accumulated error in normalized cross is <64*Number.EPSILON (bound each
+ * rounded sum/product by epsilon times the sum of absolute products).
+ * Thus |sin(theta)| <= 1e-3 + 64*epsilon; dot>0 excludes the near-pi branch.
+ * A conservative bound including rounding is 0.001001 radians / 1.001 mm.
+ * Only +,-,*,/ and comparisons are used; no sqrt/trig decides a cut.
  *
- * 2. Segment cut, length-clearance: the midpoint of the first segment at
- *    least MIN_SPLIT_LENGTH long whose midpoint lies in the window. Also
- *    exact. This catches segments that are short in x only (audit S3-3 #1's
- *    5 mm-pitch, 2 m-tall zig-zag is cut in the middle of a tooth).
- *
- * 3. Vertex seam (every segment near X is shorter than MIN_SPLIT_LENGTH or
- *    2 * MIN_CUT_CLEARANCE in x): both pieces end on a vertex c, each with
- *    an extrapolated (straight-on) ghost. Box2D uses a ghost only to decide
- *    how the chain end's VERTEX region collides; the segments' faces collide
- *    either way. Candidates are the vertices in the window, preferring
- *    (leftmost within a class):
- *    a. a STRAIGHT vertex (isStraightVertex): the ghosts run along the true
- *       neighbouring segments — exact.
- *    b. a CONCAVE vertex (the surface turns up, a valley): a straight-on
- *       ghost only loses vertex contacts that a true concave ghost would
- *       snap onto a face normal anyway, and a body in a valley touches both
- *       faces, which both chains keep — no lip. (Measured on dense zig-zags:
- *       trajectories identical to one continuous chain.)
- *    c. otherwise every window vertex is convex: the one with the SMALLEST
- *       turn (compareTurn). A span's x strictly increases, so its direction
- *       angles lie in (-90°, 90°) and k consecutive convex vertices turn by
- *       less than 180° in total: the chosen turn is < 180°/k. Step 1 leaves
- *       every segment starting in the window < 2 cm in x, so a 0.5 m window
- *       holds k >= 24 vertices: the ghost error is < 7.5°, only at a convex
- *       vertex of a crest sampled every < 2 cm over the whole window
- *       (documented residual, audit S3-3 #1). Turns under ~0.57° are inside
- *       Box2D's own tolerance and change nothing.
- *
- *    Why not overlap the two chains (end the left piece past c and start the
- *    right one before it, so c is interior to both)? Measured against one
- *    continuous chain, duplicated coincident segments on two bodies double
- *    the contact constraints there and perturb bodies MORE than a vertex seam
- *    does: a box sliding over a dense convex kink deviated 0.22 m with an
- *    overlap vs 0.002 m with the vertex seam; on a dense fine comb 0.08 m vs
- *    0 (concave vertex); a forced overlap on a dense straight incline, where
- *    the butt seam is exact, still deviated 0.03 m.
- *
- * The decision uses the sanitized span, i.e. exactly the neighbours the
- * pieces will have (audit S3-3 #2), and only + − × comparisons (audit S3-3
- * #4), so it is identical on every engine.
- *
- * Invariant (relied on by cutSpan): a returned cut lies in
- * [lowX, limit + MIN_CUT_CLEARANCE]. (A vertex beyond the limit is taken only
- * when the window holds no vertex at all: then it is the right end of a
- * segment step 1 skipped, so less than 2 * MIN_CUT_CLEARANCE past lowX.)
+ * Sanitization happens once BEFORE selection, so the tested neighbours are
+ * the emitted neighbours. A truncated or empty window cannot weaken the
+ * predicate: it can only cause no cut. Uncut pieces can cross any number of
+ * boundaries; their owner is retained by actual extent (LevelChunkSource).
  */
 function cutAt(pts: readonly Vec2[], X: number, afterX: number, width: number): Cut | null {
   const n = pts.length;
@@ -242,7 +211,8 @@ function cutAt(pts: readonly Vec2[], X: number, afterX: number, width: number): 
     if (cx > b.x - MIN_CUT_CLEARANCE) continue; // segment too short in x: try the next one
     if (xe - cx < MIN_PIECE_WIDTH) return null;
     const t = (cx - a.x) / (b.x - a.x);
-    return segmentCut(i, { x: cx, y: a.y + (b.y - a.y) * t });
+    const p = { x: cx, y: a.y + (b.y - a.y) * t };
+    if (isStraightVertex(a, p, b)) return segmentCut(i, p);
   }
   // 2. length-clearance segment cut (midpoint of a segment >= MIN_SPLIT_LENGTH).
   const minLenSq = MIN_SPLIT_LENGTH * MIN_SPLIT_LENGTH;
@@ -258,55 +228,30 @@ function cutAt(pts: readonly Vec2[], X: number, afterX: number, width: number): 
     if (m.x > limit) break;
     if (!(m.x > a.x && m.x < b.x)) continue; // too steep to place a distinct x inside
     if (xe - m.x < MIN_PIECE_WIDTH) break; // end sliver: vertex fallback
-    return segmentCut(i, m);
+    if (isStraightVertex(a, m, b)) return segmentCut(i, m);
   }
-  // 3. Vertex seam.
-  let firstV = -1;
-  let concave = -1;
-  let convex = -1;
+  // 3. A hard per-vertex bound, including a one-candidate end window.
   for (let c = Math.max(1, lo); c < n - 1; c++) {
     const v = pts[c]!;
     if (v.x < lowX) continue;
-    if (xe - v.x < MIN_PIECE_WIDTH) break; // the rest is an end sliver
-    if (v.x > limit) {
-      if (firstV < 0) firstV = c; // the window holds no vertex: take the first one after it
-      break;
-    }
-    const a = pts[c - 1]!;
-    const b = pts[c + 1]!;
-    if (isStraightVertex(a, v, b)) return vertexCut(c, v);
-    if (firstV < 0) firstV = c;
-    if (turnCross(a, v, b) < 0) {
-      if (concave < 0) concave = c;
-    } else if (convex < 0 || compareTurn(a, v, b, pts[convex - 1]!, pts[convex]!, pts[convex + 1]!) < 0) {
-      convex = c;
-    }
+    if (v.x > limit || xe - v.x < MIN_PIECE_WIDTH) break;
+    if (isStraightVertex(pts[c - 1]!, v, pts[c + 1]!)) return vertexCut(c, v);
   }
-  const c = concave >= 0 ? concave : convex >= 0 ? convex : firstV;
-  return c >= 0 ? vertexCut(c, pts[c]!) : null;
+  return null;
 }
 
 const vertexCut = (c: number, v: Vec2): Cut => ({ leftUpTo: c + 1, leftExtra: null, rightHead: { ...v }, resume: c + 1 });
 
 /**
- * cross(v - a, b - v). Spans run left to right in y-down metres, so > 0 is a
- * CONVEX vertex (the surface turns down, away from the air: a crest), < 0 a
- * concave one (a valley), 0 collinear.
- */
-function turnCross(a: Vec2, v: Vec2, b: Vec2): number {
-  return (v.x - a.x) * (b.y - v.y) - (v.y - a.y) * (b.x - v.x);
-}
-
-/**
  * True iff segments a->v and v->b point the same way to within
  * STRAIGHT_SIN_TOL: dot > 0 and cross² <= tol² * |u|² * |w|².
  *
- * Determinism (audit S3-3 #4): this and compareTurn use only IEEE-754 double
+ * Determinism (audit S3-3 #4): this uses only IEEE-754 double
  * + − × and comparisons, which ECMAScript specifies exactly (round to nearest,
  * ties to even, no fused multiply-add), so every conforming engine computes
  * the same booleans for the same inputs — unlike Math.sqrt/hypot/atan2, which
  * the spec lets implementations approximate. Candidates are then chosen by
- * class and position (leftmost), with a strict comparison, so no near-tie can
+ * position (leftmost), so no near-tie can
  * resolve differently on another engine.
  */
 export function isStraightVertex(a: Vec2, v: Vec2, b: Vec2): boolean {
@@ -318,20 +263,6 @@ export function isStraightVertex(a: Vec2, v: Vec2, b: Vec2): boolean {
   if (!(dot > 0)) return false;
   const cross = ux * wy - uy * wx;
   return cross * cross <= STRAIGHT_SIN_TOL * STRAIGHT_SIN_TOL * ((ux * ux + uy * uy) * (wx * wx + wy * wy));
-}
-
-/**
- * Sign of turn(a1,v1,b1) − turn(a2,v2,b2) for two CONVEX, non-straight
- * vertices (cross > 0), without sqrt/atan2: the turn angle θ = atan2(cross,
- * dot) lies in (0, π) where cot θ = dot / cross is strictly decreasing, so
- * θ1 < θ2 ⇔ dot1 · cross2 > dot2 · cross1 (cross > 0, no sign flips). Rounded
- * products may order a near-tie arbitrarily, but identically on every engine.
- */
-export function compareTurn(a1: Vec2, v1: Vec2, b1: Vec2, a2: Vec2, v2: Vec2, b2: Vec2): number {
-  const dot = (a: Vec2, v: Vec2, b: Vec2) => (v.x - a.x) * (b.x - v.x) + (v.y - a.y) * (b.y - v.y);
-  const l = dot(a1, v1, b1) * turnCross(a2, v2, b2);
-  const r = dot(a2, v2, b2) * turnCross(a1, v1, b1);
-  return l > r ? -1 : l < r ? 1 : 0;
 }
 
 const MIN_VERTEX_SPACING_SQ = MIN_VERTEX_SPACING * MIN_VERTEX_SPACING;
@@ -363,21 +294,18 @@ export function sanitizePiece(points: readonly Vec2[]): Vec2[] | null {
 }
 
 /**
- * Cut one span into pieces at every nominal chunk boundary it crosses.
- * Each piece is tagged with the chunk it covers: a piece runs from the cut
- * for boundary k*W (or the span start) to the cut for boundary (k+1)*W (or
- * the span end), and belongs to chunk k. Cuts sit in [k*W, k*W + ~maxShift]
- * (cutAt), so a piece covers its chunk's nominal range up to that shift. A
- * skipped boundary (span end within MIN_PIECE_WIDTH of it) folds the sliver
- * into the neighbouring piece: a span starting just before boundary k*W
- * belongs to chunk k; one ending just after it stays in chunk k-1.
+ * Try to cut one span at each nominal chunk boundary it crosses.
+ * Each piece belongs to the chunk where it starts (allowing the existing
+ * near-start sliver fold). Skipped unsafe boundaries leave it in that owner,
+ * even if a later boundary is cut. LevelChunkSource records oversized extents
+ * so streaming can load/retain the owner wherever the piece is needed.
  *
  * The span is sanitized ONCE, before any cut decision (audit S3-3 #2): the
- * cut logic (clearances, vertex classes) sees exactly the vertices the
+ * cut logic (clearances, straightness) sees exactly the vertices the
  * pieces will contain, and the pieces are not re-sanitized — they are runs of
  * consecutive sanitized vertices plus interpolated cut points >=
- * MIN_CUT_CLEARANCE (> MIN_VERTEX_SPACING) from their segment's vertices, so
- * every piece already satisfies the spacing rule. (Generated terrain is spaced
+ * MIN_CUT_CLEARANCE in x, or half MIN_SPLIT_LENGTH in length, from their
+ * segment's vertices, so every piece already satisfies the spacing rule. (Generated terrain is spaced
  * far above MIN_VERTEX_SPACING, so sanitizing is the identity on it and the
  * procedural source's local windows cut exactly like the whole level.)
  */
@@ -398,7 +326,7 @@ export function cutSpan(raw: readonly Vec2[], width = CHUNK_WIDTH): { chunk: num
     if (!cut) continue;
     for (; nextVertex < cut.leftUpTo; nextVertex++) current.push({ ...points[nextVertex]! });
     if (cut.leftExtra) current.push(cut.leftExtra);
-    pieces.push({ chunk: k - 1, points: current });
+    pieces.push({ chunk, points: current });
     current = [cut.rightHead];
     nextVertex = cut.resume;
     lastCutX = cut.rightHead.x;
@@ -470,6 +398,7 @@ export class LevelChunkSource implements TerrainSource {
   readonly friction: number;
   readonly restitution: number;
   private readonly byChunk: Map<number, Vec2[][]>;
+  private readonly overhangs: { chunk: number; minX: number; maxX: number }[] = [];
 
   constructor(terrain: TerrainDef, width = CHUNK_WIDTH) {
     this.chunkWidth = width;
@@ -479,6 +408,15 @@ export class LevelChunkSource implements TerrainSource {
       terrain.spans.map((s) => s.points),
       width,
     );
+    for (const [chunk, pieces] of this.byChunk) {
+      for (const p of pieces) {
+        const minX = p[0]!.x;
+        const maxX = p[p.length - 1]!.x;
+        if (minX < chunk * width || maxX > (chunk + 1) * width) {
+          this.overhangs.push({ chunk, minX, maxX });
+        }
+      }
+    }
     let first = Infinity;
     let last = -Infinity;
     for (const k of this.byChunk.keys()) {
@@ -492,6 +430,10 @@ export class LevelChunkSource implements TerrainSource {
 
   chunk(index: number): TerrainChunk {
     return makeChunk(index, clonePieces(this.byChunk.get(index) ?? []), this.chunkWidth);
+  }
+
+  overlappingChunks(minX: number, maxX: number): readonly number[] {
+    return [...new Set(this.overhangs.filter((p) => p.minX <= maxX && p.maxX >= minX).map((p) => p.chunk))].sort((a, b) => a - b);
   }
 
   occupiedChunks(): readonly number[] {

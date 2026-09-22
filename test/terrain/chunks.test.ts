@@ -10,13 +10,13 @@ import {
   MIN_CUT_CLEARANCE,
   MIN_PIECE_WIDTH,
   isStraightVertex,
-  MIN_SPLIT_LENGTH,
   MIN_VERTEX_SPACING,
   sanitizePiece,
   STRAIGHT_SIN_TOL,
   surfaceYAt,
 } from '../../src/terrain/chunks';
-import { auditorProfile, auditorProfileConvex, denseArcCorner, zigZagComb } from './profiles';
+import { planStreaming } from '../../src/terrain/streaming';
+import { auditorProfile, auditorProfileConvex, denseArcCorner, zigZagComb, truncatedWindowProfile } from './profiles';
 
 const W = CHUNK_WIDTH;
 
@@ -47,7 +47,7 @@ function engineGhost(from: Vec2, to: Vec2): Vec2 {
  * direction of the ghost segment, so this is "ghost == true neighbour").
  */
 function expectExactSeams(pieces: Vec2[][], sinTol = 1e-9): void {
-  expect(pieces.length).toBeGreaterThan(1);
+  expect(pieces.length).toBeGreaterThan(0);
   for (let i = 1; i < pieces.length; i++) {
     const L = pieces[i - 1]!;
     const R = pieces[i]!;
@@ -67,83 +67,34 @@ function expectExactSeams(pieces: Vec2[][], sinTol = 1e-9): void {
   }
 }
 
-const turnAngle = (a: Vec2, v: Vec2, b: Vec2) => {
-  const ux = v.x - a.x;
-  const uy = v.y - a.y;
-  const wx = b.x - v.x;
-  const wy = b.y - v.y;
-  return Math.atan2(ux * wy - uy * wx, ux * wx + uy * wy); // > 0 convex (y-down), < 0 concave
-};
-
-type SeamKind = 'segment' | 'straight' | 'concave' | 'convex';
-
-/**
- * Checks every seam between consecutive pieces of one span against cutAt's
- * rules and returns the seam kinds, left to right:
- * - the pieces share the seam point bit-for-bit, stay within the shift bound
- *   and honour the spacing rule (no second sanitize happens);
- * - 'segment': the seam lies strictly inside a sanitized segment — exact ghosts;
- * - vertex seams: no segment in the window could have been split, and the
- *   vertex is the preferred one: leftmost straight (ghosts exact to
- *   STRAIGHT_SIN_TOL), else leftmost concave, else the smallest convex turn.
- */
-function classifySeams(pieces: { chunk: number; points: Vec2[] }[], span: readonly Vec2[]): SeamKind[] {
+/** Check the emitted geometry independently of the selection predicate. */
+function classifySeams(pieces: { chunk: number; points: Vec2[] }[], span: readonly Vec2[]): string[] {
   const clean = sanitizePiece(span)!;
-  const kinds: SeamKind[] = [];
+  const kinds: string[] = [];
+  expectExactSeams(pieces.map((p) => p.points), 0.001001);
   for (const { points: p } of pieces) {
     for (let i = 1; i < p.length; i++) {
-      const dx = p[i]!.x - p[i - 1]!.x;
-      const dy = p[i]!.y - p[i - 1]!.y;
       expect(p[i]!.x).toBeGreaterThan(p[i - 1]!.x);
-      expect(dx * dx + dy * dy).toBeGreaterThanOrEqual(MIN_VERTEX_SPACING * MIN_VERTEX_SPACING);
+      expect(Math.hypot(p[i]!.x - p[i - 1]!.x, p[i]!.y - p[i - 1]!.y)).toBeGreaterThanOrEqual(MIN_VERTEX_SPACING - 1e-12);
     }
   }
   for (let s = 1; s < pieces.length; s++) {
     const L = pieces[s - 1]!.points;
     const R = pieces[s]!.points;
     const X = pieces[s]!.chunk * W;
-    expect(pieces[s]!.chunk).toBe(pieces[s - 1]!.chunk + 1);
+    expect(pieces[s]!.chunk).toBeGreaterThan(pieces[s - 1]!.chunk);
     const cut = L.at(-1)!;
-    expect(R[0]).toEqual(cut);
     expect(cut.x).toBeGreaterThanOrEqual(X);
-    expect(cut.x).toBeLessThanOrEqual(X + MAX_CUT_SHIFT + MIN_CUT_CLEARANCE + 1e-9);
+    expect(cut.x).toBeLessThanOrEqual(X + MAX_CUT_SHIFT + 1e-9);
     const c = clean.findIndex((v) => v.x === cut.x && v.y === cut.y);
     if (c < 0) {
       expect(clean.some((v, j) => j < clean.length - 1 && v.x < cut.x && clean[j + 1]!.x > cut.x)).toBe(true);
-      expectExactSeams([L, R]);
       kinds.push('segment');
-      continue;
-    }
-    // vertex seam: nothing in the window was splittable
-    const inWin = (x: number) => x >= X && x <= X + MAX_CUT_SHIFT;
-    const j0 = Math.max(0, clean.findIndex((v) => v.x >= X - 1) - 1);
-    const j1 = clean.findIndex((v) => v.x > X + MAX_CUT_SHIFT + 1);
-    const jEnd = j1 < 0 ? clean.length - 1 : j1;
-    for (let j = j0; j < jEnd; j++) {
-      const a = clean[j]!;
-      const b = clean[j + 1]!;
-      if (inWin((a.x + b.x) / 2)) expect(Math.hypot(b.x - a.x, b.y - a.y), `splittable segment at ${a.x}`).toBeLessThan(MIN_SPLIT_LENGTH);
-    }
-    const win: number[] = [];
-    for (let j = Math.max(1, j0); j < Math.min(jEnd + 1, clean.length - 1); j++) if (inWin(clean[j]!.x)) win.push(j);
-    const straight = win.filter((j) => isStraightVertex(clean[j - 1]!, clean[j]!, clean[j + 1]!));
-    const concave = win.filter((j) => !straight.includes(j) && turnAngle(clean[j - 1]!, clean[j]!, clean[j + 1]!) < 0);
-    const turn = (j: number) => turnAngle(clean[j - 1]!, clean[j]!, clean[j + 1]!);
-    if (straight.length) {
-      expect(c).toBe(straight[0]);
-      expectExactSeams([L, R], STRAIGHT_SIN_TOL + 1e-9);
-      kinds.push('straight');
-    } else if (concave.length) {
-      expect(c).toBe(concave[0]);
-      kinds.push('concave');
     } else {
-      for (const j of win) expect(turn(c)).toBeLessThanOrEqual(turn(j) + 1e-12);
-      expect(turn(c)).toBeLessThan(Math.PI / win.length);
-      kinds.push('convex');
+      expect(L.at(-2)).toEqual(clean[c - 1]);
+      expect(R[1]).toEqual(clean[c + 1]);
+      kinds.push('straight');
     }
-    // the pieces keep the true neighbours of the seam vertex
-    expect(L.at(-2)).toEqual(clean[c - 1]);
-    expect(R[1]).toEqual(clean[c + 1]);
   }
   return kinds;
 }
@@ -277,20 +228,23 @@ describe('cutSpan', () => {
     }
   });
 
-  it('audit S3-3 #1: a fine comb too short to split (6.4 mm segments, ~77° turns) is cut at a valley (concave) vertex', () => {
+  it('audit S3-3 #1: a fine comb too short to split stays uncut across unsafe windows', () => {
     for (const off of [0, -0.005, 0.0021]) {
       const span = zigZagComb(38 + off, 125, 10, 10.004);
       const pieces = cutSpan(span);
-      expect(classifySeams(pieces, span)).toEqual(['concave', 'concave', 'concave']);
+      expect(pieces).toHaveLength(1);
+      expect(pieces[0]!.chunk).toBe(0);
+      expect(pieces[0]!.points).toEqual(sanitizePiece(span));
+      expect(classifySeams(pieces, span)).toEqual([]);
     }
   });
 
-  it('audit S3-3 #1: an all-convex dense crest is cut at its smallest turn (bounded < 180°/k)', () => {
+  it('audit S3-3 #1: an all-convex dense crest skips unsafe windows without reassigning earlier terrain', () => {
     const span = denseArcCorner();
     const pieces = cutSpan(span);
-    expect(pieces.map((p) => p.chunk)).toEqual([-1, 0, 1, 2]);
-    expect(classifySeams(pieces, span)).toEqual(['segment', 'convex', 'segment']);
-    // a crest with varying turns: the smallest one wins, not the first
+    expect(pieces.map((p) => p.chunk)).toEqual([-1, 0, 2]);
+    expect(classifySeams(pieces, span)).toEqual(['segment', 'segment']);
+    // Varying turns also cannot bypass the hard bound.
     const crest: Vec2[] = [{ x: 0, y: 10 }];
     let y = 10;
     let slope = 0;
@@ -300,7 +254,8 @@ describe('cutSpan', () => {
       y += 0.006 * slope;
     }
     crest.push({ x: 60, y: y + 20 * slope });
-    expect(classifySeams(cutSpan(crest), crest)).toEqual(['convex']);
+    expect(cutSpan(crest)).toHaveLength(1);
+    expect(classifySeams(cutSpan(crest), crest)).toEqual([]);
   });
 
   it('audit S3-3 #2: sanitization cannot change the seam direction (auditor profile with a 1 mm near-duplicate)', () => {
@@ -351,14 +306,58 @@ describe('cutSpan', () => {
       }
       span.push({ x: 140, y: 5 });
       const pieces = cutSpan(span);
-      expect(pieces.map((p) => p.chunk)).toEqual([0, 1, 2, 3]);
+      expect(pieces[0]!.chunk).toBe(0);
       for (const k of classifySeams(pieces, span)) kinds.add(k);
       // the pieces hold every sanitized vertex
       const seen = new Set<string>();
       for (const p of pieces) for (const v of p.points) seen.add(`${v.x},${v.y}`);
       for (const v of sanitizePiece(span)!) expect(seen.has(`${v.x},${v.y}`)).toBe(true);
     }
-    expect([...kinds].sort()).toEqual(['concave', 'convex', 'segment', 'straight']);
+    expect([...kinds].sort()).toEqual(['segment', 'straight']);
+  });
+
+  it('audit S3-4: the sole 176 degree candidate in a truncated window is not cut', () => {
+    const span = truncatedWindowProfile();
+    const pieces = cutSpan(span);
+    expectExactSeams(pieces.map((p) => p.points), 0.001001);
+    expect(pieces).toEqual([{ chunk: 0, points: span }]);
+  });
+
+  it('audit S3-4: dense random end offsets preserve bounded ghosts, widths and ownership', () => {
+    let seed = 97813;
+    const rnd = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32);
+    let seams = 0;
+    let merged = 0;
+    for (let trial = 0; trial < 300; trial++) {
+      const end = 40 + (trial + 1) * 0.002; // (0, 0.6], including both sliver/window transitions
+      const span: Vec2[] = [{ x: 1, y: 10 }, { x: 39.9, y: 10 }];
+      while (span.at(-1)!.x < end) {
+        const prev = span.at(-1)!;
+        const x = Math.min(end, prev.x + 0.0001 + rnd() * 0.009);
+        const y = trial % 3 === 0 ? 10 + rnd() * 0.009 : trial % 3 === 1 ? 10 + (span.length % 2) * 0.006 : prev.y + (x - prev.x) * 0.3;
+        span.push({ x, y });
+      }
+      const pieces = cutSpan(span);
+      seams += pieces.length - 1;
+      if (pieces.length === 1) merged++;
+      classifySeams(pieces, span);
+      expect(pieces[0]!.chunk).toBe(0);
+      expect(pieces.at(-1)!.points.at(-1)).toEqual(span.at(-1));
+      const source = new LevelChunkSource({ spans: [{ id: 'sweep', points: span }], friction: 0.9, restitution: 0 });
+      expect(source.occupiedChunks()).toEqual(pieces.map((p) => p.chunk));
+      for (const p of pieces) {
+        expect(p.points.at(-1)!.x - p.points[0]!.x).toBeGreaterThanOrEqual(MIN_PIECE_WIDTH);
+        expect(source.chunk(p.chunk).pieces).toContainEqual(p.points);
+        for (const x of [p.points[0]!.x, (p.points[0]!.x + p.points.at(-1)!.x) / 2, p.points.at(-1)!.x]) {
+          expect(planStreaming([], [x], source, { chunkWidth: 40, behind: 0, ahead: 0, hysteresis: 0, maxChunks: 1 }).keep).toContain(p.chunk);
+        }
+      }
+      const seen = new Set(pieces.flatMap((p) => p.points.map((v) => `${v.x},${v.y}`)));
+      for (const v of sanitizePiece(span)!) expect(seen.has(`${v.x},${v.y}`)).toBe(true);
+      expect(cutSpan(span)).toEqual(pieces);
+    }
+    expect(seams).toBeGreaterThan(0);
+    expect(merged).toBeGreaterThan(0);
   });
 
   it('isStraightVertex: collinear same-direction only, within STRAIGHT_SIN_TOL', () => {

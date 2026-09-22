@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { TerrainChunk } from '../../src/terrain/chunks';
+import { LevelChunkSource, type TerrainChunk } from '../../src/terrain/chunks';
 import { ProceduralChunkSource } from '../../src/terrain/generator';
 import {
   chunkRangeForWindow,
@@ -8,6 +8,8 @@ import {
   retentionWindow,
   type StreamingConfig,
 } from '../../src/terrain/streaming';
+
+import { zigZagComb } from './profiles';
 
 const cfg: StreamingConfig = { chunkWidth: 40, behind: 30, ahead: 90, hysteresis: 20, maxChunks: 256 };
 const endless = { firstChunk: 0, lastChunk: Infinity };
@@ -26,6 +28,26 @@ describe('retention window', () => {
 });
 
 describe('planStreaming', () => {
+  it('retains overhanging owners in capped per-body windows and applies extent hysteresis', () => {
+    const source = new LevelChunkSource({ spans: [
+      { id: 'uncut', points: zigZagComb(38, 165, 10, 10.004) }, // owner 0, ends at 195
+      { id: 'far', points: [{ x: 10000, y: 10 }, { x: 10030, y: 10 }] },
+    ], friction: 0.9, restitution: 0 });
+    const capped = { ...cfg, maxChunks: 1 };
+    const first = planStreaming([], [150, 10010], source, capped);
+    expect(first.keep).toContain(0);
+    expect(first.keep).toContain(250);
+    expect(first.keep).not.toContain(100); // no fill between the bodies
+    expect(first.keep.length).toBeLessThan(12);
+    const held = planStreaming(first.keep, [230, 10010], source, capped);
+    expect(held.keep).toContain(0); // 230-30-20 < 195: inside hysteresis only
+    expect(planStreaming([], [230, 10010], source, capped).keep).not.toContain(0);
+    const released = planStreaming(held.keep, [246, 10010], source, capped);
+    expect(released.destroy).toContain(0); // 246-30-20 > 195
+    expect(released.keep).not.toContain(0);
+    expect(planStreaming([], [150, 10010], source, capped).create).toContain(0);
+  });
+
   it('loads the window around ALL live bodies, including a trailing pineapple', () => {
     const cartOnly = planStreaming([], [500], endless, cfg);
     expect(cartOnly.create).toEqual([11, 12, 13, 14]); // [470, 590]
