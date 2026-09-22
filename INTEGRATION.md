@@ -59,6 +59,19 @@ work. S6 works through this list; each item is a plan-owner ruling.
     (original behaviour: run continues). Endless: run ends on last loss
     (S1 handles). Verify both paths in integration.
 
+11. **Renderer needs the cart design**: S4's manifest has no joint data, so
+    shocks render only via `Scene.setCartDesign(design)`; without it, part
+    art is guessed from shape. S6 must always call `setCartDesign` when
+    starting a run (S4 audit confirmed the fallback is safe but wrong-looking).
+12. **Solid props semantics** (S1 fix cycle 1): `src/run/props.ts` treats
+    `LevelDef` prop `position` as the box CENTRE, rotated by `angle`;
+    non-positive sizes are skipped. S3 level authoring and the S4 renderer
+    must use the same convention — verify at S6.
+13. **Kill-plane semantics** (S1 fix cycle 1): only the chassis (heaviest
+    rigid body) crossing killY ends the cart; other bodies are removed
+    individually with their joints; detached parts remain as debris bodies.
+    S6/S8: check debris growth over long endless runs.
+
 ## Incidents / environment
 
 - S1's first browser check attached to another session's headless Chrome
