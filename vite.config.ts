@@ -21,6 +21,12 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
+    rolldownOptions: {
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        builder: fileURLToPath(new URL('./builder-harness.html', import.meta.url)),
+      },
+    },
   },
   test: {
     environment: 'node',

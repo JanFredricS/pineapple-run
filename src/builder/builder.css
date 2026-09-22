@@ -1,0 +1,353 @@
+/*
+ * Builder UI (S2). Minimal but structured: every colour, radius, font and
+ * size is a custom property on .pr-builder so S4's napkin-sketch theme can
+ * restyle it without touching markup. Canvas colours are --pr-canvas-*
+ * (read by render.ts themeFromCss).
+ */
+
+.pr-builder {
+  /* napkin-sketch theming hooks */
+  --pr-paper: #fbfaf5;
+  --pr-ink: #2f3a48;
+  --pr-ink-soft: #66758a;
+  --pr-accent: #3c8d5a;
+  --pr-accent-ink: #ffffff;
+  --pr-danger: #c62f3e;
+  --pr-panel-bg: rgba(214, 236, 206, 0.92);
+  --pr-panel-border: #8bbf7c;
+  --pr-button-bg: #ffffff;
+  --pr-button-border: #9fb7a0;
+  --pr-button-active-bg: #3c8d5a;
+  --pr-button-active-ink: #ffffff;
+  --pr-radius: 10px;
+  --pr-font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --pr-font-hand: var(--pr-font);
+  --pr-tool-size: 52px;
+  --pr-palette-width: 188px;
+  --pr-gap: 6px;
+  --pr-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+
+  --pr-canvas-bg: var(--pr-paper);
+
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--pr-canvas-bg);
+  color: var(--pr-ink);
+  font-family: var(--pr-font);
+  font-size: 13px;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.pr-builder [hidden] {
+  display: none !important;
+}
+
+.pr-builder *,
+.pr-builder *::before,
+.pr-builder *::after {
+  box-sizing: border-box;
+}
+
+.pr-builder__stage {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+}
+.pr-builder__stage canvas {
+  display: block;
+  touch-action: none;
+}
+
+/* ------------------------------------------------------------- palette */
+.pr-palette {
+  position: absolute;
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  right: calc(8px + env(safe-area-inset-right, 0px));
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  width: var(--pr-palette-width);
+  display: flex;
+  flex-direction: column;
+  gap: var(--pr-gap);
+  padding: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--pr-panel-bg);
+  border: 1.5px solid var(--pr-panel-border);
+  border-radius: calc(var(--pr-radius) * 1.4);
+  box-shadow: var(--pr-shadow);
+  touch-action: pan-y;
+}
+
+.pr-palette__heading {
+  margin: 2px 0 0;
+  font: 600 12px/1.2 var(--pr-font-hand);
+  text-align: center;
+  color: var(--pr-ink);
+}
+
+.pr-palette__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--pr-gap);
+}
+
+.pr-palette__row {
+  display: flex;
+  gap: var(--pr-gap);
+}
+.pr-palette__row > * {
+  flex: 1;
+}
+
+.pr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 1.5px solid var(--pr-button-border);
+  border-radius: var(--pr-radius);
+  background: var(--pr-button-bg);
+  color: var(--pr-ink);
+  font: 600 12px/1.1 var(--pr-font);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.pr-btn:focus-visible {
+  outline: 2px solid var(--pr-accent);
+  outline-offset: 2px;
+}
+.pr-btn[data-pressed='true'] {
+  transform: translateY(1px);
+  filter: brightness(0.94);
+}
+.pr-btn[aria-pressed='true'] {
+  background: var(--pr-button-active-bg);
+  border-color: var(--pr-button-active-bg);
+  color: var(--pr-button-active-ink);
+}
+.pr-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.pr-btn--primary {
+  background: var(--pr-accent);
+  border-color: var(--pr-accent);
+  color: var(--pr-accent-ink);
+}
+.pr-btn--danger {
+  color: var(--pr-danger);
+}
+.pr-btn--danger.pr-btn--solid {
+  background: var(--pr-danger);
+  border-color: var(--pr-danger);
+  color: #fff;
+}
+
+.pr-tool {
+  flex-direction: column;
+  height: var(--pr-tool-size);
+  padding: 3px;
+  font-size: 10px;
+  font-weight: 500;
+}
+.pr-tool svg {
+  width: 26px;
+  height: 26px;
+  flex: none;
+}
+
+.pr-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pr-gap);
+  padding: 6px;
+  border: 1.5px dashed var(--pr-danger);
+  border-radius: var(--pr-radius);
+  background: rgba(255, 255, 255, 0.85);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------ validation panel */
+.pr-status {
+  /* top-left: the cart sits on the ground line at the bottom of the view */
+  position: absolute;
+  left: calc(8px + env(safe-area-inset-left, 0px));
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  max-width: min(420px, calc(100% - var(--pr-palette-width) - 32px));
+  max-height: 45%;
+  overflow-y: auto;
+  padding: 6px 10px;
+  border-radius: var(--pr-radius);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1.5px solid var(--pr-button-border);
+  box-shadow: var(--pr-shadow);
+}
+.pr-status[data-valid='false'] {
+  border-color: var(--pr-danger);
+}
+.pr-status__summary {
+  font-weight: 700;
+  cursor: pointer;
+}
+.pr-status[data-valid='empty'] .pr-status__summary,
+.pr-status[data-valid='true'] .pr-status__summary {
+  list-style: none;
+}
+.pr-status[data-valid='true'] .pr-status__summary {
+  color: var(--pr-accent);
+}
+.pr-status[data-valid='empty'] .pr-status__summary {
+  color: var(--pr-ink-soft);
+}
+.pr-status[data-valid='false'] .pr-status__summary {
+  color: var(--pr-danger);
+}
+.pr-status__list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.pr-status__list li {
+  margin: 3px 0;
+  cursor: default;
+}
+.pr-status__list li:hover,
+.pr-status__list li:focus {
+  color: var(--pr-danger);
+  outline: none;
+}
+.pr-status__meta {
+  color: var(--pr-ink-soft);
+  font-size: 11px;
+}
+
+/* ------------------------------------------------------------ carts panel */
+.pr-carts {
+  position: absolute;
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  right: calc(var(--pr-palette-width) + 16px + env(safe-area-inset-right, 0px));
+  width: min(300px, calc(100% - var(--pr-palette-width) - 32px));
+  max-height: calc(100% - 16px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pr-gap);
+  padding: 10px;
+  background: var(--pr-panel-bg);
+  border: 1.5px solid var(--pr-panel-border);
+  border-radius: calc(var(--pr-radius) * 1.4);
+  box-shadow: var(--pr-shadow);
+  touch-action: pan-y;
+}
+.pr-carts input {
+  width: 100%;
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 1.5px solid var(--pr-button-border);
+  border-radius: var(--pr-radius);
+  font: inherit;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.pr-carts ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pr-carts li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: var(--pr-radius);
+  background: rgba(255, 255, 255, 0.7);
+}
+.pr-carts li .pr-carts__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-carts__problem {
+  color: var(--pr-danger);
+  font-size: 11px;
+}
+.pr-carts__empty {
+  color: var(--pr-ink-soft);
+}
+
+/* ------------------------------------------------------- toasts & labels */
+.pr-toasts {
+  position: absolute;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  left: 8px;
+  right: calc(var(--pr-palette-width) + 24px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+}
+.pr-toast {
+  max-width: 100%;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--pr-ink);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: var(--pr-shadow);
+}
+.pr-toast[data-kind='error'] {
+  background: var(--pr-danger);
+}
+
+.pr-draft-label {
+  position: absolute;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(47, 58, 72, 0.85);
+  color: #fff;
+  font: 600 11px/1.2 var(--pr-font);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.pr-draft-label[data-bad='true'] {
+  background: var(--pr-danger);
+}
+
+/* ------------------------------------------------ landscape phone (~800x400) */
+@media (max-height: 480px) {
+  .pr-builder {
+    --pr-tool-size: 42px;
+    --pr-palette-width: 168px;
+    --pr-gap: 4px;
+    font-size: 12px;
+  }
+  .pr-palette {
+    padding: 6px;
+  }
+  .pr-tool span {
+    display: none;
+  }
+  .pr-btn {
+    min-height: 30px;
+    padding: 3px 6px;
+  }
+  .pr-status {
+    max-height: 38%;
+  }
+}
+
+@media (max-width: 560px) {
+  .pr-builder {
+    --pr-palette-width: 150px;
+  }
+}
