@@ -60,10 +60,49 @@ describe('planStreaming', () => {
     expect(planStreaming([3, 1, 2], [], endless, cfg)).toEqual({ keep: [1, 2, 3], create: [], destroy: [] });
   });
 
-  it('caps the window at maxChunks, keeping the forward end', () => {
-    const p = planStreaming([], [0, 1e9], endless, { ...cfg, maxChunks: 10 });
-    expect(p.create).toHaveLength(10);
-    expect(p.create.at(-1)).toBe(Math.floor((1e9 + 90) / 40));
+  it('audit S3-1 #2: past maxChunks the empty middle is dropped, never a live body’s terrain', () => {
+    const capped = { ...cfg, maxChunks: 10 };
+    const p = planStreaming([], [0, 1e9], endless, capped);
+    // pineapple at 0: [-30, 90] -> chunks 0..2 (clipped at firstChunk 0); cart at 1e9: its own window
+    const cartFrom = Math.floor((1e9 - 30) / 40);
+    const cartTo = Math.floor((1e9 + 90) / 40);
+    const expected = [0, 1, 2];
+    for (let k = cartFrom; k <= cartTo; k++) expected.push(k);
+    expect(p.create).toEqual(expected);
+    // a straggler behind the cart, cart drives on far past the cap: straggler keeps its chunks
+    let loaded = planStreaming([], [5000, 4000], endless, capped).keep;
+    for (let x = 5000; x <= 20000; x += 13) {
+      const q = planStreaming(loaded, [x, 4000], endless, capped);
+      for (const k of q.destroy) expect(k === 99 || k === 100 || k === 101 || k === 102).toBe(false);
+      loaded = q.keep;
+      for (const k of [99, 100, 101, 102]) expect(loaded).toContain(k); // [3970, 4090] -> 99..102
+      expect(loaded.length).toBeLessThan(10 + 12); // bounded, not proportional to distance
+    }
+    // straggler reported lost -> its chunks go
+    const gone = planStreaming(loaded, [20000], endless, capped);
+    expect(gone.destroy).toEqual(expect.arrayContaining([99, 100, 101, 102]));
+  });
+
+  it('keeps every live body’s neighbourhood loaded for many bodies, spreads and caps (random)', () => {
+    let seed = 7;
+    const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (const maxChunks of [1, 3, 10, 256]) {
+      let loaded: number[] = [];
+      for (let i = 0; i < 400; i++) {
+        const n = 1 + Math.floor(rand() * 5);
+        const xs = Array.from({ length: n }, () => rand() * 30000 * rand());
+        const c = { ...cfg, maxChunks };
+        const p = planStreaming(loaded, xs, endless, c);
+        loaded = p.keep;
+        for (const x of xs) {
+          const r = chunkRangeForWindow({ min: x - c.behind, max: x + c.ahead }, 40, endless);
+          for (let k = r.from; k <= r.to; k++) expect(loaded).toContain(k);
+        }
+        const win = retentionWindow(xs, c)!;
+        const full = chunkRangeForWindow(win, 40, endless);
+        if (full.to - full.from + 1 <= maxChunks) for (let k = full.from; k <= full.to; k++) expect(loaded).toContain(k);
+      }
+    }
   });
 
   it('never creates a chunk twice or destroys an unloaded one (random walk)', () => {

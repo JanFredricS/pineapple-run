@@ -16,6 +16,7 @@ import {
   MAX_BLOCK_POINTS,
   MAX_GENERATED_BLOCKS,
   MAX_GENERATED_LENGTH,
+  blocksForLength,
   ProceduralChunkSource,
   slopeLimitsFor,
   START_CART,
@@ -99,6 +100,17 @@ describe('validity', () => {
     const lastSpan = groundSpans(level).at(-1)!;
     expect(level.goal.lineX).toBeLessThan(lastSpan.points.at(-1)!.x);
     expect(level.goal.lineX).toBeGreaterThan(1900);
+  });
+
+  it('the goal line is at least the requested length, and less than one block past it', () => {
+    for (const len of [1, 40, 41.3, 100, 599.9, 600, 2000, 2021.3, 2021.31, 12345, MAX_GENERATED_LENGTH]) {
+      const g = generateLevel('len', len);
+      expect(g.level.goal.lineX).toBeGreaterThanOrEqual(len);
+      if (g.blocks > 2) expect(g.level.goal.lineX - len).toBeLessThan(BLOCK_WIDTH);
+      expect(g.blocks).toBe(blocksForLength(len));
+      const end = g.level.terrain.spans.at(-1)!.points.at(-1)!.x;
+      expect(end).toBeGreaterThan(g.level.goal.lineX);
+    }
   });
 });
 

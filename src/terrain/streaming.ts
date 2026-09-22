@@ -8,6 +8,10 @@
  * caller's decision (S1/S6): typically the cart bodies plus every pineapple
  * not yet counted as lost. Non-finite positions (a diverged body) are ignored.
  *
+ * Terrain under a live body is never dropped. Only if the bodies are spread
+ * wider than `maxChunks` does the window stop being contiguous: the empty
+ * middle between far-apart bodies is released (see StreamingConfig.maxChunks).
+ *
  * Hysteresis: a loaded chunk is only dropped once it is `hysteresis` metres
  * outside the window, so a body jittering on a boundary does not thrash
  * create/destroy every step.
@@ -28,10 +32,12 @@ export interface StreamingConfig {
   /** Extra metres a loaded chunk may drift outside the window before it is dropped. */
   hysteresis: number;
   /**
-   * Safety cap on the window width in chunks. If live bodies are spread
-   * wider than this (a runaway body the caller failed to drop), the window
-   * keeps its RIGHT-most `maxChunks` chunks — the forward end, where the cart
-   * drives — instead of allocating an unbounded number of chunks.
+   * Cap on the CONTIGUOUS window width in chunks. Every live body always
+   * keeps its own neighbourhood [x − behind, x + ahead] — terrain under a
+   * live body is never dropped. When live bodies are spread wider than this
+   * (a straggler kilometres behind), the empty middle between them is what
+   * gets dropped: the window becomes the union of the per-body
+   * neighbourhoods, so the chunk count stays O(bodies), not O(distance).
    */
   maxChunks: number;
 }
@@ -89,11 +95,41 @@ export function chunkRangeForWindow(win: XWindow, width: number, bounds: ChunkBo
   return { from, to };
 }
 
-const inRange = (k: number, r: ChunkRange) => k >= r.from && k <= r.to;
+/** Merge ranges (sorted by `from`) that overlap or touch; drops empty ones. */
+function mergeRanges(ranges: ChunkRange[]): ChunkRange[] {
+  const out: ChunkRange[] = [];
+  for (const r of [...ranges].filter((q) => q.from <= q.to).sort((a, b) => a.from - b.from)) {
+    const last = out[out.length - 1];
+    if (last && r.from <= last.to + 1) last.to = Math.max(last.to, r.to);
+    else out.push({ ...r });
+  }
+  return out;
+}
+
+const inRanges = (k: number, rs: readonly ChunkRange[]) => rs.some((r) => k >= r.from && k <= r.to);
+
+/**
+ * Chunk ranges to keep for the live bodies, with `extra` metres of slack on
+ * both sides (0 = the wanted window, hysteresis = the hold window): the one
+ * contiguous window if it fits in maxChunks, else the per-body
+ * neighbourhoods (see StreamingConfig.maxChunks).
+ */
+function windowRanges(xs: readonly number[], bounds: ChunkBounds, cfg: StreamingConfig, extra: number): ChunkRange[] {
+  const win = retentionWindow(xs, cfg)!;
+  const full = chunkRangeForWindow({ min: win.min - extra, max: win.max + extra }, cfg.chunkWidth, bounds);
+  const cap = Math.max(1, Math.floor(cfg.maxChunks));
+  if (full.to - full.from + 1 <= cap) return full.from <= full.to ? [full] : [];
+  return mergeRanges(
+    xs.map((x) => chunkRangeForWindow({ min: x - cfg.behind - extra, max: x + cfg.ahead + extra }, cfg.chunkWidth, bounds)),
+  );
+}
 
 /**
  * Given the currently loaded chunks and the live body x positions, what to
- * create and destroy. Pure and deterministic.
+ * create and destroy. Pure and deterministic. Guarantee: after applying the
+ * plan, every chunk overlapping [x − behind, x + ahead] of every live
+ * (finite) x is loaded; the whole [min − behind, max + ahead] span is loaded
+ * whenever it fits in maxChunks.
  */
 export function planStreaming(
   loaded: Iterable<number>,
@@ -102,21 +138,17 @@ export function planStreaming(
   cfg: StreamingConfig = DEFAULT_STREAMING,
 ): StreamingPlan {
   const current = [...new Set(loaded)].sort((a, b) => a - b);
-  const win = retentionWindow(bodyXs, cfg);
-  if (!win) return { keep: current, create: [], destroy: [] };
-  const want = chunkRangeForWindow(win, cfg.chunkWidth, bounds);
-  const hold = chunkRangeForWindow(
-    { min: win.min - cfg.hysteresis, max: win.max + cfg.hysteresis },
-    cfg.chunkWidth,
-    bounds,
-  );
-  const cap = Math.max(1, Math.floor(cfg.maxChunks));
-  if (want.to - want.from + 1 > cap) want.from = want.to - cap + 1;
-  if (hold.to - hold.from + 1 > cap) hold.from = Math.min(want.from, hold.to - cap + 1);
+  const xs = [...bodyXs].filter((x) => Number.isFinite(x));
+  if (!xs.length) return { keep: current, create: [], destroy: [] };
+  const want = windowRanges(xs, bounds, cfg, 0);
+  const hold = windowRanges(xs, bounds, cfg, cfg.hysteresis);
+  // hold ⊇ want by construction when both are in the same mode; guard the
+  // mode-switch edge (want contiguous, hold per-body) by holding want too.
+  const holdAll = [...hold, ...want];
   const loadedSet = new Set(current);
-  const destroy = current.filter((k) => !inRange(k, hold));
+  const destroy = current.filter((k) => !inRanges(k, holdAll));
   const create: number[] = [];
-  for (let k = want.from; k <= want.to; k++) if (!loadedSet.has(k)) create.push(k);
-  const keep = [...current.filter((k) => inRange(k, hold)), ...create].sort((a, b) => a - b);
+  for (const r of want) for (let k = r.from; k <= r.to; k++) if (!loadedSet.has(k)) create.push(k);
+  const keep = [...current.filter((k) => inRanges(k, holdAll)), ...create].sort((a, b) => a - b);
   return { keep, create, destroy };
 }

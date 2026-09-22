@@ -22,7 +22,7 @@ import type { LevelDef } from '../model/level';
 import { FrameLoop } from '../physics/clock';
 import { PhysicsWorld } from '../physics/engine';
 import { loadSpikeLevel } from '../spike/data';
-import { LevelChunkSource, surfaceYAt, type ChunkLifecycleListener, type TerrainChunk, type TerrainSource } from './chunks';
+import { LevelChunkSource, surfaceYAt, type ChunkLifecycleListener, type ReadonlyTerrainChunk, type TerrainSource } from './chunks';
 import { ENDLESS_KILL_Y, generateLevel, ProceduralChunkSource, START_CART } from './generator';
 import { loadOriginalCourse } from './levels';
 import { TerrainStreamer } from './runtime';
@@ -54,14 +54,14 @@ interface Scene {
 
 /** The "renderer": mirrors chunks purely from lifecycle callbacks. */
 class MirrorRenderer implements ChunkLifecycleListener {
-  readonly chunks = new Map<number, TerrainChunk>();
+  readonly chunks = new Map<number, ReadonlyTerrainChunk>();
   private readonly firstSeen = new Map<number, string>();
   created = 0;
   destroyed = 0;
   recreated = 0;
   mismatches = 0;
 
-  chunkCreated(chunk: TerrainChunk): void {
+  chunkCreated(chunk: ReadonlyTerrainChunk): void {
     this.created++;
     this.chunks.set(chunk.index, chunk);
     const json = JSON.stringify(chunk);

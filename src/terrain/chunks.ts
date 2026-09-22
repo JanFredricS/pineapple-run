@@ -67,6 +67,32 @@ export interface TerrainSource {
   readonly friction: number;
   readonly restitution: number;
   chunk(index: number): TerrainChunk;
+  /**
+   * Finite sources: the ascending indices of the chunks that hold terrain.
+   * TerrainStreamer#loadAll uses it so a level with far-apart spans does not
+   * enumerate (and allocate) every empty chunk in between.
+   */
+  occupiedChunks?(): readonly number[];
+}
+
+/** A chunk as handed to listeners: deep-frozen, shared by every listener (never mutate). */
+export interface ReadonlyTerrainChunk {
+  readonly index: number;
+  readonly x0: number;
+  readonly x1: number;
+  readonly extent: Readonly<{ minX: number; maxX: number }> | null;
+  readonly pieces: readonly (readonly Readonly<Vec2>[])[];
+}
+
+/** Deep-freeze a chunk in place (one pass over its points) and return it. */
+export function freezeChunk(chunk: TerrainChunk): ReadonlyTerrainChunk {
+  for (const piece of chunk.pieces) {
+    for (const v of piece) Object.freeze(v);
+    Object.freeze(piece);
+  }
+  Object.freeze(chunk.pieces);
+  if (chunk.extent) Object.freeze(chunk.extent);
+  return Object.freeze(chunk);
 }
 
 /**
@@ -76,12 +102,17 @@ export interface TerrainSource {
  * chunk's physics body exists and `chunkDestroyed` right AFTER it is gone,
  * destroys before creates within one update, each group in ascending chunk
  * index. A listener registered late can be brought up to date with
- * TerrainStreamer#loadedChunkData(). Geometry is plain data (metres, y-down)
+ * TerrainStreamer#loadedChunkData(). Chunks WITHOUT terrain (no pieces) get
+ * no physics body and are not announced: listeners only ever see chunks with
+ * geometry. The chunk object is deep-frozen and the SAME object goes to every
+ * listener and to loadedChunkData() (freezing is one O(points) pass per
+ * chunk creation, cheaper than a clone per listener; a listener that tries to
+ * mutate it throws in strict-mode code). Geometry is plain data (metres, y-down)
  * so a renderer never touches physics objects (S0 contract 4 spirit); the
  * `body` handle is provided only for debugging/telemetry.
  */
 export interface ChunkLifecycleListener {
-  chunkCreated(chunk: TerrainChunk, body: number): void;
+  chunkCreated(chunk: ReadonlyTerrainChunk, body: number): void;
   chunkDestroyed(index: number, body: number): void;
 }
 
@@ -92,14 +123,48 @@ interface Piece {
 }
 
 /**
- * Choose the cut point for nominal boundary X inside `pts` (one span).
- * Returns the segment index `i` (cut lies strictly inside pts[i]..pts[i+1])
- * and the point, or null when this boundary is not cut.
+ * Furthest a cut may be pushed past its nominal boundary (m). Past this the
+ * cut falls back to a vertex (see cutAt), so a piece never strays far from
+ * its chunk's nominal bounds whatever the input's vertex density.
  */
-function cutAt(pts: readonly Vec2[], X: number, afterX: number): { i: number; p: Vec2 } | null {
+export const MAX_CUT_SHIFT = 0.5;
+
+const maxShift = (width: number) => Math.min(MAX_CUT_SHIFT, width / 8);
+
+interface Cut {
+  /** Original vertices with index < leftEnd (not yet emitted) end the left piece, before `p`. */
+  leftEnd: number;
+  /** First original vertex of the right piece after `p`. */
+  resume: number;
+  p: Vec2;
+}
+
+/**
+ * Choose the cut point for nominal boundary X inside `pts` (one span), or
+ * null when this boundary is not cut (the span starts or ends within
+ * MIN_PIECE_WIDTH of it — that boundary's sliver stays with its neighbour).
+ *
+ * Preferred: interpolated strictly inside a segment, >= MIN_CUT_CLEARANCE from
+ * both of its vertices (the seam rule above), at the first such position at
+ * or after X. Segments too short for that clearance are skipped, but only up
+ * to X + maxShift: if the span is so dense there that no segment qualifies,
+ * the cut is placed ON the first vertex at/after X instead. A vertex cut can
+ * leave a small ghost-direction mismatch at that seam — acceptable for such
+ * sub-2-cm micro-geometry, and far better than drifting the cut (and the
+ * piece's chunk) arbitrarily far from its boundary.
+ *
+ * Invariant (relied on by cutSpan): a returned cut lies in
+ * [X, X + maxShift + MIN_CUT_CLEARANCE] and after `afterX` + MIN_PIECE_WIDTH.
+ * (The vertex fallback's vertex is the right end of a skipped short segment,
+ * so it is at most MIN_CUT_CLEARANCE past the shift limit.)
+ */
+function cutAt(pts: readonly Vec2[], X: number, afterX: number, width: number): Cut | null {
   const xs = pts[0]!.x;
   const xe = pts[pts.length - 1]!.x;
   if (X - xs < MIN_PIECE_WIDTH || xe - X < MIN_PIECE_WIDTH) return null;
+  const limit = X + maxShift(width);
+  const lowX = Math.max(X, afterX + MIN_PIECE_WIDTH);
+  if (lowX > limit) return null; // unreachable while width >= 8 * (maxShift + MIN_PIECE_WIDTH)
   // First segment whose right end is beyond X (binary search).
   let lo = 0;
   let hi = pts.length - 2;
@@ -111,11 +176,19 @@ function cutAt(pts: readonly Vec2[], X: number, afterX: number): { i: number; p:
   for (let i = lo; i < pts.length - 1; i++) {
     const a = pts[i]!;
     const b = pts[i + 1]!;
-    const cx = Math.max(X, a.x + MIN_CUT_CLEARANCE, afterX + MIN_PIECE_WIDTH);
+    const cx = Math.max(lowX, a.x + MIN_CUT_CLEARANCE);
+    if (cx > limit) break; // too far from the boundary: vertex fallback
     if (cx > b.x - MIN_CUT_CLEARANCE) continue; // segment too short: try the next one
     if (xe - cx < MIN_PIECE_WIDTH) return null;
     const t = (cx - a.x) / (b.x - a.x);
-    return { i, p: { x: cx, y: a.y + (b.y - a.y) * t } };
+    return { leftEnd: i + 1, resume: i + 1, p: { x: cx, y: a.y + (b.y - a.y) * t } };
+  }
+  // Vertex fallback: the first interior vertex at/after lowX.
+  for (let j = Math.max(1, lo); j < pts.length - 1; j++) {
+    const v = pts[j]!;
+    if (v.x < lowX) continue;
+    if (xe - v.x < MIN_PIECE_WIDTH) return null; // the rest is an end sliver
+    return { leftEnd: j, resume: j + 1, p: { x: v.x, y: v.y } };
   }
   return null;
 }
@@ -140,9 +213,13 @@ export function sanitizePiece(points: readonly Vec2[]): Vec2[] | null {
 
 /**
  * Cut one span into pieces at every nominal chunk boundary it crosses.
- * Each piece is tagged with its chunk: the chunk containing the piece's
- * x-midpoint (pieces lie between consecutive cuts, which sit within a few cm
- * of the nominal boundaries, so this is the chunk the piece belongs to).
+ * Each piece is tagged with the chunk it covers: a piece runs from the cut
+ * for boundary k*W (or the span start) to the cut for boundary (k+1)*W (or
+ * the span end), and belongs to chunk k. Cuts sit in [k*W, k*W + ~maxShift]
+ * (cutAt), so a piece covers its chunk's nominal range up to that shift. A
+ * skipped boundary (span end within MIN_PIECE_WIDTH of it) folds the sliver
+ * into the neighbouring piece: a span starting just before boundary k*W
+ * belongs to chunk k; one ending just after it stays in chunk k-1.
  */
 export function cutSpan(points: readonly Vec2[], width = CHUNK_WIDTH): { chunk: number; points: Vec2[] }[] {
   if (points.length < 2) return [];
@@ -152,23 +229,26 @@ export function cutSpan(points: readonly Vec2[], width = CHUNK_WIDTH): { chunk: 
   let current: Vec2[] = [{ ...points[0]! }];
   let nextVertex = 1; // next original vertex not yet emitted
   let lastCutX = -Infinity;
-  const push = (pts: Vec2[]) => {
+  const first = chunkIndexAt(xs, width) + 1;
+  // A span starting within MIN_PIECE_WIDTH of boundary `first` belongs to chunk `first`.
+  let chunk = first * width - xs < MIN_PIECE_WIDTH ? first : first - 1;
+  const push = (pts: Vec2[], k: number) => {
     const clean = sanitizePiece(pts);
-    if (!clean) return;
-    const mid = (clean[0]!.x + clean[clean.length - 1]!.x) / 2;
-    pieces.push({ chunk: chunkIndexAt(mid, width), points: clean });
+    if (clean) pieces.push({ chunk: k, points: clean });
   };
-  for (let k = chunkIndexAt(xs, width) + 1; k * width < xe; k++) {
-    const cut = cutAt(points, k * width, lastCutX);
+  for (let k = first; k * width < xe; k++) {
+    const cut = cutAt(points, k * width, lastCutX, width);
     if (!cut) continue;
-    for (; nextVertex <= cut.i; nextVertex++) current.push({ ...points[nextVertex]! });
+    for (; nextVertex < cut.leftEnd; nextVertex++) current.push({ ...points[nextVertex]! });
     current.push(cut.p);
-    push(current);
+    push(current, k - 1);
     current = [{ ...cut.p }];
+    nextVertex = cut.resume;
     lastCutX = cut.p.x;
+    chunk = k;
   }
   for (; nextVertex < points.length; nextVertex++) current.push({ ...points[nextVertex]! });
-  push(current);
+  push(current, chunk);
   return pieces;
 }
 
@@ -206,7 +286,7 @@ export function makeChunk(index: number, pieces: Vec2[][], width = CHUNK_WIDTH):
  * chunk's pieces. Where pieces overlap in x (never in generated terrain), the
  * highest surface (smallest y) wins. For spawning and tools.
  */
-export function surfaceYAt(chunk: TerrainChunk, x: number): number | null {
+export function surfaceYAt(chunk: ReadonlyTerrainChunk, x: number): number | null {
   let best: number | null = null;
   for (const piece of chunk.pieces) {
     if (x < piece[0]!.x || x > piece[piece.length - 1]!.x) continue;
@@ -255,5 +335,9 @@ export class LevelChunkSource implements TerrainSource {
 
   chunk(index: number): TerrainChunk {
     return makeChunk(index, clonePieces(this.byChunk.get(index) ?? []), this.chunkWidth);
+  }
+
+  occupiedChunks(): readonly number[] {
+    return [...this.byChunk.keys()].sort((a, b) => a - b);
   }
 }

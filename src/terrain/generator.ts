@@ -540,11 +540,21 @@ export interface FinishGeometry {
   blenderAt: Vec2;
 }
 
+/** Run-out length from the finish block's left connector pin to the lip (m). */
+const FINISH_RUNOUT = 20;
+/** Goal line offset past the lip (m). */
+const FINISH_LINE_PAST_LIP = 0.3;
+/**
+ * Goal line x relative to the finish block's nominal start (k * W): the left
+ * pin sits at k*W + CONNECTOR, the lip FINISH_RUNOUT further on.
+ */
+export const FINISH_GOAL_OFFSET = CONNECTOR + FINISH_RUNOUT + FINISH_LINE_PAST_LIP;
+
 /** Finish block for finite generated levels: run-out, lip, blender pit, back wall. */
 function generateFinish(seed: number, k: number): FinishGeometry {
   const leftPin = connectorPoints(seed, k)[1];
   const y = leftPin.y;
-  const lipX = leftPin.x + 20;
+  const lipX = leftPin.x + FINISH_RUNOUT;
   const lipY = y - 0.6; // gentle lip: rise 0.6 over 3 m
   const pitDepth = 2.5;
   const floorY = lipY + pitDepth;
@@ -563,7 +573,7 @@ function generateFinish(seed: number, k: number): FinishGeometry {
       { x: pitX1, y: floorY },
       { x: pitX1 + 0.1, y: floorY - 8 },
     ],
-    goal: { sensor: { x: pitX0 + 0.3, y: floorY - 1.2, width: pitX1 - pitX0 - 0.6, height: 1.2 }, lineX: lipX + 0.3 },
+    goal: { sensor: { x: pitX0 + 0.3, y: floorY - 1.2, width: pitX1 - pitX0 - 0.6, height: 1.2 }, lineX: lipX + FINISH_LINE_PAST_LIP },
     blenderAt: { x: (pitX0 + pitX1) / 2, y: floorY },
   };
 }
@@ -583,12 +593,18 @@ export interface GenerateOptions {
   name?: string;
 }
 
-/** Longest level generateLevel accepts (m). */
-export const MAX_GENERATED_LENGTH = MAX_GENERATED_BLOCKS * BLOCK_WIDTH;
+/** Longest level generateLevel accepts (m): the goal line of a MAX_GENERATED_BLOCKS level. */
+export const MAX_GENERATED_LENGTH = (MAX_GENERATED_BLOCKS - 1) * BLOCK_WIDTH + FINISH_GOAL_OFFSET;
+
+/** Blocks (including the finish block) needed so the goal line is at x >= length. */
+export function blocksForLength(length: number): number {
+  return Math.max(2, 1 + Math.ceil((length - FINISH_GOAL_OFFSET) / BLOCK_WIDTH));
+}
 
 /**
- * A finite, valid LevelDef of (at least) `length` metres: start plateau,
- * ceil(length / W) - 1 generated blocks, then a finish block with the goal.
+ * A finite, valid LevelDef whose goal line is at x >= `length` (so the course
+ * is at least `length` metres long; the pit and end wall follow a few metres
+ * later): start plateau, generated blocks, then a finish block with the goal.
  * Blocks 0..blocks-2 are exactly the blocks the endless source streams, so
  * their chunks are identical to ProceduralChunkSource's.
  */
@@ -596,7 +612,7 @@ export function generateLevel(seedIn: TerrainSeed, length: number, opts: Generat
   if (!(length > 0) || !Number.isFinite(length)) throw new RangeError('generateLevel: length must be a positive number');
   if (length > MAX_GENERATED_LENGTH) throw new RangeError(`generateLevel: length > ${MAX_GENERATED_LENGTH} m`);
   const seed = normalizeSeed(seedIn);
-  const blocks = Math.max(2, Math.ceil(length / BLOCK_WIDTH));
+  const blocks = blocksForLength(length);
   const spans: TerrainSpan[] = [];
   const features: FeatureInstance[] = [];
   let current: Vec2[] | null = null;
@@ -633,8 +649,8 @@ export function generateLevel(seedIn: TerrainSeed, length: number, opts: Generat
   }
   const level: LevelDef = {
     version: LEVEL_DEF_VERSION,
-    id: opts.id ?? `gen-${seed}-${blocks * BLOCK_WIDTH}`,
-    name: opts.name ?? `Generated ${seed} (${blocks * BLOCK_WIDTH} m)`,
+    id: opts.id ?? `gen-${seed}-${Math.ceil(length)}`,
+    name: opts.name ?? `Generated ${seed} (${Math.ceil(length)} m)`,
     theme: opts.theme ?? 'beach',
     terrain: { spans, friction: DEFAULT_TERRAIN_FRICTION, restitution: DEFAULT_TERRAIN_RESTITUTION },
     cartStart: { ...START_CART },

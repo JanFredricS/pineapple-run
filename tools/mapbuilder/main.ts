@@ -832,6 +832,7 @@ $<HTMLButtonElement>('copy').addEventListener('click', () => {
 // ------------------------------------------------------------ test roll
 interface Roll {
   world: PhysicsWorld;
+  terrain: TerrainStreamer;
   ball: number;
   radius: number;
   clock: FixedStepClock;
@@ -858,7 +859,9 @@ async function startRoll(): Promise<void> {
   stopRoll();
   rollGen = gen;
   const level = r.value;
-  new TerrainStreamer(world, new LevelChunkSource(level.terrain)).loadAll();
+  // Stream around the ball (as the game does) rather than loadAll: an imported
+  // level can be very long or spread out; streaming keeps the body count bounded.
+  const terrain = new TerrainStreamer(world, new LevelChunkSource(level.terrain));
   const radius = Math.max(0.05, $<HTMLInputElement>('rollRadius').valueAsNumber || 0.4);
   const speed = $<HTMLInputElement>('rollSpeed').valueAsNumber || 0;
   const ball = world.createBody({
@@ -869,7 +872,8 @@ async function startRoll(): Promise<void> {
     bullet: true,
   });
   world.addCircle(ball, { x: 0, y: 0 }, radius, { density: 1, friction: 0.9, restitution: 0.3, rollingResistance: 0.02 });
-  roll = { world, ball, radius, clock: new FixedStepClock(), trail: [], level, stillFor: 0, done: null };
+  terrain.update([level.cartStart.x]);
+  roll = { world, terrain, ball, radius, clock: new FixedStepClock(), trail: [], level, stillFor: 0, done: null };
   rollResultEl.textContent = 'rolling… (T / Esc stops)';
 }
 
@@ -884,6 +888,7 @@ function stepRoll(dt: number): void {
   const n = roll.clock.advance(dt);
   for (let i = 0; i < n && !roll.done; i++) {
     roll.world.step();
+    roll.terrain.update([roll.world.getTransform(roll.ball).x]);
     const t = roll.world.getTransform(roll.ball);
     if (roll.world.steps % 3 === 0) roll.trail.push({ x: t.x, y: t.y });
     const v = roll.world.getLinearVelocity(roll.ball);

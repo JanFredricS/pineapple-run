@@ -6,6 +6,7 @@ import {
   chunkSpans,
   cutSpan,
   LevelChunkSource,
+  MAX_CUT_SHIFT,
   MIN_CUT_CLEARANCE,
   MIN_PIECE_WIDTH,
   sanitizePiece,
@@ -77,6 +78,54 @@ describe('cutSpan', () => {
     expect(pieces).toHaveLength(2);
     const cut = pieces[0]!.points[pieces[0]!.points.length - 1]!;
     expect(cut.x).toBeGreaterThan(40.004);
+  });
+
+  it('audit S3-1 #1: a long dense run of sub-2 cm segments across several boundaries keeps every piece in its own chunk', () => {
+    // sparse -> dense (1.5 cm spacing, too short for a clearance cut) from 35 m to 125 m -> sparse
+    const span: Vec2[] = [];
+    for (let x = 0; x < 35; x += 2.5) span.push({ x, y: 10 + Math.sin(x) * 0.2 });
+    for (let i = 0; 35 + i * 0.015 < 125; i++) span.push({ x: 35 + i * 0.015, y: 10 + (i % 3) * 0.004 });
+    for (let x = 125; x <= 170; x += 2.5) span.push({ x, y: 10 });
+    const pieces = cutSpan(span);
+    // one piece per chunk 0..4, in order
+    expect(pieces.map((p) => p.chunk)).toEqual([0, 1, 2, 3, 4]);
+    const tol = MAX_CUT_SHIFT + MIN_CUT_CLEARANCE + 1e-9;
+    for (const { chunk, points } of pieces) {
+      // each piece covers its own chunk's nominal range (up to the bounded cut shift)
+      if (chunk > 0) expect(points[0]!.x).toBeGreaterThanOrEqual(chunk * W - 1e-9);
+      expect(points[0]!.x).toBeLessThanOrEqual(Math.max(span[0]!.x, chunk * W) + tol);
+      expect(points.at(-1)!.x).toBeGreaterThanOrEqual(Math.min(span.at(-1)!.x, (chunk + 1) * W) - 1e-9);
+      expect(points.at(-1)!.x).toBeLessThanOrEqual(Math.min(span.at(-1)!.x, (chunk + 1) * W + tol));
+    }
+    for (let i = 1; i < pieces.length; i++) expect(pieces[i]!.points[0]).toEqual(pieces[i - 1]!.points.at(-1));
+    // a body anywhere on the span finds ground in the chunk it is in — or, within the
+    // bounded cut shift just past a boundary, in the previous chunk (always loaded then:
+    // the streaming window keeps >= 30 m behind every live body)
+    const src = new LevelChunkSource({ spans: [{ id: 'dense', points: span }], friction: 0.9, restitution: 0.3 });
+    for (let x = 0.25; x < 170; x += 0.25) {
+      const k = Math.floor(x / W);
+      const y = surfaceYAt(src.chunk(k), x) ?? (x - k * W <= tol ? surfaceYAt(src.chunk(k - 1), x) : null);
+      expect(y, `x=${x}`).not.toBeNull();
+    }
+  });
+
+  it('dense runs: cuts stay within the shift bound for many densities and offsets', () => {
+    for (const step of [0.004, 0.011, 0.0199, 0.021, 0.03]) {
+      for (const off of [0, 0.003, 0.0071]) {
+        const span: Vec2[] = [];
+        for (let i = 0; off + i * step <= 130; i++) span.push({ x: off + i * step, y: 10 });
+        const pieces = cutSpan(span);
+        const byChunk = new Map<number, number>();
+        for (const p of pieces) byChunk.set(p.chunk, (byChunk.get(p.chunk) ?? 0) + 1);
+        expect([...byChunk.keys()]).toEqual([0, 1, 2, 3]);
+        for (const n of byChunk.values()) expect(n).toBe(1);
+        for (const p of pieces.slice(0, -1)) {
+          const c = p.points.at(-1)!.x - (p.chunk + 1) * W;
+          expect(c).toBeGreaterThanOrEqual(0);
+          expect(c).toBeLessThanOrEqual(MAX_CUT_SHIFT + MIN_CUT_CLEARANCE + 1e-9);
+        }
+      }
+    }
   });
 
   it('merges near-duplicate vertices and drops fully degenerate spans', () => {
