@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "id": "s1-flat-goal",
+  "name": "S1 flat run to the blender pit",
+  "theme": "test",
+  "terrain": {
+    "spans": [
+      {
+        "id": "left-wall",
+        "points": [
+          {
+            "x": -10,
+            "y": 0
+          },
+          {
+            "x": -9.9,
+            "y": 10
+          }
+        ]
+      },
+      {
+        "id": "main",
+        "points": [
+          {
+            "x": -9.9,
+            "y": 10
+          },
+          {
+            "x": 44,
+            "y": 10
+          },
+          {
+            "x": 44.1,
+            "y": 18
+          },
+          {
+            "x": 54,
+            "y": 18
+          },
+          {
+            "x": 54.1,
+            "y": 10
+          },
+          {
+            "x": 64,
+            "y": 10
+          }
+        ]
+      },
+      {
+        "id": "right-wall",
+        "points": [
+          {
+            "x": 64,
+            "y": 10
+          },
+          {
+            "x": 64.1,
+            "y": 0
+          }
+        ]
+      }
+    ],
+    "friction": 0.9,
+    "restitution": 0.3
+  },
+  "cartStart": {
+    "x": 2,
+    "y": 8.2
+  },
+  "funnel": {
+    "x": 5,
+    "y": 4.5
+  },
+  "goal": {
+    "sensor": {
+      "x": 44.1,
+      "y": 17.75,
+      "width": 7.9,
+      "height": 0.25
+    },
+    "lineX": 44
+  },
+  "props": [
+    {
+      "id": "blender",
+      "art": "blender",
+      "position": {
+        "x": 53,
+        "y": 12.5
+      },
+      "solid": true,
+      "size": {
+        "x": 2,
+        "y": 11
+      }
+    },
+    {
+      "id": "blender-blade",
+      "art": "blender-blade",
+      "position": {
+        "x": 49.5,
+        "y": 16.5
+      },
+      "solid": true,
+      "size": {
+        "x": 0.5,
+        "y": 3
+      }
+    }
+  ],
+  "zones": [],
+  "killY": 40
+}

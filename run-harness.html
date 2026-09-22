@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Pineapple Run — S1 run harness</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #1d2330; color: #eee;
+        font-family: system-ui, sans-serif; touch-action: none; user-select: none; -webkit-user-select: none; }
+      #stage { position: fixed; inset: 0; }
+      .panel { position: fixed; top: calc(8px + env(safe-area-inset-top, 0px)); right: 8px; width: min(340px, calc(100vw - 16px));
+        max-height: calc(100vh - 110px - env(safe-area-inset-top, 0px)); overflow: auto; background: #0b0f18d9; border: 1px solid #fff3; border-radius: 8px;
+        padding: 8px 10px; font-size: 12px; box-sizing: border-box; }
+      .panel > summary { font-size: 13px; }
+      .row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; align-items: center; }
+      button { font: inherit; padding: 5px 10px; border-radius: 6px; border: 1px solid #fff5; background: #2a3550; color: #fff; cursor: pointer; }
+      button:disabled { opacity: 0.4; cursor: default; }
+      button.primary { background: #2f6f4f; }
+      button.danger { background: #7a2f3a; }
+      label.file { display: inline-flex; gap: 4px; align-items: center; }
+      label.file input { width: 150px; font-size: 11px; }
+      #hud { font-family: ui-monospace, monospace; white-space: pre; line-height: 1.35; }
+      #error { color: #ff8a8a; white-space: pre-wrap; }
+      #log { font-family: ui-monospace, monospace; font-size: 11px; max-height: 180px; overflow: auto; background: #0006;
+        border-radius: 4px; padding: 4px; margin: 0; list-style: none; }
+      #log li { padding: 1px 0; border-bottom: 1px solid #fff1; }
+      #log li.goalReached { color: #8f8; } #log li.gaveUp { color: #fc8; } #log li.allLost { color: #f99; font-weight: 600; } #log li.pineappleLost { color: #f99; }
+      details { margin-top: 6px; } summary { cursor: pointer; }
+      details ul { padding-left: 16px; margin: 4px 0; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <details class="panel" open>
+      <summary><b>S1 run harness</b></summary>
+      <div class="row">
+        <button id="start" class="primary">Start</button>
+        <button id="release" class="primary">Release</button>
+        <button id="giveup" class="danger">Give Up</button>
+        <button id="reset">Reset</button>
+      </div>
+      <div class="row">
+        <label class="file">Cart <input id="cartFile" type="file" accept=".json,application/json" /></label>
+        <label class="file">Level <input id="levelFile" type="file" accept=".json,application/json" /></label>
+        <button id="fixtures">Fixtures</button>
+      </div>
+      <div id="source"></div>
+      <div id="error"></div>
+      <div id="hud"></div>
+      <div>Event log</div>
+      <ol id="log"></ol>
+      <details>
+        <summary>Keys &amp; acceptance checklist</summary>
+        <p>←/→ or A/D drive (or hold the on-screen buttons). Enter: Start, then Release. G: Give Up. R: Reset. Add <code>?mode=endless</code> to the URL for the endless end rule.</p>
+        <ul>
+          <li>Before Start nothing moves; Start logs <code>started</code> and the cart settles under the funnel.</li>
+          <li>Pineapples rest in the V funnel on the plug until Release.</li>
+          <li>Release logs <code>released</code>, removes the plug, the load drops into the cart and the clock starts at 0.</li>
+          <li>Driving works with ←/→, A/D and touch buttons; switching tab / clicking outside the window / a cancelled touch stops the drive.</li>
+          <li>Camera follows the right-most cart body smoothly.</li>
+          <li>A pineapple left on the ground logs <code>pineappleLost</code> about 3 s later; remaining counts down once per pineapple.</li>
+          <li>A pineapple reaching the blender pit's base logs <code>goalReached</code> with the delivered count (pineapples past the line, lost ones included); nothing is logged after it. Cart parts bounce off the blender.</li>
+          <li>Endless mode: losing the last pineapple logs <code>allLost</code> and ends the run.</li>
+          <li>Give Up logs <code>gaveUp</code> with the sim time; the cart stops driving.</li>
+          <li>Loading a broken cart or level JSON (including a schema-valid cart that cannot start) shows an error and keeps the current run.</li>
+        </ul>
+      </details>
+    </details>
+    <script type="module" src="/src/run/harness.ts"></script>
+  </body>
+</html>
