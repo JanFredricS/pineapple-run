@@ -6,7 +6,8 @@
  *
  *  - SceneManifest: what each body IS (role + local shapes). Sent when bodies
  *    are created/destroyed (manifest `revision` bumps on change).
- *  - RenderSnapshot: per-frame interpolated transforms of every dynamic body.
+ *  - RenderSnapshot: per-frame transforms of EVERY manifest body (dynamic
+ *    ones interpolated, static ones at their fixed pose).
  *
  * Units: metres and radians, y-down world (see model/coords.ts for helpers).
  */
@@ -117,6 +118,8 @@ export class MockSnapshotSource implements SnapshotSource {
       alpha: 0,
       manifestRevision: 1,
       bodies: [
+        // static bodies are included at their fixed pose, like PhysicsWorld.snapshot()
+        { id: 1, x: 0, y: 0, angle: 0 },
         { id: 2, x, y: 0.2, angle: 0 },
         { id: 3, x: x - 0.8, y: 0.7, angle: spin },
         { id: 4, x: x + 0.8, y: 0.7, angle: spin },

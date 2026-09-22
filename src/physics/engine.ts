@@ -480,7 +480,7 @@ export class PhysicsWorld implements SnapshotSource {
     return { revision: this.revision, bodies };
   }
 
-  /** Interpolated transforms of all dynamic bodies (alpha in [0,1]). */
+  /** Transforms of ALL bodies: dynamic ones interpolated (alpha in [0,1]), static ones as-is. */
   snapshot(alpha = 1): RenderSnapshot {
     const out: BodyTransform[] = [];
     for (const rec of this.bodies.values()) {

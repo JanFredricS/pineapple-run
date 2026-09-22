@@ -105,13 +105,13 @@ describe('snapshot helpers', () => {
     expect(t).toEqual({ id: 1, x: 1, y: 2, angle: 0.5 });
   });
 
-  it('mock snapshot source only references bodies in its manifest', () => {
+  it('mock snapshot source has a transform for exactly the manifest bodies (static included)', () => {
     const m = new MockSnapshotSource();
     m.advance(1.5);
-    const ids = new Set(m.manifest().bodies.map((b) => b.id));
+    const ids = m.manifest().bodies.map((b) => b.id).sort();
     const snap = m.snapshot();
     expect(snap.simTime).toBe(1.5);
-    expect(snap.bodies.every((b) => ids.has(b.id))).toBe(true);
+    expect(snap.bodies.map((b) => b.id).sort()).toEqual(ids);
     expect(snap.bodies.find((b) => b.id === 2)!.x).toBeCloseTo(4.5);
   });
 });

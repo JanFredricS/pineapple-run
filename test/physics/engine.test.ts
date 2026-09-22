@@ -78,6 +78,16 @@ describe('PhysicsWorld', () => {
     expect(w.manifest().bodies).toHaveLength(0);
   });
 
+  it('snapshot has a transform for exactly the manifest bodies (static included)', async () => {
+    const w = await world();
+    ground(w);
+    const b = w.createBody({ type: 'dynamic', position: { x: 0, y: 0 } });
+    w.addCircle(b, { x: 0, y: 0 }, 0.5);
+    w.step();
+    const ids = w.manifest().bodies.map((x) => x.id).sort();
+    expect(w.snapshot(0.5).bodies.map((x) => x.id).sort()).toEqual(ids);
+  });
+
   it('revolute joints: anchors coincide, motor spins, force is queryable', async () => {
     const w = await world();
     const a = w.createBody({ type: 'static', position: { x: 0, y: 0 } });
