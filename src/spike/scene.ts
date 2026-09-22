@@ -9,7 +9,7 @@
 import { resolveAttachments, type CompoundSpec } from '../model/attach';
 import type { CartDesign } from '../model/cart';
 import type { LevelDef } from '../model/level';
-import { spawnPineapple } from '../physics/cargo';
+import { PINEAPPLE_RADIUS, spawnPineapple } from '../physics/cargo';
 import { buildCompound, type CartInstance } from '../physics/compound';
 import type { BodyHandle, PhysicsWorld } from '../physics/engine';
 import { buildTerrain } from '../physics/terrain';
@@ -92,11 +92,40 @@ export function createSpikeScene(world: PhysicsWorld, opts: SpikeOptions = {}): 
 }
 
 /**
- * Pineapples still in the bed: inside the chassis-local box spanning the
- * spike cart's bed (design px x 0..180, up to 120 px above it), with margin.
+ * Chassis-local box a pineapple CENTRE must be inside to count as aboard:
+ * the chassis shapes' bounds widened by one pineapple radius at the sides,
+ * extended upward by two pineapple diameters (a two-layer load above the
+ * highest chassis part) and not extended below the chassis at all. A
+ * pineapple thrown well clear of the bed therefore does not count.
  */
-export function countAboard(world: PhysicsWorld, scene: SpikeScene): number {
+export function aboardBox(scene: SpikeScene): { minX: number; maxX: number; minY: number; maxY: number } {
   const spec = scene.spec.bodies.find((b) => b.kind === 'rigid')!;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const sh of spec.shapes) {
+    const pts =
+      sh.type === 'polygon'
+        ? sh.vertices
+        : [
+            { x: sh.center.x - sh.radius, y: sh.center.y - sh.radius },
+            { x: sh.center.x + sh.radius, y: sh.center.y + sh.radius },
+          ];
+    for (const p of pts) {
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y);
+      maxY = Math.max(maxY, p.y);
+    }
+  }
+  const r = PINEAPPLE_RADIUS;
+  return { minX: minX - r, maxX: maxX + r, minY: minY - 4 * r, maxY };
+}
+
+/** Pineapples whose centre is inside the chassis' aboardBox (current pose). */
+export function countAboard(world: PhysicsWorld, scene: SpikeScene): number {
+  const box = aboardBox(scene);
   const t = world.getTransform(scene.chassis);
   const c = Math.cos(-t.angle);
   const s = Math.sin(-t.angle);
@@ -104,9 +133,8 @@ export function countAboard(world: PhysicsWorld, scene: SpikeScene): number {
     const q = world.getTransform(p);
     const dx = q.x - t.x;
     const dy = q.y - t.y;
-    // back into design-local metres (design px (0,0) = the bed's left end)
-    const lx = c * dx - s * dy + spec.origin.x;
-    const ly = s * dx + c * dy + spec.origin.y;
-    return lx > -0.2 && lx < 6.2 && ly < 0.2 && ly > -4;
+    const lx = c * dx - s * dy;
+    const ly = s * dx + c * dy;
+    return lx >= box.minX && lx <= box.maxX && ly >= box.minY && ly <= box.maxY;
   }).length;
 }

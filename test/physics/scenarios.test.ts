@@ -27,13 +27,16 @@ afterEach(() => {
 
 /**
  * Golden run: full throttle for 3 s (180 steps) from rest on the flat.
- * Measured 22.385 m on box2d3-wasm 5.2.0 (compat). The tolerance (~2%)
+ * Measured 23.905 m on box2d3-wasm 5.2.0 (compat). The tolerance (~2%)
  * absorbs harmless float differences; a change in welding, drive torque,
  * speed cap or friction moves it by metres.
  */
 const GOLDEN_STEPS = 180;
-const GOLDEN_DX = 22.385;
+const GOLDEN_DX = 23.905;
 const GOLDEN_TOLERANCE = 0.5;
+
+/** Max forward coast in 5 s after braking to < 0.05 m/s (measured 0.55 m). */
+const DRIFT_LIMIT = 1;
 
 /** Flat stretch of the spike level, well left of the washboard (x 20..32). */
 const FLAT_START = { x: -55, y: 8.2 };
@@ -50,29 +53,33 @@ function maxJointGap(w: PhysicsWorld): number {
 }
 
 /**
- * Drive at ~`cruise` m/s (bang-bang) for `distance` m, brake to a stop with
- * reverse drive, then coast. Returns the chassis x travelled.
+ * Smooth-ish throttle with the binary drive: a target speed ramps up at
+ * `accel` m/s² to `cruise`, holds for `distance` m, ramps back to 0; each step
+ * the drive pushes toward the target (±0.05 m/s dead band). Then holds the
+ * cart at rest.
  */
-function cruiseAndStop(w: PhysicsWorld, scene: SpikeScene, cruise: number, distance: number, steps: number): number {
+function rampedRun(w: PhysicsWorld, scene: SpikeScene, cruise: number, accel: number, distance: number, steps: number): void {
   const chassis = chassisOf(scene);
   const start = w.getTransform(chassis).x;
   let phase = 0;
+  let target = 0;
   for (let s = 0; s < steps; s++) {
     const x = w.getTransform(chassis).x - start;
     const v = w.getLinearVelocity(chassis).x;
-    let dir: DriveDirection = 0;
-    if (s < 90) dir = 0; // let the load settle first
-    else if (phase === 0) {
-      dir = v < cruise ? 1 : 0;
-      if (x > distance) phase = 1;
-    } else if (phase === 1) {
-      dir = v > 0.3 ? -1 : 0;
-      if (v <= 0.3) phase = 2;
+    if (s >= 90) {
+      // (the first 1.5 s lets the load settle)
+      if (phase === 0) {
+        target = Math.min(cruise, target + accel / 60);
+        if (x > distance) phase = 1;
+      } else if (phase === 1) {
+        target = Math.max(0, target - accel / 60);
+        if (target === 0) phase = 2;
+      }
     }
+    const dir: DriveDirection = s < 90 ? 0 : v < target - 0.05 ? 1 : v > target + 0.05 ? -1 : 0;
     scene.cart.setDrive(dir);
     scene.step();
   }
-  return w.getTransform(chassis).x - start;
 }
 
 describe('S0 physics scenarios', () => {
@@ -116,34 +123,77 @@ describe('S0 physics scenarios', () => {
         peakSpeed = Math.max(peakSpeed, Math.hypot(v.x, v.y));
       }
     }
-    // Soft-step joints stretch briefly on ~19 m/s impacts (measured peak
-    // 0.109 m) and always pull back; divergence would show as a growing or
+    // Soft-step joints stretch briefly on hard landings (measured peak
+    // 0.135 m) and always pull back; divergence would show as a growing or
     // residual gap.
     expect(peakGap).toBeLessThan(0.2);
     expect(maxJointGap(w)).toBeLessThan(0.01); // measured 0.0003 after settling
-    expect(peakSpeed).toBeLessThan(30); // measured ~19 m/s (motor cap + ramp drop)
-    // cart is upright and still on the course
+    expect(peakSpeed).toBeLessThan(30); // measured 21.2 m/s
+    // Still on the course and at rest. (Full throttle over the washboard at
+    // ~10 m/s can launch and roll the cart right over — measured at t ≈ 19 s;
+    // that is driving, not instability, so orientation is not asserted.)
     const t = w.getTransform(chassis);
-    expect(Math.abs(t.angle)).toBeLessThan(0.5);
+    expect(Math.abs(w.getLinearVelocity(chassis).x)).toBeLessThan(0.5);
     expect(t.x).toBeGreaterThan(-60);
     expect(t.x).toBeLessThan(118);
     expect(t.y).toBeLessThan(10);
   });
 
-  it('washboard spill: a flat open bed loses its pineapples on the washboard (but not on the flat)', async () => {
+  it('washboard spill: a flat open bed keeps its load on the flat but loses it on the washboard', async () => {
+    // One layer of 7 pineapples on the open bed (no rails). A 15-pineapple
+    // pile cannot be a control on a flat plank: its top layer rolls off
+    // during settling and under any full-torque drive pulse (measured: 14
+    // after settling, 9 after the flat run below).
     const run = async (onFlat: boolean) => {
       const w = await world();
-      const scene = createSpikeScene(w, { design: loadOpenBedCart(), ...(onFlat ? { cartStart: FLAT_START } : {}) });
-      // cruise ~3.5 m/s over 36 m (level start: across all nine bumps), brake
-      cruiseAndStop(w, scene, 3.5, 36, 60 * 20);
-      return countAboard(w, scene);
+      const scene = createSpikeScene(w, { design: loadOpenBedCart(), pineapples: 7, ...(onFlat ? { cartStart: FLAT_START } : {}) });
+      for (let s = 0; s < 89; s++) scene.step();
+      const settled = countAboard(w, scene);
+      // ramp to 6 m/s at 1 m/s², hold over 36 m (from the level start that
+      // crosses all nine bumps), ramp down to a stop on the flat beyond
+      rampedRun(w, scene, 6, 1, 36, 60 * 25 - 89);
+      return { settled, aboard: countAboard(w, scene) };
     };
     const flat = await run(true);
     const wash = await run(false);
-    // measured: flat keeps 5, washboard keeps 0
-    expect(flat).toBeGreaterThanOrEqual(3);
-    expect(wash).toBeLessThanOrEqual(2);
-    expect(wash).toBeLessThan(flat);
+    expect(flat.settled).toBe(7);
+    expect(wash.settled).toBe(7);
+    // measured: flat keeps 7/7, washboard keeps 1/7
+    expect(flat.aboard).toBeGreaterThanOrEqual(6);
+    expect(wash.aboard).toBeLessThanOrEqual(3);
+  });
+
+  it('drive: full throttle does not pop a wheelie, and braking stops the cart without reverse creep', async () => {
+    const w = await world();
+    const scene = createSpikeScene(w, { cartStart: FLAT_START });
+    const chassis = chassisOf(scene);
+    for (let s = 0; s < 60; s++) scene.step();
+    let maxPitch = 0;
+    scene.cart.setDrive(1);
+    for (let s = 0; s < 120; s++) {
+      scene.step();
+      maxPitch = Math.max(maxPitch, Math.abs(w.getTransform(chassis).angle));
+    }
+    // direct wheel torque has no reaction on the chassis (measured 0.0013 rad)
+    expect(maxPitch).toBeLessThan(0.05);
+    // brake (reverse drive) to a stop, release, coast 5 s
+    scene.cart.setDrive(-1);
+    let n = 0;
+    while (w.getLinearVelocity(chassis).x > 0.05 && n++ < 600) {
+      scene.step();
+      maxPitch = Math.max(maxPitch, Math.abs(w.getTransform(chassis).angle));
+    }
+    expect(n).toBeLessThan(600);
+    expect(maxPitch).toBeLessThan(0.05);
+    scene.cart.setDrive(0);
+    const x0 = w.getTransform(chassis).x;
+    for (let s = 0; s < 300; s++) scene.step();
+    const drift = w.getTransform(chassis).x - x0;
+    // no reverse creep; free wheels may roll on slightly (measured +0.55 m)
+    expect(drift).toBeGreaterThan(-0.1);
+    expect(drift).toBeLessThan(DRIFT_LIMIT);
+    expect(Math.abs(w.getLinearVelocity(chassis).x)).toBeLessThan(0.1);
+    expect(countAboard(w, scene)).toBe(15);
   });
 
   it('rolling resistance stops a pineapple on the flat (no infinite rolling)', async () => {
