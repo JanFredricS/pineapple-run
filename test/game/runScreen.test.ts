@@ -74,8 +74,9 @@ describe('run debug handle', () => {
     const assigns = [...src.matchAll(/^.*window\.__prRun\s*=(?!=).*$/gm)].map((m) => m[0].trim());
     // the set, plus the teardown reset (null) guarded by identity
     expect(assigns).toHaveLength(2);
-    expect(assigns[0]).toMatch(/^if \(import\.meta\.env\.DEV\) window\.__prRun = \{/);
-    expect(assigns[1]).toMatch(/^if \(import\.meta\.env\.DEV && window\.__prRun\?\.session === s\) window\.__prRun = null;$/);
+    expect(assigns.filter((a) => /^if \(import\.meta\.env\.DEV\) window\.__prRun = \{/.test(a))).toHaveLength(1);
+    expect(assigns.filter((a) => /__prRun = null;$/.test(a))).toHaveLength(1);
+    expect(assigns.find((a) => /__prRun = null;$/.test(a))).toMatch(/^if \(import\.meta\.env\.DEV && window\.__prRun\?\.session === s\) window\.__prRun = null;$/);
     // every mention sits on a DEV-gated line (so the production bundle has none)
     const lines = src.split('\n').filter((l) => l.includes('window.__prRun'));
     for (const l of lines) expect(l).toMatch(/import\.meta\.env\.DEV/);

@@ -123,6 +123,28 @@ export interface AppOptions {
   pwa?: boolean;
 }
 
+/** Minimal dependency-free error state (see App.mount). */
+function mountFatalError(host: HTMLElement, err: unknown): Screen {
+  const root = document.createElement('section');
+  root.className = 'pr-screen pr-screen-error';
+  root.setAttribute('role', 'alert');
+  root.setAttribute('data-testid', 'app-error');
+  root.setAttribute('style', 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center');
+  const h = document.createElement('h2');
+  h.textContent = 'Something went wrong';
+  const p = document.createElement('p');
+  p.textContent = err instanceof Error && err.message ? err.message : 'Unknown error';
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'pr-btn pr-btn--primary';
+  b.setAttribute('data-testid', 'app-error-reload');
+  b.textContent = 'Reload';
+  b.addEventListener('click', () => location.reload());
+  root.append(h, p, b);
+  host.appendChild(root);
+  return { destroy: () => root.remove() };
+}
+
 export class App {
   private state: AppState;
   private screen: Screen | null = null;
@@ -187,7 +209,17 @@ export class App {
     this.host.replaceChildren();
     if (this.state.name === 'results' && !this.state.resultId) this.state = { ...this.state, resultId: newResultId() };
     const ctx: MountContext = { isCurrent: () => gen === this.generation && !this.destroyed };
-    const screen = await this.createScreen(this.state, ctx);
+    let screen: Screen;
+    try {
+      screen = await this.createScreen(this.state, ctx);
+    } catch (err) {
+      // Last line of defence (e.g. a lazy screen chunk failed to load): never
+      // leave a blank host. Screens handle their own init errors with
+      // specific recovery; this only offers a page reload.
+      console.error('[app] screen failed to mount', err);
+      if (gen !== this.generation) return;
+      screen = mountFatalError(this.host, err);
+    }
     if (gen !== this.generation) {
       screen.destroy();
       return;

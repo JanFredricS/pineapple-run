@@ -98,25 +98,48 @@ describe('INTEGRATION #13: debris over a long endless run', () => {
       const STEPS = 60 * 120; // 2 minutes of sim time
       const worldCounts: number[] = [];
       let prevCart = cartAlive();
-      let tipGoneAt = -1;
-      for (let n = 0; n < STEPS && c.phase === 'released'; n++) {
+      let tipGoneAt = -1; // first step the tip is no longer in the world
+      let unloadedAt = -1; // first step the tip's x is outside the loaded terrain window
+      let steps = 0;
+      for (let n = 0; n < STEPS; n++) {
+        expect(c.phase, `run ended early at post-crash step ${n}`).toBe('released');
         drive();
         s.step();
+        steps++;
         const cart = cartAlive();
         expect(cart).toBeLessThanOrEqual(prevCart); // debris never re-appears / multiplies
         prevCart = cart;
-        if (tipGoneAt < 0 && !s.world.hasBody(tip)) tipGoneAt = n;
+        if (tipGoneAt < 0) {
+          if (s.world.hasBody(tip)) {
+            const tx = s.world.getTransform(tip).x;
+            const loaded = tx >= s.query.minX && tx <= s.query.maxX;
+            if (unloadedAt < 0 && !loaded) unloadedAt = n;
+            // while its terrain is loaded the debris rests on it (never falls out)
+            if (unloadedAt < 0) expect(s.world.getTransform(tip).y).toBeLessThan(c.level.killY - 20);
+          } else tipGoneAt = n;
+        }
         if (n % 60 === 0) {
           const bodies = s.world.bodyHandles().length;
           expect(s.world.manifest().bodies.length).toBe(bodies); // render view matches the world
           worldCounts.push(bodies);
         }
       }
+      expect(steps).toBe(STEPS); // the full 2 minutes ran (no early end)
+      expect(c.phase).toBe('released');
 
       const cartX = s.world.getTransform(chassis).x;
       expect(cartX - shedAt).toBeGreaterThan(80); // the cart really left the debris behind
-      expect(tipGoneAt).toBeGreaterThanOrEqual(0); // the debris fell out once its terrain unloaded
       expect(prevCart).toBe(cartTotal - 2); // arm + tip gone, the rest of the cart intact
+
+      // The debris persisted until its terrain left the loaded window, then
+      // fell past killY and was removed: not deleted on detach, and not kept
+      // forever. The fall from the surface to killY (>= 20 m) takes >= 2 s.
+      expect(unloadedAt, 'tip terrain never unloaded').toBeGreaterThanOrEqual(0);
+      expect(tipGoneAt, 'tip never removed').toBeGreaterThanOrEqual(0);
+      expect(unloadedAt).toBeGreaterThanOrEqual(10 * 60); // survived as debris >= 10 s
+      expect(tipGoneAt).toBeGreaterThan(unloadedAt); // removal only after its terrain went away
+      expect(tipGoneAt - unloadedAt).toBeGreaterThanOrEqual(2 * 60); // it fell, it was not deleted
+      expect(tipGoneAt - unloadedAt).toBeLessThanOrEqual(6 * 60);
 
       // Bounded: the world never holds more than it did around the shed, and
       // the second half of the run is no bigger than the first (no growth).
@@ -124,7 +147,7 @@ describe('INTEGRATION #13: debris over a long endless run', () => {
       const early = Math.max(...worldCounts.slice(0, half));
       const late = Math.max(...worldCounts.slice(half));
       expect(late).toBeLessThanOrEqual(early);
-      console.info(`[#13] shed at x=${shedAt.toFixed(1)}, debris cleared after ${(tipGoneAt / 60).toFixed(1)} s, cart x=${cartX.toFixed(1)}, bodies early max ${early} / late max ${late}, phase ${c.phase}`);
+      console.info(`[#13] shed at x=${shedAt.toFixed(1)}, terrain unloaded after ${(unloadedAt / 60).toFixed(2)} s, debris cleared after ${(tipGoneAt / 60).toFixed(2)} s, cart x=${cartX.toFixed(1)}, bodies early max ${early} / late max ${late}, phase ${c.phase}`);
     } finally {
       s.destroy();
     }

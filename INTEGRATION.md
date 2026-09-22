@@ -98,13 +98,16 @@ work. S6 works through this list; each item is a plan-owner ruling.
   endless run (ABC123) with a spring-heavy cart (example cart + a shock-held
   arm carrying a tip held only by the arm). A scripted crash severs the arm's
   shocks and drops it past killY; the controller removes it, the tip becomes
-  detached debris, and the cart drives on for 7,200 more steps (2 min sim,
-  ~550 m). Verified: removed/detached parts never come back (cart body count
-  non-increasing), the debris is NOT a streaming anchor so its terrain
-  unloads behind the cart and it falls past killY and is removed (~29 s
-  after the shed), `manifest().bodies` always equals the world's bodies, and
-  the world body count in the second half of the run is no higher than in
-  the first (max 24–25 bodies: terrain window + cart + live pineapples).
+  detached debris, and the cart drives on for exactly 7,200 more steps
+  (asserted: the run stays `released` throughout; 2 min sim, ~550 m).
+  Enforced: removed/detached parts never come back (cart body count
+  non-increasing); the debris is NOT a streaming anchor and is NOT deleted
+  on detach — it rests on its terrain (>= 10 s, measured 26.8 s) until its x
+  leaves the loaded window, and is removed only after that, 2–6 s later
+  (measured 2.5 s: the fall to killY); `manifest().bodies` always equals the
+  world's bodies; the world body count in the second half of the run is no
+  higher than in the first (measured max 25 / 24: terrain window + cart +
+  live pineapples).
   Remaining for S8: long-duration performance profiling (frame time, WASM
   heap via `heapBytesInUse()`, GC pressure from per-frame snapshots/renderer
   views over 10+ minute endless runs, on real devices). Reason: that is a
@@ -115,7 +118,12 @@ work. S6 works through this list; each item is a plan-owner ruling.
   bounded by the cart's own part count, so not a growth risk.
 - Run screen (audit fix 1): Pixi app, theme textures and the RunSession load
   via `acquireRunResources` (allSettled) — a created session is destroyed if
-  any other loader fails. `window.__prRun` exists only in `import.meta.env.DEV`
-  builds (browser checks use `npm run dev`).
+  any other loader fails; any setup failure unwinds a LIFO cleanup stack.
+  `window.__prRun` exists only in `import.meta.env.DEV` builds (browser
+  checks use `npm run dev`).
+- Screen init failures (audit round 2): run and build screens never leave a
+  blank host — `src/game/errorScreen.ts` shows the error with "Try again"
+  (re-mount in place) and "Back to builder" / "Levels"; `App.mount` catches
+  anything else (e.g. a lazy chunk failing offline) with a Reload prompt.
 - Builder Fit (audit fix 3): `fitArea` frames the build area plus every funnel
   wall/plug vertex (12 px clearance above the walls' top).

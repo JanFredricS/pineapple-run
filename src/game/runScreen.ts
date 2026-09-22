@@ -34,6 +34,7 @@ import { isPortraitBlocked, onPortraitChange } from '../ui/orientation';
 import type { DriveIntent } from '../ui/screens/runHud';
 import { NO_AUDIO, type AudioHooks } from './audioHooks';
 import { mountMissingCourse } from './buildScreen';
+import { mountScreenError } from './errorScreen';
 import { testedDesign } from './cartState';
 import { courseFor } from './courses';
 import { acquireRunResources } from './runResources';
@@ -47,6 +48,11 @@ export interface RunScreenDeps {
   audio?: AudioHooks;
   /** HUD end-banner delay before results (ms). */
   endDelayMs?: number;
+  /** Loader overrides (tests: fail a loader to exercise the error screen). */
+  loaders?: {
+    app?: () => Promise<Application>;
+    assets?: (theme: ThemeId) => Promise<AssetLibrary>;
+  };
 }
 
 /** Course width shown across the screen (m) on narrow screens; zoom is clamped. */
@@ -97,6 +103,11 @@ declare global {
   }
 }
 
+/**
+ * Mount the run. Never leaves a blank host: if loading or setup fails, every
+ * resource acquired so far is released and a visible error screen offers
+ * "Try again" (re-mounts in place) and "Back to builder".
+ */
 export async function mountRunScreen(
   host: HTMLElement,
   state: Extract<AppState, { name: 'run' }>,
@@ -104,11 +115,67 @@ export async function mountRunScreen(
   ctx: MountContext,
   deps: RunScreenDeps = {},
 ): Promise<Screen> {
+  let current: Screen | null = null;
+  let dead = false;
+  const attempt = async (): Promise<void> => {
+    try {
+      const screen = await mountRunOnce(host, state, dispatch, ctx, deps);
+      if (dead) screen.destroy();
+      else current = screen;
+    } catch (err) {
+      console.error('[run] failed to start', err);
+      if (dead || !ctx.isCurrent()) return;
+      current = mountScreenError(host, 'Could not start the run', err, [
+        {
+          label: 'Try again',
+          primary: true,
+          testId: 'run-error-retry',
+          onClick: () => {
+            if (dead) return;
+            current?.destroy();
+            current = null;
+            void attempt();
+          },
+        },
+        { label: 'Back to builder', testId: 'run-error-back', onClick: () => void dispatch({ type: 'backToBuild' }) },
+      ]);
+    }
+  };
+  await attempt();
+  return {
+    destroy() {
+      dead = true;
+      current?.destroy();
+      current = null;
+    },
+  };
+}
+
+/** One mount attempt. Throws after releasing everything it acquired. */
+async function mountRunOnce(
+  host: HTMLElement,
+  state: Extract<AppState, { name: 'run' }>,
+  dispatch: Dispatch,
+  ctx: MountContext,
+  deps: RunScreenDeps,
+): Promise<Screen> {
   const course = courseFor(state.levelId);
   if (!course) return mountMissingCourse(host, state.levelId, 'Back', () => void dispatch({ type: 'backToBuild' }));
   const audio = deps.audio ?? NO_AUDIO;
   const level = course.level;
   const design = testedDesign();
+
+  // Teardown steps, run in reverse order of acquisition (destroy or failure).
+  const cleanup: (() => void)[] = [];
+  const teardown = () => {
+    while (cleanup.length) {
+      try {
+        cleanup.pop()!();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
 
   const root = el('div', { class: 'pr-run', 'data-level': state.levelId });
   const canvasHost = el('div', { class: 'pr-run__canvas' });
@@ -116,138 +183,134 @@ export async function mountRunScreen(
   const loading = el('div', { class: 'pr-run__loading', text: 'Loading…' });
   root.append(canvasHost, loading, hudHost);
   host.appendChild(root);
+  cleanup.push(() => root.remove());
 
-  let res: { app: Application; lib: AssetLibrary; session: RunSession };
   try {
     // A failure in any loader destroys a session that did get created.
-    res = await acquireRunResources({
-      app: pixiApp,
-      lib: () => assetsFor(level.theme),
+    const { app, lib, session: s } = await acquireRunResources({
+      app: deps.loaders?.app ?? pixiApp,
+      lib: () => (deps.loaders?.assets ?? assetsFor)(level.theme),
       session: () => RunSession.create(design, course),
     });
-  } catch (err) {
-    root.remove();
-    throw err;
-  }
-  const { app, lib, session: s } = res;
-  if (!ctx.isCurrent()) {
-    s.destroy();
-    root.remove();
-    return { destroy() {} };
-  }
-  loading.remove();
-
-  // ---------------------------------------------------------------- render
-  canvasHost.appendChild(app.canvas);
-  app.resizeTo = canvasHost;
-  app.resize();
-  const renderer = new SceneRenderer(lib, { theme: level.theme });
-  renderer.setLevel(level);
-  renderer.setCartDesign(design); // INTEGRATION #11: always
-  renderer.resetSource(); // RESIDUALS R5: new world
-  renderer.setFunnel(funnelGeometry(level.funnel, TOTAL_PINEAPPLES));
-  app.stage.addChild(renderer.view);
-  const camera: Camera = { center: s.controller.camera.position, zoom: 1, viewportWidth: 1, viewportHeight: 1 };
-
-  // ----------------------------------------------------------------- input
-  const input = new DriveInput();
-  const unbindKeys = input.bindKeyboard(window);
-  let hudDrive: DriveIntent = 0;
-  let lastDrive: DriveDirection = 0;
-  const onEsc = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') void dispatch({ type: 'backToBuild' });
-  };
-  window.addEventListener('keydown', onEsc);
-
-  // ------------------------------------------------------------ goal / audio
-  let goalAt: number | null = null;
-  let goalFill = 0;
-  const offEvents = s.on((e: RunEvent) => {
-    if (e.type === 'released') renderer.setFunnelOpen(true);
-    if (e.type === 'goalReached') {
-      goalAt = 0;
-      goalFill = Math.min(1, e.delivered / TOTAL_PINEAPPLES);
-    }
-    audio.runEvent?.(e);
-  });
-
-  // ------------------------------------------------------------------- HUD
-  const hud = mountRunHudScreen(hudHost, state, dispatch, {
-    source: s,
-    telemetry: { furthestMetres: () => s.furthestMetres(), aboard: () => s.aboard() },
-    controls: {
-      release: () => void s.release(),
-      giveUp: () => void s.giveUp(),
-      setDrive: (d) => (hudDrive = d),
-    },
-    ...(deps.endDelayMs !== undefined ? { endDelayMs: deps.endDelayMs } : {}),
-  });
-
-  // ------------------------------------------------------------------ loop
-  let lastRenderMs = performance.now();
-  const loop = new FrameLoop({
-    step() {
-      const dir: DriveDirection = input.direction !== 0 ? input.direction : hudDrive;
-      if (dir !== lastDrive) {
-        lastDrive = dir;
-        audio.drive?.(dir);
-      }
-      s.setDrive(dir);
-      s.step();
-      if (goalAt !== null) goalAt += 1 / 60;
-    },
-    render(alpha) {
-      const now = performance.now();
-      const dt = Math.min(0.1, (now - lastRenderMs) / 1000);
-      lastRenderMs = now;
-      const w = app.screen.width;
-      const h = app.screen.height;
-      camera.viewportWidth = w;
-      camera.viewportHeight = h;
-      camera.zoom = Math.min(1.5, Math.max(0.5, w / (VIEW_WIDTH_M * 30)));
-      camera.center = s.controller.camera.interpolated(alpha);
-      if (goalAt !== null) renderer.setGoal(goalFill * Math.min(1, goalAt / GOAL_FILL_SECONDS), goalAt < GOAL_FILL_SECONDS + 1 ? 1 : 0.3);
-      renderer.render(s.world.manifest(), s.world.snapshot(alpha), camera, dt);
-      app.render();
-    },
-    onPauseChange(paused) {
-      if (paused) {
-        input.clear();
-        hudDrive = 0;
-      }
-      audio.paused?.(paused);
-    },
-  });
-  loop.bindVisibility();
-  // INTEGRATION #8: the rotate-device overlay pauses the run (manual cause).
-  loop.setPaused(isPortraitBlocked());
-  const offPortrait = onPortraitChange((portrait) => loop.setPaused(portrait));
-
-  audio.runStarted?.({ levelId: state.levelId, theme: level.theme });
-  s.start(); // physics on, `started` -> HUD shows Release
-  loop.start();
-
-  // Dev-server builds only; never reachable in a production build.
-  if (import.meta.env.DEV) window.__prRun = { session: s, level };
-
-  let destroyed = false;
-  return {
-    destroy() {
-      if (destroyed) return;
-      destroyed = true;
-      loop.stop();
-      offPortrait();
-      unbindKeys();
-      window.removeEventListener('keydown', onEsc);
-      offEvents();
-      hud.destroy();
-      app.stage.removeChild(renderer.view);
-      renderer.destroy();
-      app.canvas.remove();
+    let started = false;
+    cleanup.push(() => {
+      if (started) audio.runStopped?.();
+    });
+    cleanup.push(() => {
       s.destroy();
       if (import.meta.env.DEV && window.__prRun?.session === s) window.__prRun = null;
-      audio.runStopped?.();
-      root.remove();
-    },
-  };
+    });
+    if (!ctx.isCurrent()) {
+      teardown();
+      return { destroy() {} };
+    }
+    loading.remove();
+
+    // -------------------------------------------------------------- render
+    canvasHost.appendChild(app.canvas);
+    cleanup.push(() => app.canvas.remove());
+    app.resizeTo = canvasHost;
+    app.resize();
+    const renderer = new SceneRenderer(lib, { theme: level.theme });
+    cleanup.push(() => renderer.destroy());
+    renderer.setLevel(level);
+    renderer.setCartDesign(design); // INTEGRATION #11: always
+    renderer.resetSource(); // RESIDUALS R5: new world
+    renderer.setFunnel(funnelGeometry(level.funnel, TOTAL_PINEAPPLES));
+    app.stage.addChild(renderer.view);
+    cleanup.push(() => app.stage.removeChild(renderer.view));
+    const camera: Camera = { center: s.controller.camera.position, zoom: 1, viewportWidth: 1, viewportHeight: 1 };
+
+    // --------------------------------------------------------------- input
+    const input = new DriveInput();
+    cleanup.push(input.bindKeyboard(window));
+    let hudDrive: DriveIntent = 0;
+    let lastDrive: DriveDirection = 0;
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') void dispatch({ type: 'backToBuild' });
+    };
+    window.addEventListener('keydown', onEsc);
+    cleanup.push(() => window.removeEventListener('keydown', onEsc));
+
+    // ---------------------------------------------------------- goal / audio
+    let goalAt: number | null = null;
+    let goalFill = 0;
+    cleanup.push(
+      s.on((e: RunEvent) => {
+        if (e.type === 'released') renderer.setFunnelOpen(true);
+        if (e.type === 'goalReached') {
+          goalAt = 0;
+          goalFill = Math.min(1, e.delivered / TOTAL_PINEAPPLES);
+        }
+        audio.runEvent?.(e);
+      }),
+    );
+
+    // ----------------------------------------------------------------- HUD
+    const hud = mountRunHudScreen(hudHost, state, dispatch, {
+      source: s,
+      telemetry: { furthestMetres: () => s.furthestMetres(), aboard: () => s.aboard() },
+      controls: {
+        release: () => void s.release(),
+        giveUp: () => void s.giveUp(),
+        setDrive: (d) => (hudDrive = d),
+      },
+      ...(deps.endDelayMs !== undefined ? { endDelayMs: deps.endDelayMs } : {}),
+    });
+    cleanup.push(() => hud.destroy());
+
+    // ---------------------------------------------------------------- loop
+    let lastRenderMs = performance.now();
+    const loop = new FrameLoop({
+      step() {
+        const dir: DriveDirection = input.direction !== 0 ? input.direction : hudDrive;
+        if (dir !== lastDrive) {
+          lastDrive = dir;
+          audio.drive?.(dir);
+        }
+        s.setDrive(dir);
+        s.step();
+        if (goalAt !== null) goalAt += 1 / 60;
+      },
+      render(alpha) {
+        const now = performance.now();
+        const dt = Math.min(0.1, (now - lastRenderMs) / 1000);
+        lastRenderMs = now;
+        const w = app.screen.width;
+        const h = app.screen.height;
+        camera.viewportWidth = w;
+        camera.viewportHeight = h;
+        camera.zoom = Math.min(1.5, Math.max(0.5, w / (VIEW_WIDTH_M * 30)));
+        camera.center = s.controller.camera.interpolated(alpha);
+        if (goalAt !== null) renderer.setGoal(goalFill * Math.min(1, goalAt / GOAL_FILL_SECONDS), goalAt < GOAL_FILL_SECONDS + 1 ? 1 : 0.3);
+        renderer.render(s.world.manifest(), s.world.snapshot(alpha), camera, dt);
+        app.render();
+      },
+      onPauseChange(paused) {
+        if (paused) {
+          input.clear();
+          hudDrive = 0;
+        }
+        audio.paused?.(paused);
+      },
+    });
+    cleanup.push(() => loop.stop());
+    loop.bindVisibility();
+    // INTEGRATION #8: the rotate-device overlay pauses the run (manual cause).
+    loop.setPaused(isPortraitBlocked());
+    cleanup.push(onPortraitChange((portrait) => loop.setPaused(portrait)));
+
+    audio.runStarted?.({ levelId: state.levelId, theme: level.theme });
+    started = true;
+    s.start(); // physics on, `started` -> HUD shows Release
+    loop.start();
+
+    // Dev-server builds only; never reachable in a production build.
+    if (import.meta.env.DEV) window.__prRun = { session: s, level };
+  } catch (err) {
+    teardown();
+    throw err;
+  }
+
+  return { destroy: teardown };
 }
