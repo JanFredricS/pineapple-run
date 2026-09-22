@@ -337,6 +337,11 @@ export class PhysicsWorld implements SnapshotSource {
     return t;
   }
 
+  /** Rotational inertia about the body's centre of mass (kg·m²). */
+  getRotationalInertia(handle: BodyHandle): number {
+    return this.b2.b2Body_GetRotationalInertia(this.body(handle).id);
+  }
+
   getMass(handle: BodyHandle): number {
     return this.b2.b2Body_GetMass(this.body(handle).id);
   }

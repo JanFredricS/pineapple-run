@@ -9,8 +9,9 @@
  *  - wheel pins become plain (motorless) revolute joints;
  *  - shocks become spring distance joints, 5 Hz, damping ratio 0.5;
  *  - drive (original WheelCommand): while a direction is held, every powered
- *    wheel BODY gets a direct torque of 20 × its mass, unless its ABSOLUTE
- *    angular velocity is already at the ±20 rad/s cap in that direction.
+ *    wheel BODY gets a direct torque of 20 × its mass, limited to the
+ *    remaining headroom below the ±20 rad/s ABSOLUTE angular-velocity cap
+ *    (min(20·m, I·(cap − |ω|)/dt)), so no wheel size can overshoot it.
  *    Pinned and shock-mounted wheels use the same law. Being an external
  *    torque on the wheel only, it has no reaction on the chassis.
  *
@@ -21,6 +22,7 @@
 
 import type { CompoundSpec } from '../model/attach';
 import type { Vec2 } from '../model/geometry';
+import { FIXED_DT } from './clock';
 import type { BodyHandle, JointHandle, MaterialDef, PhysicsWorld } from './engine';
 
 export const PART_DENSITY = 1;
@@ -65,7 +67,7 @@ export function buildCompound(world: PhysicsWorld, spec: CompoundSpec, offset: V
   }
   const bodies = new Map<string, BodyHandle>();
   const wheelBodies: BodyHandle[] = [];
-  const poweredWheels: { handle: BodyHandle; torque: number }[] = [];
+  const poweredWheels: { handle: BodyHandle; torque: number; inertia: number }[] = [];
   const at = (p: Vec2): Vec2 => ({ x: p.x + offset.x, y: p.y + offset.y });
 
   for (const b of spec.bodies) {
@@ -84,7 +86,13 @@ export function buildCompound(world: PhysicsWorld, spec: CompoundSpec, offset: V
     }
     bodies.set(b.id, handle);
     if (isWheel) wheelBodies.push(handle);
-    if (isWheel && b.powered) poweredWheels.push({ handle, torque: DRIVE_TORQUE_PER_MASS * world.getMass(handle) });
+    if (isWheel && b.powered) {
+      poweredWheels.push({
+        handle,
+        torque: DRIVE_TORQUE_PER_MASS * world.getMass(handle),
+        inertia: world.getRotationalInertia(handle),
+      });
+    }
   }
 
   const wheelJoints = new Map<string, JointHandle>();
@@ -124,9 +132,13 @@ export function buildCompound(world: PhysicsWorld, spec: CompoundSpec, offset: V
     },
     preStep() {
       if (destroyed || drive === 0) return;
-      for (const { handle, torque } of poweredWheels) {
-        const w = world.getAngularVelocity(handle);
-        if (drive > 0 ? w < DRIVE_MAX_SPEED : w > -DRIVE_MAX_SPEED) world.applyTorque(handle, drive * torque);
+      for (const { handle, torque, inertia } of poweredWheels) {
+        // Spin headroom in the drive direction. Torque is limited to what
+        // brings |ω| exactly to the cap in one step, so small wheels (tiny
+        // inertia) cannot overshoot it.
+        const headroom = DRIVE_MAX_SPEED - drive * world.getAngularVelocity(handle);
+        if (headroom <= 0) continue;
+        world.applyTorque(handle, drive * Math.min(torque, (inertia * headroom) / FIXED_DT));
       }
     },
     destroy() {

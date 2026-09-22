@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveAttachments } from '../../src/model/attach';
-import type { CartDesign } from '../../src/model/cart';
+import { MIN_PART_SIZE_PX, type CartDesign } from '../../src/model/cart';
 import { DRIVE_MAX_SPEED, buildCompound } from '../../src/physics/compound';
 import { PhysicsWorld } from '../../src/physics/engine';
 
@@ -51,9 +51,8 @@ describe('buildCompound', () => {
     }
     for (const h of cart.wheelBodies) expect(w.getAngularVelocity(h)).toBeGreaterThan(DRIVE_MAX_SPEED * 0.9);
     expect(w.getAngularVelocity(free)).toBeGreaterThan(DRIVE_MAX_SPEED * 0.9);
-    // at most one step of torque past the cap: 20·m / (½·m·r²) / 60 ≈ 1.24
-    // rad/s for r = 22 px (measured peak 21.19)
-    expect(peak).toBeLessThan(DRIVE_MAX_SPEED + 1.3);
+    // torque is limited to the remaining headroom: never past the cap
+    expect(peak).toBeLessThanOrEqual(DRIVE_MAX_SPEED + 1e-3);
     // external torque on the wheels only: the chassis does not counter-rotate
     expect(Math.abs(w.getAngularVelocity(chassis))).toBeLessThan(0.05);
     // coasting applies nothing
@@ -62,6 +61,40 @@ describe('buildCompound', () => {
     cart.preStep();
     w.step();
     expect(w.getAngularVelocity(free)).toBeLessThanOrEqual(before);
+  });
+
+  it.each([
+    ['in the air', { x: 0, y: 0 }],
+    ['on the ground', { x: 0, y: 10 }],
+  ])('drive cap holds for minimum-radius (5 px) wheels, both directions (%s)', async (_n, gravity) => {
+    const w = await world(gravity);
+    if (gravity.y) {
+      const g = w.createBody({ type: 'static', position: { x: 0, y: 0 }, role: 'terrain' });
+      w.addChain(g, [{ x: -50, y: 10 }, { x: 50, y: 10 }], { friction: 0.9, restitution: 0 });
+    }
+    const r = MIN_PART_SIZE_PX;
+    const design: CartDesign = {
+      version: 1,
+      parts: [
+        { id: 'A', kind: 'straw', a: { x: 0, y: 0 }, b: { x: 40, y: 0 } },
+        { id: 'w1', kind: 'wheel', center: { x: 5, y: 0 }, radius: r },
+        { id: 'w2', kind: 'wheel', center: { x: 35, y: 0 }, radius: r },
+      ],
+    };
+    const spec = resolveAttachments(design);
+    expect(spec.errors).toEqual([]);
+    const cart = buildCompound(w, spec, { x: 0, y: 10 - r / 30 - 0.01 });
+    let peak = 0;
+    for (const dir of [1, -1, 1] as const) {
+      cart.setDrive(dir);
+      for (let s = 0; s < 90; s++) {
+        cart.preStep();
+        w.step();
+        for (const h of cart.wheelBodies) peak = Math.max(peak, Math.abs(w.getAngularVelocity(h)));
+      }
+    }
+    expect(peak).toBeGreaterThan(DRIVE_MAX_SPEED * 0.9);
+    expect(peak).toBeLessThanOrEqual(DRIVE_MAX_SPEED + 1e-3);
   });
 
   it('collision: only directly jointed bodies skip collision; other bodies of the same cart collide', async () => {
