@@ -60,9 +60,19 @@ export async function mountSpikePage(host: HTMLElement): Promise<SpikePage> {
   let fps = 60;
   let lastFrame = performance.now();
 
+  // Reset creates a new world asynchronously. A generation token makes only
+  // the latest request win; stale or post-destroy creations are destroyed
+  // immediately, so no world is ever orphaned.
+  let generation = 0;
+  let pageDestroyed = false;
   const reset = () => {
-    world.destroy();
+    const gen = ++generation;
+    if (!world.isDestroyed) world.destroy();
     void PhysicsWorld.create().then((w) => {
+      if (pageDestroyed || gen !== generation) {
+        w.destroy();
+        return;
+      }
       world = w;
       scene = createSpikeScene(world);
       loop.clock.reset();
@@ -108,6 +118,8 @@ export async function mountSpikePage(host: HTMLElement): Promise<SpikePage> {
 
   return {
     destroy() {
+      pageDestroyed = true;
+      generation++;
       loop.stop();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);

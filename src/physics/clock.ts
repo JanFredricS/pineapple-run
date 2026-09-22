@@ -96,32 +96,50 @@ export class FrameLoop {
   }
 
   stop(): void {
+    if (this.running) cancelAnimationFrame(this.rafId);
     this.running = false;
-    cancelAnimationFrame(this.rafId);
     this.unbind?.();
     this.unbind = null;
   }
 
+  /**
+   * Pause causes are tracked independently; the loop runs only when none is
+   * active (paused = hidden OR blurred OR manually paused). E.g. becoming
+   * visible again while the window is still blurred stays paused.
+   */
+  private causes = { hidden: false, blurred: false, manual: false };
+
+  get pauseCauses(): Readonly<{ hidden: boolean; blurred: boolean; manual: boolean }> {
+    return { ...this.causes };
+  }
+
+  /** Manual pause (e.g. a pause button); composes with hidden/blurred. */
   setPaused(paused: boolean): void {
+    this.setCause('manual', paused);
+  }
+
+  private setCause(cause: 'hidden' | 'blurred' | 'manual', on: boolean): void {
+    this.causes[cause] = on;
+    const paused = this.causes.hidden || this.causes.blurred || this.causes.manual;
     if (paused === this.clock.paused) return;
     if (paused) this.clock.pause();
     else {
       this.clock.resume();
-      this.lastMs = null; // do not count the time spent hidden
+      this.lastMs = null; // do not count the time spent paused
     }
     this.cb.onPauseChange?.(paused);
   }
 
-  /** Pause on visibilitychange (hidden) and window blur; resume on return. */
+  /** Pause while the document is hidden and while the window is blurred. */
   bindVisibility(doc: Document = document, win: Window = window): void {
-    const onVis = () => this.setPaused(doc.visibilityState === 'hidden');
-    const onBlur = () => this.setPaused(true);
-    const onFocus = () => {
-      if (doc.visibilityState !== 'hidden') this.setPaused(false);
-    };
+    this.unbind?.();
+    const onVis = () => this.setCause('hidden', doc.visibilityState === 'hidden');
+    const onBlur = () => this.setCause('blurred', true);
+    const onFocus = () => this.setCause('blurred', false);
     doc.addEventListener('visibilitychange', onVis);
     win.addEventListener('blur', onBlur);
     win.addEventListener('focus', onFocus);
+    onVis();
     this.unbind = () => {
       doc.removeEventListener('visibilitychange', onVis);
       win.removeEventListener('blur', onBlur);

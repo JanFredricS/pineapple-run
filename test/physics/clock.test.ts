@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FIXED_DT, FixedStepClock, MAX_CATCH_UP_SECONDS } from '../../src/physics/clock';
+import { FIXED_DT, FixedStepClock, FrameLoop, MAX_CATCH_UP_SECONDS } from '../../src/physics/clock';
 
 describe('FixedStepClock', () => {
   it('steps once per 1/60 s of real time', () => {
@@ -53,5 +53,48 @@ describe('FixedStepClock', () => {
     expect(c.advance(-1)).toBe(0);
     expect(c.advance(Number.NaN)).toBe(0);
     expect(c.advance(Infinity)).toBe(0);
+  });
+});
+
+describe('FrameLoop pause causes', () => {
+  function setup() {
+    const doc = Object.assign(new EventTarget(), { visibilityState: 'visible' as DocumentVisibilityState });
+    const win = new EventTarget();
+    const changes: boolean[] = [];
+    const loop = new FrameLoop({ step() {}, render() {}, onPauseChange: (p) => changes.push(p) });
+    loop.bindVisibility(doc as unknown as Document, win as unknown as Window);
+    const setVis = (v: DocumentVisibilityState) => {
+      doc.visibilityState = v;
+      doc.dispatchEvent(new Event('visibilitychange'));
+    };
+    return { loop, win, setVis, changes };
+  }
+
+  it('blur and hidden compose: visible again while still blurred stays paused', () => {
+    const { loop, win, setVis, changes } = setup();
+    expect(loop.clock.paused).toBe(false);
+    win.dispatchEvent(new Event('blur'));
+    setVis('hidden');
+    setVis('visible');
+    expect(loop.clock.paused).toBe(true); // still blurred
+    win.dispatchEvent(new Event('focus'));
+    expect(loop.clock.paused).toBe(false);
+    expect(changes).toEqual([true, false]);
+  });
+
+  it('focus while hidden stays paused; manual pause composes too', () => {
+    const { loop, win, setVis } = setup();
+    setVis('hidden');
+    win.dispatchEvent(new Event('focus'));
+    expect(loop.clock.paused).toBe(true);
+    setVis('visible');
+    expect(loop.clock.paused).toBe(false);
+    loop.setPaused(true);
+    win.dispatchEvent(new Event('blur'));
+    win.dispatchEvent(new Event('focus'));
+    expect(loop.clock.paused).toBe(true);
+    loop.setPaused(false);
+    expect(loop.clock.paused).toBe(false);
+    loop.stop();
   });
 });
