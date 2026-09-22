@@ -18,3 +18,4 @@ export * from './generator';
 export * from './originalCourse';
 export { normalizeSeed, type TerrainSeed } from './prng';
 export { clampSlopes, maxSlopeViolation, type SlopeLimits } from './slope';
+export { loadOriginalCourse } from './levels';

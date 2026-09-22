@@ -21,6 +21,14 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
+    // Multi-page build: one line per harness/tool page.
+    rolldownOptions: {
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        'terrain-harness': fileURLToPath(new URL('./terrain-harness.html', import.meta.url)),
+        mapbuilder: fileURLToPath(new URL('./mapbuilder.html', import.meta.url)),
+      },
+    },
   },
   test: {
     environment: 'node',

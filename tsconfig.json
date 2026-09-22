@@ -17,5 +17,5 @@
       "#box2d-compat": ["./node_modules/box2d3-wasm/build/dist/es/compat/Box2D.compat.d.ts"]
     }
   },
-  "include": ["src", "test", "vite.config.ts"]
+  "include": ["src", "test", "tools", "vite.config.ts"]
 }

@@ -201,7 +201,29 @@ export function makeChunk(index: number, pieces: Vec2[][], width = CHUNK_WIDTH):
   };
 }
 
-const clonePieces = (pieces: readonly Vec2[][]): Vec2[][] => pieces.map((p) => p.map((v) => ({ x: v.x, y: v.y })));
+/**
+ * Ground height (y, m) of a chunk at x, or null over a gap / outside the
+ * chunk's pieces. Where pieces overlap in x (never in generated terrain), the
+ * highest surface (smallest y) wins. For spawning and tools.
+ */
+export function surfaceYAt(chunk: TerrainChunk, x: number): number | null {
+  let best: number | null = null;
+  for (const piece of chunk.pieces) {
+    if (x < piece[0]!.x || x > piece[piece.length - 1]!.x) continue;
+    for (let i = 1; i < piece.length; i++) {
+      const a = piece[i - 1]!;
+      const b = piece[i]!;
+      if (x >= a.x && x <= b.x) {
+        const y = b.x === a.x ? Math.min(a.y, b.y) : a.y + ((b.y - a.y) * (x - a.x)) / (b.x - a.x);
+        if (best === null || y < best) best = y;
+        break;
+      }
+    }
+  }
+  return best;
+}
+
+const clonePieces =(pieces: readonly Vec2[][]): Vec2[][] => pieces.map((p) => p.map((v) => ({ x: v.x, y: v.y })));
 
 /** Chunks of a finite, already-validated LevelDef terrain. */
 export class LevelChunkSource implements TerrainSource {

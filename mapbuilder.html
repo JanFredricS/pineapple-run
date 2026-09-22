@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pineapple Run — map builder</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #1b202b; color: #e6e6e6; font: 13px/1.35 system-ui, sans-serif; }
+      body { display: flex; }
+      #stage { position: relative; flex: 1; min-width: 0; }
+      #view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+      #status { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 8px; background: #0f131bcc; font: 12px ui-monospace, monospace; white-space: pre-wrap; }
+      #status .bad { color: #ff8a8a; }
+      #status .ok { color: #9be39b; }
+      #modes { position: absolute; top: 6px; left: 6px; display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 12px); }
+      #modes button { font: 12px system-ui; background: #2a3242e6; color: #ddd; border: 1px solid #4a5568; border-radius: 4px; padding: 3px 7px; cursor: pointer; }
+      #modes button.on { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+      #panel { width: 340px; flex: none; overflow-y: auto; background: #151a23; border-left: 1px solid #2c3444; padding: 8px 10px 40px; box-sizing: border-box; }
+      #panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #9aa4b2; margin: 14px 0 6px; border-bottom: 1px solid #2c3444; padding-bottom: 3px; }
+      #panel label { display: flex; justify-content: space-between; gap: 6px; align-items: center; margin: 3px 0; }
+      #panel input, #panel select, #panel textarea, #panel button { font: inherit; background: #232a37; color: #eee; border: 1px solid #3c4658; border-radius: 3px; padding: 2px 5px; }
+      #panel input[type=number] { width: 6.5em; }
+      #panel input[type=text] { width: 11em; }
+      #panel textarea { width: 100%; box-sizing: border-box; height: 110px; font: 11px ui-monospace, monospace; }
+      #panel button { cursor: pointer; margin: 2px 2px 2px 0; }
+      .row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+      .item { border: 1px solid #2c3444; border-radius: 4px; padding: 4px; margin: 4px 0; }
+      .item.sel { border-color: #3b82f6; }
+      .item input[type=number] { width: 4.8em !important; }
+      #errors { background: #3a1d22; border: 1px solid #7a2e38; color: #ffc9cf; padding: 6px; border-radius: 4px; white-space: pre-wrap; font: 12px ui-monospace, monospace; }
+      #errors:empty { display: none; }
+      #help { color: #9aa4b2; font-size: 12px; }
+      #help kbd { background: #2a3242; border-radius: 3px; padding: 0 4px; font: 11px ui-monospace, monospace; }
+      @media (max-width: 800px) { body { flex-direction: column; } #panel { width: auto; height: 45%; border-left: 0; border-top: 1px solid #2c3444; } }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <canvas id="view" tabindex="0"></canvas>
+      <div id="modes"></div>
+      <div id="status"></div>
+    </div>
+    <div id="panel">
+      <h2>File</h2>
+      <div class="row">
+        <button id="new">New</button>
+        <button id="loadOriginal">Original course</button>
+        <button id="undo" title="Ctrl/Cmd+Z">Undo</button>
+        <button id="redo" title="Ctrl/Cmd+Shift+Z">Redo</button>
+        <button id="fit" title="Home">Fit view</button>
+      </div>
+      <div class="row">
+        <label>Seed <input id="genSeed" type="text" value="tiki" style="width:6em" /></label>
+        <label>m <input id="genLength" type="number" value="600" min="40" step="40" style="width:5em" /></label>
+        <button id="generate">Generate</button>
+      </div>
+
+      <h2>Import / export (validated)</h2>
+      <textarea id="json" spellcheck="false" placeholder="Paste LevelDef JSON here, then Import"></textarea>
+      <div class="row">
+        <button id="import">Import JSON</button>
+        <label style="display:inline-flex">File <input id="file" type="file" accept=".json,application/json" style="width:12em" /></label>
+      </div>
+      <div class="row">
+        <button id="export">Export → text</button>
+        <button id="download">Download .json</button>
+        <button id="copy">Copy</button>
+      </div>
+      <div id="errors"></div>
+
+      <h2>Level</h2>
+      <label>id <input id="m-id" type="text" /></label>
+      <label>name <input id="m-name" type="text" /></label>
+      <label>theme <select id="m-theme"></select></label>
+      <label>friction <input id="m-friction" type="number" step="0.05" min="0" /></label>
+      <label>restitution <input id="m-restitution" type="number" step="0.05" min="0" max="1" /></label>
+      <label>kill Y (m) <input id="m-killY" type="number" step="1" /></label>
+      <label>goal line x <input id="m-lineX" type="number" step="0.1" /></label>
+
+      <h2>Selection</h2>
+      <div id="inspector">Nothing selected.</div>
+
+      <h2>Test roll</h2>
+      <div class="row">
+        <label>speed m/s <input id="rollSpeed" type="number" value="8" step="1" /></label>
+        <label>radius <input id="rollRadius" type="number" value="0.4" step="0.1" min="0.05" /></label>
+      </div>
+      <div class="row">
+        <button id="roll" title="T">Roll ball from cart start (T)</button>
+        <label style="display:inline-flex"><input id="follow" type="checkbox" checked /> follow</label>
+      </div>
+      <div id="rollResult"></div>
+
+      <h2>Props</h2>
+      <label>art for new props <input id="propArt" type="text" value="palm" /></label>
+      <div id="props"></div>
+
+      <h2>Zones</h2>
+      <label>kind for new zones <select id="zoneKind"><option value="gravity">gravity</option><option value="force">force</option></select></label>
+      <div id="zones"></div>
+
+      <h2>Keys</h2>
+      <div id="help">
+        <kbd>V</kbd> select/drag · <kbd>A</kbd> add point (click a segment, or beyond a span end) · <kbd>N</kbd> new span ·
+        <kbd>G</kbd> cut gap (click a segment) · <kbd>J</kbd> join selected span with the next ·
+        <kbd>S</kbd> cart start · <kbd>F</kbd> funnel · <kbd>O</kbd> goal · <kbd>P</kbd> prop · <kbd>Z</kbd> zone (drag) ·
+        <kbd>Del</kbd> delete selection · arrows nudge (Shift ×10) · <kbd>T</kbd> test roll · <kbd>Esc</kbd> stop/back to select ·
+        <kbd>Ctrl/Cmd+Z</kbd> undo · <kbd>Ctrl/Cmd+Shift+Z</kbd> redo · wheel zoom · right/middle/space-drag pan · <kbd>Home</kbd> fit.
+        Chunk boundaries (every 40 m) are dashed.
+      </div>
+    </div>
+    <script type="module" src="/tools/mapbuilder/main.ts"></script>
+  </body>
+</html>

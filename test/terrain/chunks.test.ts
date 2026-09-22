@@ -9,6 +9,7 @@ import {
   MIN_CUT_CLEARANCE,
   MIN_PIECE_WIDTH,
   sanitizePiece,
+  surfaceYAt,
 } from '../../src/terrain/chunks';
 
 const W = CHUNK_WIDTH;
@@ -102,6 +103,24 @@ describe('cutSpan', () => {
       expect(crossesGap).toBe(false);
     }
     expect(byChunk.get(1)!.length).toBe(2); // chunk 1 holds the end of span A and the start of span B
+  });
+});
+
+describe('surfaceYAt', () => {
+  it('interpolates the surface and reports gaps as null', () => {
+    const src = new LevelChunkSource({
+      spans: [
+        { id: 'a', points: [{ x: 0, y: 10 }, { x: 10, y: 12 }] },
+        { id: 'b', points: [{ x: 12, y: 8 }, { x: 30, y: 8 }] },
+      ],
+      friction: 0.9,
+      restitution: 0.3,
+    });
+    const c = src.chunk(0);
+    expect(surfaceYAt(c, 5)).toBeCloseTo(11, 12);
+    expect(surfaceYAt(c, 11)).toBeNull();
+    expect(surfaceYAt(c, 20)).toBe(8);
+    expect(surfaceYAt(c, 35)).toBeNull();
   });
 });
 

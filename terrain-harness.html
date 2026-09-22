@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Pineapple Run — terrain harness (S3)</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #1d2330; color: #e8e8e8;
+        font: 13px/1.4 system-ui, sans-serif; }
+      #bar { position: fixed; top: 0; left: 0; right: 0; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center;
+        padding: 6px 10px; background: #111722cc; z-index: 2; }
+      #bar label { display: inline-flex; gap: 4px; align-items: center; }
+      #bar input, #bar select, #bar button { font: inherit; background: #2a3242; color: #eee; border: 1px solid #455; border-radius: 4px; padding: 2px 6px; }
+      #bar input[type=text] { width: 9em; }
+      #bar input[type=number] { width: 6em; }
+      #hud { position: fixed; left: 10px; bottom: 10px; white-space: pre; font: 12px/1.35 ui-monospace, monospace;
+        background: #111722cc; padding: 6px 8px; border-radius: 4px; z-index: 2; max-width: calc(100vw - 40px); overflow: hidden; }
+      canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+    </style>
+  </head>
+  <body>
+    <div id="bar">
+      <strong>Terrain harness</strong>
+      <label>Source
+        <select id="source">
+          <option value="endless">Endless (seed)</option>
+          <option value="generated">Generated level (seed, length)</option>
+          <option value="original">Original course (2008)</option>
+          <option value="spike">S0 spike level</option>
+        </select>
+      </label>
+      <label>Seed <input id="seed" type="text" value="tiki" /></label>
+      <label>Length m <input id="length" type="number" value="1200" min="40" step="40" /></label>
+      <button id="reset">Reset (R)</button>
+      <label><input id="auto" type="checkbox" /> auto-drive</label>
+      <label><input id="chunkview" type="checkbox" checked /> chunk overlay</label>
+    </div>
+    <canvas id="view"></canvas>
+    <div id="hud"></div>
+    <script type="module" src="/src/terrain/harness.ts"></script>
+  </body>
+</html>
