@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LOOP_STEPS, stepSeconds } from '../../src/audio/dsp';
 import { AudioEngine } from '../../src/audio/engine';
-import { LAYER_MIX, MusicPlayer, START_DELAY, THEME_FADE_SECONDS } from '../../src/audio/music';
+import { FIRST_FADE_IN_SECONDS, LAYER_MIX, MusicPlayer, START_DELAY, THEME_FADE_SECONDS } from '../../src/audio/music';
 import { FakeAudioContext, FakeTimers, fakeFactory, type FakeGain, type FakeNode, type FakeOscillator } from './fakeAudio';
 
 const LOOP_SECONDS = LOOP_STEPS * stepSeconds();
@@ -165,10 +165,38 @@ describe('MusicPlayer', () => {
     // New session fades in over the theme fade.
     const fresh = sessionNodes(ctx(), engine).bus;
     expect(fresh).not.toBe(old);
-    expect(fresh.gain.calls.slice(0, 2)).toEqual([
+    expect(fresh.gain.calls.slice(0, 3)).toEqual([
+      { m: 'cancel', t: 1 },
       { m: 'set', v: 0, t: 1 },
       { m: 'lin', v: 1, t: 1 + THEME_FADE_SECONDS },
     ]);
+  });
+
+  it('stop / theme switch during the fade-in pins the interpolated bus gain (no jump to 0)', () => {
+    const { music, engine, ctx, runTo } = setup();
+    music.play('beach');
+    runTo(0.15); // half-way through the 0.3 s first fade-in
+    const bus = sessionNodes(ctx(), engine).bus;
+    music.stop(0.8);
+    const tail = bus.gain.calls.slice(-3);
+    expect(tail).toEqual([
+      { m: 'cancel', t: 0.15 },
+      { m: 'set', v: 0.15 / FIRST_FADE_IN_SECONDS, t: 0.15 },
+      { m: 'lin', v: 0, t: 0.15 + 0.8 },
+    ]);
+    expect((tail[1] as { v: number }).v).toBeGreaterThan(0);
+
+    // Switching theme mid cross-fade: the incoming bus is pinned too.
+    music.play('kitchen');
+    runTo(0.55); // kitchen bus: 0 → 1 over THEME_FADE_SECONDS from 0.15
+    const kitchenBus = sessionNodes(ctx(), engine).bus;
+    music.play('workbench');
+    const expected = (0.55 - 0.15) / THEME_FADE_SECONDS;
+    const k = kitchenBus.gain.calls.slice(-3);
+    expect(k[0]).toEqual({ m: 'cancel', t: 0.55 });
+    expect(k[1]!.m).toBe('set');
+    expect((k[1] as { v: number }).v).toBeCloseTo(expected, 12);
+    expect(k[2]).toEqual({ m: 'lin', v: 0, t: 0.55 + THEME_FADE_SECONDS });
   });
 
   it('before unlock (frozen clock) it only schedules the first lookahead window', () => {

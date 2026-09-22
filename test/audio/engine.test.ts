@@ -119,15 +119,81 @@ describe('AudioEngine: visibility', () => {
     const ctx = created[0]!;
     doc.visibilityState = 'hidden';
     doc.dispatch('visibilitychange');
+    await engine.visibilitySettled;
     expect(ctx.suspendCalls).toBe(1);
     expect(ctx.state).toBe('suspended');
     doc.visibilityState = 'visible';
     doc.dispatch('visibilitychange');
+    await engine.visibilitySettled;
     expect(ctx.resumeCalls).toBe(2);
     expect(ctx.state).toBe('running');
   });
 
-  it('does not resume a context that was never unlocked', () => {
+  it('hide→show before suspend() settles still ends running (intent, not snapshot)', async () => {
+    const { engine, created, doc } = make({ behaviour: { deferSuspend: true } });
+    const el = new FakeTarget();
+    engine.attach(el);
+    el.dispatch('pointerdown');
+    await flush();
+    const ctx = created[0]!;
+    doc.visibilityState = 'hidden';
+    doc.dispatch('visibilitychange');
+    await flush();
+    expect(ctx.suspendPending).toBe(1);
+    expect(ctx.state).toBe('running'); // suspension not settled yet
+    doc.visibilityState = 'visible';
+    doc.dispatch('visibilitychange');
+    await flush();
+    expect(ctx.resumeCalls).toBe(1); // nothing yet: waits for the pending suspend
+    ctx.settleSuspend();
+    await engine.visibilitySettled;
+    await flush();
+    expect(ctx.state).toBe('running');
+    expect(ctx.resumeCalls).toBe(2);
+  });
+
+  it('hide and show queued before any transition runs: no suspend at all', async () => {
+    const { engine, created, doc } = make({ behaviour: { deferSuspend: true } });
+    const el = new FakeTarget();
+    engine.attach(el);
+    el.dispatch('pointerdown');
+    await flush();
+    const ctx = created[0]!;
+    doc.visibilityState = 'hidden';
+    doc.dispatch('visibilitychange');
+    doc.visibilityState = 'visible';
+    doc.dispatch('visibilitychange');
+    await engine.visibilitySettled;
+    expect(ctx.suspendCalls).toBe(0);
+    expect(ctx.state).toBe('running');
+  });
+
+  it('show→hide queued while suspended: intent wins, stays suspended', async () => {
+    const { engine, created, doc } = make({ behaviour: { deferSuspend: true } });
+    const el = new FakeTarget();
+    engine.attach(el);
+    el.dispatch('pointerdown');
+    await flush();
+    const ctx = created[0]!;
+    doc.visibilityState = 'hidden';
+    doc.dispatch('visibilitychange');
+    await flush();
+    ctx.settleSuspend();
+    await engine.visibilitySettled;
+    doc.visibilityState = 'visible';
+    doc.dispatch('visibilitychange');
+    doc.visibilityState = 'hidden';
+    doc.dispatch('visibilitychange');
+    await flush();
+    ctx.settleSuspend();
+    await engine.visibilitySettled;
+    await flush();
+    ctx.settleSuspend();
+    await engine.visibilitySettled;
+    expect(ctx.state).toBe('suspended');
+  });
+
+  it('does not resume a context that was never unlocked', async () => {
     const { engine, created, doc } = make();
     engine.attach(new FakeTarget());
     engine.ensureGraph();
@@ -135,6 +201,7 @@ describe('AudioEngine: visibility', () => {
     doc.dispatch('visibilitychange');
     doc.visibilityState = 'visible';
     doc.dispatch('visibilitychange');
+    await engine.visibilitySettled;
     expect(created[0]!.resumeCalls).toBe(0);
   });
 });

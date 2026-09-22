@@ -288,22 +288,58 @@ export class AudioEngine {
     );
   };
 
+  /**
+   * Suspend/resume are async and a hide→show can arrive before a pending
+   * suspend() settles (the context still reports 'running'). So transitions
+   * are driven by INTENT, not by a snapshot of the state: every
+   * visibilitychange appends a reconcile step to one promise chain (each
+   * step awaits the previous transition), and each step loops — after every
+   * settled suspend/resume it re-reads the CURRENT visibility and acts again
+   * until context state and visibility agree.
+   */
   private readonly onVisibility: ListenerLike = () => {
-    const graph = this.graphState;
-    if (!graph || this.destroyedFlag || !this.visibility) return;
-    const { ctx } = graph;
-    if (this.visibility.visibilityState === 'hidden') {
-      if (ctx.state === 'running') {
-        this.suspendedForHidden = true;
-        ctx.suspend().catch(() => {});
-      }
-    } else if ((this.suspendedForHidden || this.unlockedFlag) && ctx.state !== 'running' && ctx.state !== 'closed') {
-      this.suspendedForHidden = false;
-      ctx.resume().catch(() => {});
-    } else {
-      this.suspendedForHidden = false;
-    }
+    if (!this.graphState || this.destroyedFlag || !this.visibility) return;
+    this.visibilityChain = this.visibilityChain.then(() => this.reconcileVisibility());
   };
+
+  private visibilityChain: Promise<void> = Promise.resolve();
+
+  /** Settles once every queued visibility transition has completed (tests / harness). */
+  get visibilitySettled(): Promise<void> {
+    return this.visibilityChain;
+  }
+
+  private async reconcileVisibility(): Promise<void> {
+    // Bounded: each iteration performs one transition toward the current intent.
+    for (let i = 0; i < 4; i++) {
+      if (!(await this.visibilityStep())) return;
+    }
+  }
+
+  /** One transition toward the current visibility; false when nothing was needed. */
+  private async visibilityStep(): Promise<boolean> {
+    const graph = this.graphState;
+    if (!graph || this.destroyedFlag || !this.visibility) return false;
+    const { ctx } = graph;
+    const hidden = this.visibility.visibilityState === 'hidden';
+    try {
+      if (hidden) {
+        if (ctx.state !== 'running') return false;
+        this.suspendedForHidden = true;
+        await ctx.suspend();
+        return true;
+      }
+      if ((this.suspendedForHidden || this.unlockedFlag) && ctx.state !== 'running' && ctx.state !== 'closed') {
+        this.suspendedForHidden = false;
+        await ctx.resume();
+        return true;
+      }
+      if (ctx.state === 'running') this.suspendedForHidden = false;
+      return false;
+    } catch {
+      return false;
+    }
+  }
 
   private smooth(node: GainNodeLike, value: number): void {
     const graph = this.graphState;

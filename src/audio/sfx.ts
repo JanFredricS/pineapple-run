@@ -15,7 +15,7 @@
  */
 
 import type { AudioEngine, AudioGraph } from './engine';
-import { applyEnvelope, bounceGain, clamp01, lerp, midiToHz, motorParams, percPoints, vary } from './dsp';
+import { applyEnvelope, applyRamp, bounceGain, clamp01, constantRamp, lerp, midiToHz, motorParams, percPoints, retarget, vary, type Ramp } from './dsp';
 import { mulberry32 } from './rng';
 import { globalTimers, type AudioTimers, type AudioNodeLike, type GainNodeLike, type ScheduledSourceLike } from './types';
 import { createNoiseBuffer, playVoice, type VoiceKit } from './voices';
@@ -93,6 +93,8 @@ export const SFX_DURATION: Readonly<Record<OneShotSfx, number>> = {
 /** A running looped sound's nodes. */
 interface LoopNodes {
   out: GainNodeLike;
+  /** Tracked output fade, pinned before every replace (set by LoopedSound). */
+  outRamp?: Ramp;
   sources: ScheduledSourceLike[];
   params: (speed: number, time: number) => void;
 }
@@ -132,8 +134,8 @@ export class LoopedSound {
     const { graph, kit } = env;
     const t = graph.ctx.currentTime;
     const nodes = this.build(graph, kit, this.value);
-    nodes.out.gain.setValueAtTime(0, t);
-    nodes.out.gain.linearRampToValueAtTime(this.level, t + this.fadeIn);
+    nodes.outRamp = { from: 0, to: this.level, t0: t, t1: t + this.fadeIn };
+    applyRamp(nodes.out.gain, nodes.outRamp);
     nodes.out.connect(graph.sfxBus);
     for (const s of nodes.sources) s.start(t);
     this.nodes = nodes;
@@ -156,8 +158,10 @@ export class LoopedSound {
       return;
     }
     const t = graph.ctx.currentTime;
-    nodes.out.gain.cancelScheduledValues(t);
-    nodes.out.gain.setTargetAtTime(0, t, this.fadeOut / 4);
+    // Pin the in-flight value (start-then-immediate-stop is mid fade-in) and
+    // ramp down from there: no jump to 0, no click.
+    nodes.outRamp = retarget(nodes.outRamp ?? constantRamp(this.level, t), t, 0, this.fadeOut);
+    applyRamp(nodes.out.gain, nodes.outRamp);
     for (const s of nodes.sources) s.stop(t + this.fadeOut + 0.05);
     const handle = this.sfx.timers.setTimeout(() => {
       this.stopping.delete(handle);

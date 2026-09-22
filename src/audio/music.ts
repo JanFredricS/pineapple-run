@@ -39,6 +39,8 @@ export const LAYER_MIX: readonly [number, number, number, number] = [1, 0.8, 0.8
 export const STAGE_FADE_SECONDS = 2;
 /** Theme change / stop fade (s). */
 export const THEME_FADE_SECONDS = 0.8;
+/** Fade-in when nothing was playing before (s). */
+export const FIRST_FADE_IN_SECONDS = 0.3;
 /** Delay between play() and the first downbeat (s). */
 export const START_DELAY = 0.06;
 
@@ -57,6 +59,8 @@ interface Session {
   theme: MusicTheme;
   song: Song;
   bus: GainNodeLike;
+  /** Tracked bus fade (theme fade-in / fade-out), pinned before every replace. */
+  busRamp: Ramp;
   layers: GainNodeLike[];
   ramps: Ramp[];
   scheduler: LookaheadScheduler;
@@ -140,8 +144,8 @@ export class MusicPlayer {
     const now = ctx.currentTime;
     const song = this.song(theme);
     const bus = ctx.createGain();
-    bus.gain.setValueAtTime(0, now);
-    bus.gain.linearRampToValueAtTime(1, now + (this.retiring.size > 0 ? THEME_FADE_SECONDS : 0.3));
+    const busRamp: Ramp = { from: 0, to: 1, t0: now, t1: now + (this.retiring.size > 0 ? THEME_FADE_SECONDS : FIRST_FADE_IN_SECONDS) };
+    applyRamp(bus.gain, busRamp);
     bus.connect(graph.musicBus);
     const targets = layerGainsForStage(this.stageValue);
     const layers: GainNodeLike[] = [];
@@ -159,6 +163,7 @@ export class MusicPlayer {
       theme,
       song,
       bus,
+      busRamp,
       layers,
       ramps,
       kit,
@@ -229,8 +234,9 @@ export class MusicPlayer {
       return;
     }
     const now = graph.ctx.currentTime;
-    s.bus.gain.cancelScheduledValues(now);
-    s.bus.gain.setTargetAtTime(0, now, Math.max(0.01, fade / 4));
+    // Pin the in-flight value (e.g. mid fade-in) and ramp from there: no jump.
+    s.busRamp = retarget(s.busRamp, now, 0, Math.max(0.01, fade));
+    applyRamp(s.bus.gain, s.busRamp);
     const bus = s.bus;
     const handle = this.timers.setTimeout(() => {
       this.retiring.delete(bus);

@@ -165,6 +165,11 @@ export interface FakeContextBehaviour {
   /** resume() resolves but the state stays 'suspended' (e.g. no gesture). */
   resumeNoop?: boolean;
   initialState?: string;
+  /**
+   * suspend() stays pending (state still 'running', like a real context)
+   * until the test calls `settleSuspend()` — reproduces the async race.
+   */
+  deferSuspend?: boolean;
 }
 
 export class FakeAudioContext implements AudioContextLike {
@@ -209,10 +214,31 @@ export class FakeAudioContext implements AudioContextLike {
     if (!this.behaviour.resumeNoop) this.state = 'running';
     return Promise.resolve();
   }
+  private pendingSuspends: Array<() => void> = [];
   suspend() {
     this.suspendCalls++;
-    if (this.state !== 'closed') this.state = 'suspended';
-    return Promise.resolve();
+    const apply = () => {
+      if (this.state !== 'closed') this.state = 'suspended';
+    };
+    if (!this.behaviour.deferSuspend) {
+      apply();
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      this.pendingSuspends.push(() => {
+        apply();
+        resolve();
+      });
+    });
+  }
+  /** Completes every pending deferred suspend(). */
+  settleSuspend() {
+    const pending = this.pendingSuspends;
+    this.pendingSuspends = [];
+    for (const f of pending) f();
+  }
+  get suspendPending() {
+    return this.pendingSuspends.length;
   }
   close() {
     this.closeCalls++;

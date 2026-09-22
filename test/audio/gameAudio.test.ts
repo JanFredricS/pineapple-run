@@ -131,18 +131,41 @@ describe('audio architecture', () => {
   const dir = join(__dirname, '..', '..', 'src', 'audio');
   const files = readdirSync(dir).filter((f) => f.endsWith('.ts'));
 
+  /** Comments are stripped first (headers mention src/run etc. in prose); string literals are kept. */
+  const code = (f: string) =>
+    readFileSync(join(dir, f), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:'"])\/\/.*$/gm, '$1');
+
+  /** Every module specifier: `from '…'`, side-effect `import '…'`, dynamic `import('…')`, `require('…')`. */
+  const specifiers = (text: string) => [
+    ...[...text.matchAll(/\bfrom\s*['"]([^'"]+)['"]/g)].map((m) => m[1]!),
+    ...[...text.matchAll(/\bimport\s*['"]([^'"]+)['"]/g)].map((m) => m[1]!),
+    ...[...text.matchAll(/\b(?:import|require)\s*\(\s*['"`]([^'"`]+)['"`]/g)].map((m) => m[1]!),
+  ];
+
   it('src/audio depends only on itself and (type-only) src/model', () => {
     const bad: string[] = [];
     for (const f of files) {
-      const text = readFileSync(join(dir, f), 'utf8');
-      for (const m of text.matchAll(/^\s*(import|export)\s+(type\s+)?[^'"]*?from\s*['"]([^'"]+)['"]/gm)) {
-        const spec = m[3]!;
+      const text = code(f);
+      for (const spec of specifiers(text)) {
         if (spec.startsWith('./')) continue;
-        if (spec.startsWith('../model/') && m[2]) continue; // type-only contract import
+        if (spec.startsWith('../model/')) continue; // checked type-only below
         bad.push(`${f} -> ${spec}`);
       }
+      // Any value (non-type) import of src/model is also a violation.
+      for (const m of text.matchAll(/^\s*import\s+(type\s+)?[^'"]*?from\s*['"](\.\.\/model\/[^'"]+)['"]/gm)) {
+        if (!m[1]) bad.push(`${f} -> ${m[2]} (value import)`);
+      }
+      // Blunt backstop: no path into other game layers anywhere in code.
+      for (const m of text.matchAll(/\.\.\/(run|ui|render|builder|physics|terrain|spike|app)\b/g)) bad.push(`${f} mentions ../${m[1]}`);
     }
     expect(bad).toEqual([]);
+  });
+
+  it('the specifier scan catches side-effect, dynamic and re-export forms', () => {
+    const sample = `import '../run/x';\nconst m = await import('../ui/y');\nexport * from '../render/z';\nimport { a } from './ok';`;
+    expect(specifiers(sample).sort()).toEqual(['../render/z', '../run/x', '../ui/y', './ok']);
   });
 
   it('loads nothing external (all audio is synthesized)', () => {

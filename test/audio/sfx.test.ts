@@ -158,6 +158,33 @@ describe('looped sounds', () => {
     sfx.wheelMotor.stop(); // double stop safe
   });
 
+  it('start-then-immediate-stop pins the interpolated fade-in value (no click)', () => {
+    for (const loop of ['wheelMotor', 'blenderWhir'] as const) {
+      const { sfx, ctx, engine } = setup();
+      const c = ctx();
+      const sfxBus = engine.graph!.sfxBus as unknown as FakeNode;
+      sfx[loop].start(0.5);
+      const out = c.nodes.find((n) => n.outputs.includes(sfxBus)) as FakeGain;
+      const [, set0, rampUp] = out.gain.calls as Array<{ m: string; v: number; t: number }>;
+      expect(set0).toEqual({ m: 'set', v: 0, t: 0 });
+      const level = rampUp!.v;
+      const fadeIn = rampUp!.t;
+      c.currentTime = fadeIn / 2;
+      sfx[loop].stop();
+      const tail = out.gain.calls.slice(-3) as Array<{ m: string; v?: number; t: number }>;
+      expect(tail[0]).toEqual({ m: 'cancel', t: fadeIn / 2 });
+      expect(tail[1]!.m).toBe('set');
+      expect(tail[1]!.v).toBeCloseTo(level / 2, 12);
+      expect(tail[1]!.v).toBeGreaterThan(0);
+      expect(tail[2]!.m).toBe('lin');
+      expect(tail[2]!.v).toBe(0);
+      // Sources stop only after the fade-out has reached 0.
+      for (const src of c.nodes.filter((n) => n.kind === 'oscillator' || n.kind === 'bufferSource') as FakeOscillator[]) {
+        if (src.stoppedAt !== null) expect(src.stoppedAt).toBeGreaterThan(tail[2]!.t);
+      }
+    }
+  });
+
   it('set before start is remembered; blender loops its noise', () => {
     const { sfx, ctx } = setup();
     const c = ctx();
