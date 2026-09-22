@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "types": ["vite/client", "node"],
+    "paths": {
+      "#box2d-compat": ["./node_modules/box2d3-wasm/build/dist/es/compat/Box2D.compat.d.ts"]
+    }
+  },
+  "include": ["src", "test", "vite.config.ts"]
+}
