@@ -23,6 +23,12 @@
  *      works; newer version -> read-only toast, data untouched; throwing
  *      storage -> one "can't be saved" toast.
  *  [ ] Rotate overlay ON (and a portrait phone viewport) covers the game.
+ *  [ ] Endless: "aboard −1" drops the HUD count below `remaining` (telemetry);
+ *      the results bonus uses that aboard count however the run ended; bests
+ *      stay raw distance.
+ *  [ ] Results -> "Re-mount current screen": identical render, no new best
+ *      flip, nothing recorded twice (same resultId).
+ *  [ ] setItem throws -> results show "(not saved)".
  */
 
 import { App, type AppState, type ScreenFactory } from '../../app';
@@ -71,6 +77,8 @@ interface MockRun {
   readonly simTime: number;
   setTime(t: number): void;
   remaining: number;
+  /** Pineapples physically aboard (RunTelemetry.aboard) — can be < remaining. */
+  aboard: number;
   furthest: number;
   scripted: boolean;
 }
@@ -101,6 +109,7 @@ const runFactory: ScreenFactory = (host, state, dispatch) => {
       if (e.type === 'goalReached' || e.type === 'gaveUp') ended = true;
       if (e.type === 'pineappleLost') {
         run.remaining = e.remaining;
+        run.aboard = Math.min(run.aboard, e.remaining);
         if (target.kind === 'endless' && e.remaining === 0) ended = true;
       }
       log(`emit ${JSON.stringify(e)}`);
@@ -113,12 +122,16 @@ const runFactory: ScreenFactory = (host, state, dispatch) => {
       simTime = t;
     },
     remaining: TOTAL_PINEAPPLES,
+    aboard: TOTAL_PINEAPPLES,
     furthest: 0,
     scripted: !!script,
   };
   current = run;
   script?.on((e) => {
-    if (e.type === 'pineappleLost') run.remaining = e.remaining;
+    if (e.type === 'pineappleLost') {
+      run.remaining = e.remaining;
+      run.aboard = Math.min(run.aboard, e.remaining);
+    }
     log(`script ${JSON.stringify(e)}`);
   });
   const source: RunEventSource = {
@@ -131,7 +144,7 @@ const runFactory: ScreenFactory = (host, state, dispatch) => {
   const hud = mountRunHudScreen(host, state, dispatch, {
     source,
     clock: () => run.simTime,
-    telemetry: { furthestMetres: () => run.furthest },
+    telemetry: { furthestMetres: () => run.furthest, aboard: () => run.aboard },
     touchControls: touchMode,
     controls: {
       release() {
@@ -264,12 +277,19 @@ const panel = el('aside', { class: 'hx-panel' }, [
     btn('0% (>115 s)', () => jump(results('beach', { type: 'goalReached', simTime: 130, delivered: 15 }))),
     btn('Gave up', () => jump(results('workbench', { type: 'gaveUp', simTime: 33.3 }))),
     btn('Original (bonus)', () => jump(results('original', { type: 'goalReached', simTime: 40, delivered: 12 }))),
-    btn('Endless: lost all', () =>
-      jump(results('endless:PINE42', { type: 'pineappleLost', simTime: 95, pineappleId: 7, remaining: 0 }, { furthestMetres: 287.6, aboard: 0 })),
+    btn('Endless: lost last, 0 aboard', () =>
+      jump(results('endless:PINE42', { type: 'pineappleLost', simTime: 80, pineappleId: 2, remaining: 0 }, { furthestMetres: 150, aboard: 0 })),
     ),
     btn('Endless: gave up, 6 aboard', () =>
       jump(results('endless:TIKI', { type: 'gaveUp', simTime: 64 }, { furthestMetres: 402.2, aboard: 6 })),
     ),
+  ),
+  group(
+    'Record-once',
+    btn('Re-mount current screen (same resultId)', () => {
+      const s = app?.current;
+      if (s) jump(s);
+    }),
   ),
   group(
     'Run events (on run screen)',
@@ -288,6 +308,8 @@ const panel = el('aside', { class: 'hx-panel' }, [
     btn('t = 59.9 s', withRun((r) => r.setTime(59.9))),
     btn('t = 3599 s', withRun((r) => r.setTime(3599))),
     btn('+100 m', withRun((r) => (r.furthest += 100))),
+    btn('aboard −1 (loose, not lost)', withRun((r) => (r.aboard = Math.max(0, r.aboard - 1)))),
+    btn('aboard +1 (landed back)', withRun((r) => (r.aboard = Math.min(r.remaining, r.aboard + 1)))),
   ),
   group(
     'Scores storage',

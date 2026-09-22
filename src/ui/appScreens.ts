@@ -4,10 +4,10 @@
  * the UI harness) mount over the game canvas with a real/mock run source.
  */
 
-import type { AppAction, AppState, EndlessRunStats, Screen } from '../app';
+import { newResultId, type AppAction, type AppState, type EndlessRunStats, type MountContext, type Screen } from '../app';
 import type { RunEventSource } from '../model/runEvents';
 import { parseRunTarget } from './catalog';
-import { buildResults } from './resultsModel';
+import { resultsFor } from './resultsModel';
 import { browserStorage, ScoreStore } from './scoreStore';
 import { mountResultsScreen } from './screens/results';
 import { mountRunHud, type RunControls, type RunHud, type RunTelemetry } from './screens/runHud';
@@ -30,7 +30,12 @@ export function setScoreStore(s: ScoreStore | null): void {
   store = s;
 }
 
-export function mountAppScreen(host: HTMLElement, state: AppState, dispatch: Dispatch): Screen {
+const ALWAYS_CURRENT: MountContext = { isCurrent: () => true };
+
+export function mountAppScreen(host: HTMLElement, state: AppState, dispatch: Dispatch, ctx: MountContext = ALWAYS_CURRENT): Screen {
+  // A stale mount (superseded while its module loaded) renders nothing and,
+  // crucially, never records a score.
+  if (!ctx.isCurrent()) return { destroy() {} };
   const go = (a: AppAction) => void dispatch(a);
   switch (state.name) {
     case 'title':
@@ -42,7 +47,9 @@ export function mountAppScreen(host: HTMLElement, state: AppState, dispatch: Dis
         onBack: () => go({ type: 'toTitle' }),
       });
     case 'results': {
-      const model = buildResults(state, getScoreStore());
+      // App always stamps resultId; the fallback keeps direct callers safe
+      // (they record once per mount, as before).
+      const model = resultsFor(state.resultId ?? newResultId(), state, getScoreStore());
       return mountResultsScreen(host, model, {
         retry: () => go({ type: 'startRun' }),
         editCart: () => go({ type: 'backToBuild' }),
@@ -83,7 +90,10 @@ export function mountRunHudScreen(
     onEnded: (info) => {
       const endless: EndlessRunStats | undefined =
         target.kind === 'endless' ? { furthestMetres: info.furthestMetres, aboard: info.aboard } : undefined;
-      void dispatch(endless ? { type: 'runEnded', outcome: info.outcome, endless } : { type: 'runEnded', outcome: info.outcome });
+      const resultId = newResultId();
+      void dispatch(
+        endless ? { type: 'runEnded', outcome: info.outcome, endless, resultId } : { type: 'runEnded', outcome: info.outcome, resultId },
+      );
     },
   });
 }

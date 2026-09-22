@@ -8,6 +8,7 @@
 import {
   TOTAL_PINEAPPLES,
   efficiencyRating,
+  endlessCarryBonus,
   endlessScore,
   ratingBand,
   type RatingBand,
@@ -79,7 +80,7 @@ export interface EndlessView {
   aboard: number;
   /** Final score from model/score endlessScore. */
   score: number;
-  /** Points the carry bonus added: endlessScore(d, aboard) - endlessScore(d, 0). */
+  /** Display-only carry bonus from model/score endlessCarryBonus (never used for bests). */
   bonus: number;
 }
 
@@ -90,6 +91,6 @@ export function endlessView(furthestMetres: number, aboardAtEnd: number): Endles
     distanceText: formatDistance(furthestMetres),
     aboard,
     score,
-    bonus: score - endlessScore(furthestMetres, 0),
+    bonus: endlessCarryBonus(furthestMetres, aboard),
   };
 }

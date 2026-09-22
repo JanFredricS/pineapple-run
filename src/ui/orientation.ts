@@ -41,25 +41,71 @@ function update(): void {
   }
 }
 
-/** Idempotent. */
-export function installRotateOverlay(): HTMLElement {
-  if (overlay && overlay.isConnected) return overlay;
-  overlay = el('div', { class: 'pr-rotate', role: 'alertdialog', 'aria-label': 'Rotate your device' }, [
+let installs = 0;
+let portraitQuery: MediaQueryList | null = null;
+
+function createOverlay(): HTMLElement {
+  const o = el('div', { class: 'pr-rotate', role: 'alertdialog', 'aria-label': 'Rotate your device' }, [
     icon(ROTATE_SVG),
     el('div', { text: 'Rotate your device' }),
     el('div', { text: 'Pineapple Run plays in landscape.', style: 'font-weight:500;font-size:15px' }),
   ]);
-  document.body.appendChild(overlay);
+  document.body.appendChild(o);
   window.addEventListener('resize', update);
   window.addEventListener('orientationchange', update);
-  window.matchMedia?.('(orientation: portrait)').addEventListener?.('change', update);
+  portraitQuery = window.matchMedia?.('(orientation: portrait)') ?? null;
+  portraitQuery?.addEventListener?.('change', update);
+  return o;
+}
+
+function teardownOverlay(): void {
+  window.removeEventListener('resize', update);
+  window.removeEventListener('orientationchange', update);
+  portraitQuery?.removeEventListener?.('change', update);
+  portraitQuery = null;
+  overlay?.remove();
+  overlay = null;
+  document.documentElement.classList.remove('pr-portrait');
+  if (portrait) {
+    portrait = false;
+    for (const l of [...listeners]) l(false);
+  }
+}
+
+/**
+ * Show the rotate overlay and start tracking orientation. Reference-counted:
+ * every call returns its own idempotent uninstall; the overlay, the
+ * `pr-portrait` class and the window/matchMedia listeners are removed when
+ * the last holder uninstalls (App.destroy()).
+ */
+export function installRotateOverlay(): () => void {
+  installs++;
+  if (!overlay || !overlay.isConnected) {
+    if (overlay) teardownOverlay();
+    overlay = createOverlay();
+  }
   update();
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    installs = Math.max(0, installs - 1);
+    if (installs === 0) teardownOverlay();
+  };
+}
+
+/** Current overlay element, if installed (tests/harness). */
+export function rotateOverlayElement(): HTMLElement | null {
   return overlay;
 }
 
-/** Harness/dev: force the overlay on or off, or back to automatic. */
+/**
+ * Harness/dev: force the overlay on or off, or back to automatic. Needs an
+ * installed overlay (the App installs one on start); no-op otherwise.
+ */
 export function forceRotateOverlay(mode: 'on' | 'off' | 'auto'): void {
-  const o = installRotateOverlay();
+  const o = overlay;
+  if (!o) return;
   if (mode === 'auto') o.removeAttribute('data-force');
   else o.setAttribute('data-force', mode);
 }

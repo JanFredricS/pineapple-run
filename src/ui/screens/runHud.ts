@@ -32,14 +32,24 @@ export interface RunControls {
   setDrive(direction: DriveIntent): void;
 }
 
-/** Endless progress the lifecycle events don't carry (see report: contract gap). */
+/**
+ * Live run readings the lifecycle events don't carry. Supplied by S1's run
+ * controller, wired by S6 (INTEGRATION.md).
+ */
 export interface RunTelemetry {
+  /** Furthest distance carried so far (endless), metres. */
   furthestMetres(): number;
+  /**
+   * Pineapples physically aboard the cart right now. Drives the endless HUD
+   * count and the display-only carry bonus at the end — NOT `remaining`
+   * (which counts pineapples not yet declared lost).
+   */
+  aboard(): number;
 }
 
 export interface RunEndInfo {
   outcome: RunEvent;
-  /** Pineapples still in play at the end (endless carry bonus). */
+  /** Pineapples aboard at the end, from telemetry.aboard() (falls back to `remaining` without telemetry). Display-only bonus. */
   aboard: number;
   /** Furthest distance carried (endless), sampled the moment the run ended. */
   furthestMetres: number;
@@ -173,9 +183,12 @@ export function mountRunHud(host: HTMLElement, opts: RunHudOptions): RunHud {
     giveUp.lastElementChild!.textContent = gb.label;
     giveUp.classList.toggle('pr-attention', gb.attention);
 
-    const shown = state.delivered ?? state.remaining;
-    countText.textContent = opts.mode === 'endless' ? `${shown} aboard` : `${shown}/${TOTAL_PINEAPPLES}`;
-    countChip.dataset.warn = String(state.remaining === 0);
+    if (opts.mode === 'endless') {
+      renderAboard();
+    } else {
+      countText.textContent = `${state.delivered ?? state.remaining}/${TOTAL_PINEAPPLES}`;
+      countChip.dataset.warn = String(state.remaining === 0);
+    }
     hint.textContent = state.mode === 'level' && state.allLost && state.phase !== 'ended' ? 'All pineapples lost' : '';
     hint.hidden = hint.textContent === '';
 
@@ -189,6 +202,17 @@ export function mountRunHud(host: HTMLElement, opts: RunHudOptions): RunHud {
     banner.textContent = b;
   };
 
+  // Endless count: live telemetry.aboard() (frozen at the end), else `remaining`.
+  let lastAboard = -1;
+  function renderAboard(): void {
+    const n = endInfo ? endInfo.aboard : opts.telemetry ? opts.telemetry.aboard() : state.remaining;
+    const a = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+    if (a === lastAboard) return;
+    lastAboard = a;
+    countText.textContent = `${a} aboard`;
+    countChip.dataset.warn = String(a === 0);
+  }
+
   let lastTimer = '';
   let lastDist = '';
   let raf = 0;
@@ -199,6 +223,7 @@ export function mountRunHud(host: HTMLElement, opts: RunHudOptions): RunHud {
     if (opts.mode === 'endless') {
       const m = formatDistance(endInfo ? endInfo.furthestMetres : (opts.telemetry?.furthestMetres() ?? 0));
       if (m !== lastDist) distText.textContent = lastDist = m;
+      renderAboard();
     }
     raf = requestAnimationFrame(tick);
   };
@@ -215,7 +240,7 @@ export function mountRunHud(host: HTMLElement, opts: RunHudOptions): RunHud {
       clearDrive();
       endInfo = {
         outcome: state.outcome!,
-        aboard: state.remaining,
+        aboard: opts.telemetry ? opts.telemetry.aboard() : state.remaining,
         furthestMetres: opts.telemetry?.furthestMetres() ?? 0,
       };
       const info = endInfo;

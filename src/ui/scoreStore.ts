@@ -48,6 +48,12 @@ export interface LevelRecordOutcome {
   /** This run set a new best (and it was stored, or kept in memory). */
   improved: boolean;
   book: ScoreBook;
+  /**
+   * True only when the result is really in storage: the write reached
+   * setItem successfully, or no write was needed and the store is backed by
+   * real storage. False for in-memory fallback, read-only, or unscorable runs.
+   */
+  persisted: boolean;
 }
 
 export interface EndlessRecordOutcome {
@@ -58,6 +64,8 @@ export interface EndlessRecordOutcome {
   improvedSeed: boolean;
   improvedOverall: boolean;
   book: ScoreBook;
+  /** Same meaning as LevelRecordOutcome.persisted. */
+  persisted: boolean;
 }
 
 export class ScoreStore {
@@ -81,6 +89,14 @@ export class ScoreStore {
     if (once && this.shown.has(kind)) return;
     this.shown.add(kind);
     this.onNotice({ kind, message });
+  }
+
+  /**
+   * True while scores go to real storage: storage present, no in-memory
+   * fallback, not read-only. Call after load() for an up-to-date answer.
+   */
+  get isPersistent(): boolean {
+    return !!this.storage && !this.memory && !this.readOnly;
   }
 
   /** Current book. Storage is the source of truth unless we fell back to memory. */
@@ -121,17 +137,20 @@ export class ScoreStore {
     this.notice('discarded', 'Saved scores were damaged and have been reset.', false);
   }
 
-  private save(book: ScoreBook): void {
-    if (this.readOnly) return;
+  /** Returns true only when the book actually reached storage. */
+  private save(book: ScoreBook): boolean {
+    if (this.readOnly) return false;
     if (this.memory) {
       this.memory = book;
-      return;
+      return false;
     }
     try {
       this.storage!.setItem(SCORE_STORAGE_KEY, JSON.stringify(book));
+      return true;
     } catch {
       this.memory = book;
       this.notice('saveFailed', "Couldn't save your score (storage full?). It's kept until you close the game.");
+      return false;
     }
   }
 
@@ -153,11 +172,11 @@ export class ScoreStore {
     } catch (e) {
       if (!(e instanceof ScoreInputError)) throw e;
       this.notice('badResult', `This run couldn't be scored (${e.message}).`, false);
-      return { previous, best: previous, improved: false, book: before };
+      return { previous, best: previous, improved: false, book: before, persisted: false };
     }
     const improved = after !== before;
-    if (improved) this.save(after);
-    return { previous, best: levelBest(after, levelId), improved, book: after };
+    const persisted = improved ? this.save(after) : this.isPersistent;
+    return { previous, best: levelBest(after, levelId), improved, book: after, persisted };
   }
 
   /** Record a finished endless run (furthest metres carried) via model/score. */
@@ -166,14 +185,16 @@ export class ScoreStore {
     const prevSeed = before.endless.seeds.find((s) => s.seed === seed)?.bestDistance;
     const prevOverall = before.endless.overallBestDistance;
     let after: ScoreBook;
+    let scorable = true;
     try {
       after = recordEndlessResult(before, seed, distance);
     } catch (e) {
       if (!(e instanceof ScoreInputError)) throw e;
       this.notice('badResult', `This run couldn't be scored (${e.message}).`, false);
       after = before;
+      scorable = false;
     }
-    if (after !== before) this.save(after);
+    const persisted = !scorable ? false : after !== before ? this.save(after) : this.isPersistent;
     const seedBest = after.endless.seeds.find((s) => s.seed === seed)?.bestDistance ?? 0;
     return {
       previousSeedBest: prevSeed,
@@ -183,6 +204,7 @@ export class ScoreStore {
       improvedSeed: seedBest > (prevSeed ?? -1) && after !== before,
       improvedOverall: after.endless.overallBestDistance > prevOverall,
       book: after,
+      persisted,
     };
   }
 }

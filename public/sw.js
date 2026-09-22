@@ -1,4 +1,11 @@
-/* Pineapple Run service worker — offline shell caching.
+/* Pineapple Run service worker — offline caching.
+ *
+ * Install precaches the COMPLETE built asset graph: precache-manifest.json is
+ * generated at build time (src/ui/precache.ts, a Vite plugin) and lists every
+ * hashed file under assets/ — all JS chunks (lazy ones too), CSS and the box2d
+ * .wasm. Install fails (and is retried on the next visit, with the previous
+ * worker left in charge) unless the shell, the manifest and every listed
+ * asset were cached, so an installed worker always means "fully offline".
  *
  * Registered by src/ui/pwa.ts as `sw.js?v=<entry-chunk-hash>`; a new build
  * means a new SW URL, a new install and a new cache (CACHE below).
@@ -25,9 +32,16 @@ const CACHE = PREFIX + VERSION;
 const SCOPE = new URL(self.registration.scope);
 const HASHED = /\/assets\/[^/]+-[A-Za-z0-9_-]{6,}\.(?:js|mjs|css|wasm|png|jpe?g|svg|webp|woff2?|json|mp3|ogg|m4a)$/;
 
-const SHELL = ['./', 'manifest.json', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'].map(
-  (p) => new URL(p, SCOPE).href,
-);
+const SHELL = ['./', 'manifest.json'].map((p) => new URL(p, SCOPE).href);
+const OPTIONAL = [
+  'icons/icon.svg',
+  'icons/icon-maskable.svg',
+  'icons/icon-192.png',
+  'icons/icon-512.png',
+  'icons/icon-maskable-512.png',
+  'icons/apple-touch-icon.png',
+].map((p) => new URL(p, SCOPE).href);
+const PRECACHE_MANIFEST = new URL('precache-manifest.json', SCOPE).href;
 
 function inScope(url) {
   return url.origin === SCOPE.origin && url.pathname.startsWith(SCOPE.pathname);
@@ -38,27 +52,33 @@ async function putIfOk(cache, request, response) {
   return response;
 }
 
+async function cacheStrict(cache, url, init) {
+  const res = await fetch(url, init);
+  if (!res.ok) throw new Error('precache ' + res.status + ' ' + url);
+  await cache.put(url, res);
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE);
-      await Promise.all(
-        SHELL.map((u) =>
-          fetch(u, { cache: 'no-cache' })
-            .then((r) => putIfOk(cache, u, r))
-            .catch(() => {}),
-        ),
-      );
-      // Precache the hashed assets the shell references (entry JS/CSS).
-      try {
-        const html = await (await fetch(SCOPE.href, { cache: 'no-cache' })).text();
-        const refs = [...html.matchAll(/(?:src|href)="([^"]+)"/g)]
-          .map((m) => new URL(m[1], SCOPE))
-          .filter((u) => inScope(u) && HASHED.test(u.pathname));
-        await Promise.all(refs.map((u) => fetch(u).then((r) => putIfOk(cache, u.href, r)).catch(() => {})));
-      } catch {
-        /* offline during install: runtime caching fills in later */
-      }
+      // Required: shell + the full build asset list. Any failure rejects the
+      // install, so a half-cached worker never activates.
+      const listRes = await fetch(PRECACHE_MANIFEST, { cache: 'no-cache' });
+      if (!listRes.ok) throw new Error('precache manifest ' + listRes.status);
+      const list = await listRes.json();
+      if (!list || !Array.isArray(list.assets)) throw new Error('precache manifest malformed');
+      const assets = list.assets
+        .map((p) => new URL(String(p), SCOPE))
+        .filter((u) => inScope(u))
+        .map((u) => u.href);
+      await Promise.all([
+        ...SHELL.map((u) => cacheStrict(cache, u, { cache: 'no-cache' })),
+        // Hashed URLs are immutable: the HTTP cache copy is fine.
+        ...assets.map((u) => cacheStrict(cache, u)),
+      ]);
+      // Nice-to-have: icons.
+      await Promise.all(OPTIONAL.map((u) => fetch(u, { cache: 'no-cache' }).then((r) => putIfOk(cache, u, r)).catch(() => {})));
     })(),
   );
 });

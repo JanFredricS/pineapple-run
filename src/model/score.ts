@@ -41,6 +41,15 @@ export function endlessScore(furthestMetres: number, aboardAtEnd: number): numbe
   return Math.round(dist * (1 + ENDLESS_CARRY_BONUS_PER_PINEAPPLE * aboard));
 }
 
+/**
+ * Carry bonus points for the results screen: what the aboard multiplier adds
+ * on top of the raw distance. DISPLAY FLAVOUR ONLY (INTEGRATION.md endless
+ * scoring ruling) — best comparisons always use raw furthest distance.
+ */
+export function endlessCarryBonus(furthestMetres: number, aboardAtEnd: number): number {
+  return endlessScore(furthestMetres, aboardAtEnd) - endlessScore(furthestMetres, 0);
+}
+
 // ------------------------------------------------------------ persistence
 
 /**

@@ -23,14 +23,25 @@ export type AppState =
   | { name: 'select' }
   | { name: 'build'; levelId: string }
   | { name: 'run'; levelId: string }
-  | { name: 'results'; levelId: string; outcome: RunEvent | null; endless?: EndlessRunStats };
+  | {
+      name: 'results';
+      levelId: string;
+      outcome: RunEvent | null;
+      endless?: EndlessRunStats;
+      /**
+       * Identity of this run result (S5): the score is recorded once per id,
+       * so re-mounting the results screen re-renders without re-recording.
+       * Stamped by App when absent.
+       */
+      resultId?: string;
+    };
 
 export type AppAction =
   | { type: 'play' }
   | { type: 'selectLevel'; levelId: string }
   | { type: 'backToSelect' }
   | { type: 'startRun' }
-  | { type: 'runEnded'; outcome: RunEvent; endless?: EndlessRunStats }
+  | { type: 'runEnded'; outcome: RunEvent; endless?: EndlessRunStats; resultId?: string }
   | { type: 'backToBuild' }
   | { type: 'toTitle' };
 
@@ -50,8 +61,13 @@ export function transition(state: AppState, action: AppAction): AppState {
       return state;
     case 'run':
       if (action.type === 'runEnded') {
-        const results: AppState = { name: 'results', levelId: state.levelId, outcome: action.outcome };
-        return action.endless ? { ...results, endless: action.endless } : results;
+        return {
+          name: 'results',
+          levelId: state.levelId,
+          outcome: action.outcome,
+          ...(action.endless ? { endless: action.endless } : {}),
+          ...(action.resultId ? { resultId: action.resultId } : {}),
+        };
       }
       if (action.type === 'backToBuild') return { name: 'build', levelId: state.levelId };
       return state;
@@ -73,12 +89,30 @@ export interface Screen {
   destroy(): void;
 }
 
+/** Per-mount context handed to screen factories. */
+export interface MountContext {
+  /**
+   * False once this mount is stale (a newer transition or destroy() happened
+   * while it was loading). Factories must not write persistent state (e.g.
+   * record a score) when this is false.
+   */
+  isCurrent(): boolean;
+}
+
 /** Mounts one screen into `host`; `dispatch` drives the app state machine. */
 export type ScreenFactory = (
   host: HTMLElement,
   state: AppState,
   dispatch: (action: AppAction) => Promise<void>,
+  ctx: MountContext,
 ) => Screen | Promise<Screen>;
+
+let resultSeq = 0;
+/** Unique-per-page result identity (see AppState 'results'.resultId). */
+export function newResultId(): string {
+  resultSeq++;
+  return `r${Date.now().toString(36)}-${resultSeq}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 export interface AppOptions {
   /** Per-state screen overrides (S6 run controller, the S5 UI harness). */
@@ -92,6 +126,8 @@ export class App {
   private screen: Screen | null = null;
   /** Bumped on every transition so a slow async mount can't clobber a newer screen. */
   private generation = 0;
+  private destroyed = false;
+  private uninstallChrome: (() => void) | null = null;
 
   constructor(
     private readonly host: HTMLElement,
@@ -107,19 +143,34 @@ export class App {
 
   start(): Promise<void> {
     // S5: rotate-device overlay, toast host, service worker (all idempotent).
-    void import('./ui/chrome').then((m) => m.installChrome({ pwa: this.options.pwa ?? true }));
+    // Guarded by `destroyed`: a destroy() before the import resolves cancels it.
+    if (!this.destroyed && !this.uninstallChrome) {
+      void import('./ui/chrome').then((m) => {
+        if (this.destroyed || this.uninstallChrome) return;
+        this.uninstallChrome = m.installChrome({ pwa: this.options.pwa ?? true });
+      });
+    }
     return this.mount();
   }
 
-  /** Tear down the current screen (and cancel any pending mount). */
+  /**
+   * Tear down the current screen, cancel any pending mount / chrome install,
+   * and remove the rotate overlay + its listeners. The App is inert afterwards.
+   */
   destroy(): void {
+    this.destroyed = true;
     this.generation++;
     this.screen?.destroy();
     this.screen = null;
     this.host.replaceChildren();
+    this.uninstallChrome?.();
+    this.uninstallChrome = null;
   }
 
   dispatch(action: AppAction): Promise<void> {
+    if (this.destroyed) return Promise.resolve();
+    // Stamp a result identity so the score is recorded once per run.
+    if (action.type === 'runEnded' && !action.resultId) action = { ...action, resultId: newResultId() };
     const next = transition(this.state, action);
     if (next === this.state) return Promise.resolve();
     this.state = next;
@@ -127,11 +178,14 @@ export class App {
   }
 
   private async mount(): Promise<void> {
+    if (this.destroyed) return;
     const gen = ++this.generation;
     this.screen?.destroy();
     this.screen = null;
     this.host.replaceChildren();
-    const screen = await this.createScreen(this.state);
+    if (this.state.name === 'results' && !this.state.resultId) this.state = { ...this.state, resultId: newResultId() };
+    const ctx: MountContext = { isCurrent: () => gen === this.generation && !this.destroyed };
+    const screen = await this.createScreen(this.state, ctx);
     if (gen !== this.generation) {
       screen.destroy();
       return;
@@ -139,9 +193,9 @@ export class App {
     this.screen = screen;
   }
 
-  private async createScreen(state: AppState): Promise<Screen> {
+  private async createScreen(state: AppState, ctx: MountContext): Promise<Screen> {
     const override = this.options.screens?.[state.name];
-    if (override) return override(this.host, state, (a) => this.dispatch(a));
+    if (override) return override(this.host, state, (a) => this.dispatch(a), ctx);
     switch (state.name) {
       case 'run': {
         // S0: the stability spike is the run screen.
@@ -153,7 +207,7 @@ export class App {
       case 'results': {
         // S5 screens.
         const { mountAppScreen } = await import('./ui/appScreens');
-        return mountAppScreen(this.host, state, (a) => this.dispatch(a));
+        return mountAppScreen(this.host, state, (a) => this.dispatch(a), ctx);
       }
       case 'build':
         return this.stub('Build (coming in S3)', 'Run', { type: 'startRun' });

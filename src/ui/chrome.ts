@@ -1,13 +1,19 @@
-/** App-wide S5 chrome: rotate overlay + service worker. Idempotent. */
+/**
+ * App-wide S5 chrome: rotate overlay + service worker.
+ * `installChrome` returns an uninstall for the overlay (and its listeners);
+ * the service worker registration is once per page and has no teardown.
+ */
 
 import { installRotateOverlay } from './orientation';
 import { registerServiceWorker } from './pwa';
 
-let installed = false;
+let swRegistered = false;
 
-export function installChrome(opts: { pwa: boolean }): void {
-  installRotateOverlay();
-  if (installed) return;
-  installed = true;
-  if (opts.pwa) registerServiceWorker();
+export function installChrome(opts: { pwa: boolean }): () => void {
+  const uninstallOverlay = installRotateOverlay();
+  if (opts.pwa && !swRegistered) {
+    swRegistered = true;
+    registerServiceWorker();
+  }
+  return uninstallOverlay;
 }

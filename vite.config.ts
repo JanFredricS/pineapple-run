@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
+import { precachePlugin } from './src/ui/precache';
 
 // box2d3-wasm's package entry picks the threaded "deluxe" build whenever SIMD
 // is available outside a browser (e.g. Node/Vitest). We always want the
@@ -11,6 +12,7 @@ const box2dCompat = fileURLToPath(
 
 export default defineConfig({
   base: '/pineapple-run/',
+  plugins: [precachePlugin()],
   resolve: {
     alias: {
       '#box2d-compat': box2dCompat,

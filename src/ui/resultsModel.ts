@@ -23,7 +23,7 @@ export interface LevelResults {
   previousBest: LevelBest | undefined;
   best: LevelBest | undefined;
   newBest: boolean;
-  /** False when scores can't be persisted this session (read-only / not recorded). */
+  /** True only when this result is really in storage (not memory / read-only / unrecorded). */
   saved: boolean;
   next: CourseInfo | null;
   nextUnlocked: boolean;
@@ -58,8 +58,10 @@ export function buildResults(input: ResultsInput, store: ScoreStore): ResultsMod
 
   if (target.kind === 'endless') {
     const stats = input.endless;
-    // Aboard at the end only counts on Give Up; losing the last one means 0.
-    const aboard = e?.type === 'gaveUp' ? (stats?.aboard ?? 0) : 0;
+    // Carry bonus is DISPLAY FLAVOUR ONLY (INTEGRATION.md): shown from the
+    // real aboard count (RunTelemetry.aboard) however the run ended, never
+    // part of the best comparison — bests are raw furthest distance.
+    const aboard = stats?.aboard ?? 0;
     const furthest = stats?.furthestMetres ?? 0;
     const rec = stats ? store.recordEndless(target.seed, furthest) : null;
     const book = rec?.book ?? store.load();
@@ -73,7 +75,7 @@ export function buildResults(input: ResultsInput, store: ScoreStore): ResultsMod
       overallBest: book.endless.overallBestDistance,
       newSeedBest: !!rec && rec.improvedSeed && furthest > 0,
       newOverallBest: !!rec && rec.improvedOverall,
-      saved: !!rec && !store.isReadOnly,
+      saved: !!rec && rec.persisted,
     };
   }
 
@@ -94,8 +96,33 @@ export function buildResults(input: ResultsInput, store: ScoreStore): ResultsMod
     previousBest,
     best: rec ? rec.best : previousBest,
     newBest: !!rec && rec.improved,
-    saved: !!rec && !store.isReadOnly,
+    saved: !!rec && rec.persisted,
     next,
     nextUnlocked: next ? isUnlocked(book, next.levelId) : false,
   };
+}
+
+const RESULT_CACHE_LIMIT = 32;
+const recorded = new WeakMap<ScoreStore, Map<string, ResultsModel>>();
+
+/**
+ * Record-once / render-many: the first call for a `resultId` records the run
+ * through `buildResults` and caches the model; later calls (re-mounts of the
+ * same results state) return the cached model without touching the store, so
+ * a result is never double-recorded and always renders identically.
+ */
+export function resultsFor(resultId: string, input: ResultsInput, store: ScoreStore): ResultsModel {
+  let cache = recorded.get(store);
+  if (!cache) recorded.set(store, (cache = new Map()));
+  const hit = cache.get(resultId);
+  if (hit) return hit;
+  const model = buildResults(input, store);
+  cache.set(resultId, model);
+  if (cache.size > RESULT_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
+  return model;
+}
+
+/** True if `resultId` has already been recorded against `store`. */
+export function isResultRecorded(resultId: string, store: ScoreStore): boolean {
+  return recorded.get(store)?.has(resultId) ?? false;
 }

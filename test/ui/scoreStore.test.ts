@@ -158,19 +158,73 @@ describe('buildResults', () => {
     expect(m).toMatchObject({ kind: 'level', nextUnlocked: false });
   });
 
-  it('endless: distance recorded; carry bonus only on give up', () => {
+  it('endless: carry bonus shown from real aboard count however the run ended; best is raw distance', () => {
     const { store } = setup();
+    // allLost-style end (remaining 0) but telemetry reports what is really aboard
     const lost = buildResults(
-      { levelId: 'endless:PINE', outcome: { type: 'pineappleLost', simTime: 90, pineappleId: 1, remaining: 0 }, endless: { furthestMetres: 250, aboard: 4 } },
+      { levelId: 'endless:PINE', outcome: { type: 'pineappleLost', simTime: 90, pineappleId: 1, remaining: 0 }, endless: { furthestMetres: 250, aboard: 0 } },
       store,
     );
-    expect(lost).toMatchObject({ kind: 'endless', seed: 'PINE', seedBest: 250, overallBest: 250, newSeedBest: true, newOverallBest: true });
-    if (lost.kind === 'endless') expect(lost.view.aboard).toBe(0);
-    const gave = buildResults({ levelId: 'endless:PINE', outcome: { type: 'gaveUp', simTime: 30 }, endless: { furthestMetres: 120, aboard: 6 } }, store);
-    expect(gave).toMatchObject({ kind: 'endless', gaveUp: true, seedBest: 250, newSeedBest: false });
+    expect(lost).toMatchObject({ kind: 'endless', seed: 'PINE', seedBest: 250, overallBest: 250, newSeedBest: true, newOverallBest: true, saved: true });
+    if (lost.kind === 'endless') expect(lost.view).toMatchObject({ aboard: 0, bonus: 0, score: 250 });
+    // a non-give-up end with pineapples aboard still shows the bonus
+    const other = buildResults(
+      { levelId: 'endless:PINE', outcome: { type: 'goalReached', simTime: 60, delivered: 3 }, endless: { furthestMetres: 200, aboard: 3 } },
+      store,
+    );
+    if (other.kind === 'endless') expect(other.view).toMatchObject({ aboard: 3, bonus: 12, score: 212 });
+    // bonus never lifts a best: 240 m with 15 aboard (score 312) is not a new best over 250 m
+    const gave = buildResults({ levelId: 'endless:PINE', outcome: { type: 'gaveUp', simTime: 30 }, endless: { furthestMetres: 240, aboard: 15 } }, store);
+    expect(gave).toMatchObject({ kind: 'endless', gaveUp: true, seedBest: 250, overallBest: 250, newSeedBest: false, newOverallBest: false });
     if (gave.kind === 'endless') {
-      expect(gave.view.aboard).toBe(6);
-      expect(gave.view.bonus).toBeGreaterThan(0);
+      expect(gave.view.aboard).toBe(15);
+      expect(gave.view.score).toBeGreaterThan(250);
     }
+  });
+
+  describe('saved is true only when the write hit storage', () => {
+    it('quota failure -> saved false (level and endless)', () => {
+      const { store, storage, notices } = setup();
+      storage.throwSet = true;
+      const lvl = buildResults({ levelId: 'beach', outcome: { type: 'goalReached', simTime: 25, delivered: 11 } }, store);
+      expect(lvl).toMatchObject({ kind: 'level', newBest: true, saved: false });
+      const end = buildResults({ levelId: 'endless:Q', outcome: { type: 'gaveUp', simTime: 5 }, endless: { furthestMetres: 80, aboard: 2 } }, store);
+      expect(end).toMatchObject({ kind: 'endless', newSeedBest: true, saved: false });
+      expect(notices.map((n) => n.kind)).toContain('saveFailed');
+      // storage recovers, but this session stays in memory: still not claimed saved
+      storage.throwSet = false;
+      const again = buildResults({ levelId: 'beach', outcome: { type: 'goalReached', simTime: 12, delivered: 15 } }, store);
+      expect(again).toMatchObject({ newBest: true, saved: false });
+    });
+
+    it('null storage -> saved false', () => {
+      const store = new ScoreStore(null);
+      const lvl = buildResults({ levelId: 'beach', outcome: { type: 'goalReached', simTime: 25, delivered: 11 } }, store);
+      expect(lvl).toMatchObject({ kind: 'level', newBest: true, saved: false });
+      const end = buildResults({ levelId: 'endless:N', outcome: { type: 'gaveUp', simTime: 5 }, endless: { furthestMetres: 80, aboard: 2 } }, store);
+      expect(end).toMatchObject({ kind: 'endless', saved: false });
+    });
+
+    it('getItem throws (storage disabled) -> saved false', () => {
+      const { store, storage } = setup();
+      storage.throwGet = true;
+      const lvl = buildResults({ levelId: 'beach', outcome: { type: 'goalReached', simTime: 25, delivered: 11 } }, store);
+      expect(lvl).toMatchObject({ saved: false });
+    });
+
+    it('read-only (future version on disk) -> saved false, disk untouched', () => {
+      const raw = JSON.stringify({ version: 99, levels: [] });
+      const { store, storage } = setup(raw);
+      const lvl = buildResults({ levelId: 'beach', outcome: { type: 'goalReached', simTime: 25, delivered: 11 } }, store);
+      expect(lvl).toMatchObject({ saved: false });
+      expect(storage.data.get(SCORE_STORAGE_KEY)).toBe(raw);
+    });
+
+    it('no improvement on healthy storage -> saved true (best already stored)', () => {
+      const { store } = setup();
+      buildResults({ levelId: 'beach', outcome: { type: 'goalReached', simTime: 12, delivered: 15 } }, store);
+      const worse = buildResults({ levelId: 'beach', outcome: { type: 'goalReached', simTime: 40, delivered: 5 } }, store);
+      expect(worse).toMatchObject({ newBest: false, saved: true });
+    });
   });
 });
