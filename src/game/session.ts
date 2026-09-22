@@ -7,7 +7,8 @@
  *   - the S3 TerrainStreamer over the course's TerrainSource
  *     (LevelChunkSource for premade levels, ProceduralChunkSource for
  *     endless) building chunked chain bodies, streamed around the live
- *     bodies (attached cart + pineapples not yet lost),
+ *     bodies (attached cart + every live pineapple that can still count —
+ *     see liveXs()),
  *   - a StreamedTerrainQuery mirroring exactly those chunks for the
  *     controller's ground-contact queries,
  *   - the S1 RunController in `level` or `endless` mode, with
@@ -143,11 +144,22 @@ export class RunSession implements RunEventSource {
     if (this.controller.steps % STREAM_EVERY_STEPS === 0) this.stream();
   }
 
-  /** Live bodies for streaming: the attached cart + every pineapple still alive and not lost. */
+  /**
+   * Streaming anchors: the attached cart + every pineapple that can still
+   * count. Level runs: every LIVE pineapple, lost or not — lost is advisory
+   * there (INTEGRATION.md S1 ruling): a lost pineapple can still be recovered
+   * and delivered, so its ground must stay loaded (else it falls through
+   * unloaded terrain and is destroyed at killY). Endless: lost is final, so
+   * lost pineapples are not anchors (their terrain may unload; they then
+   * fall away like cart debris, which never counts again).
+   */
   liveXs(): number[] {
     const xs: number[] = [];
     for (const h of this.controller.cartBodyHandles()) xs.push(this.world.getTransform(h).x);
-    for (const p of this.controller.pineappleStates()) if (p.alive && !p.lost) xs.push(this.world.getTransform(p.handle).x);
+    const lostAnchors = this.course.mode === 'level';
+    for (const p of this.controller.pineappleStates()) {
+      if (p.alive && (lostAnchors || !p.lost)) xs.push(this.world.getTransform(p.handle).x);
+    }
     return xs;
   }
 
