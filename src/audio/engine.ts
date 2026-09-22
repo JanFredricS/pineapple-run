@@ -19,7 +19,9 @@
  */
 
 import { clamp01 } from './dsp';
+import { globalTimers } from './types';
 import type {
+  AudioTimers,
   AudioContextFactory,
   AudioContextLike,
   BiquadFilterNodeLike,
@@ -121,7 +123,12 @@ export interface AudioEngineOptions {
   storage?: StorageLike | null;
   /** null = no suspend-on-hidden. Default: `document` when present. */
   visibility?: VisibilitySourceLike | null;
+  /** Timers for the resume retry backoff. Default: the global timers. */
+  timers?: AudioTimers;
 }
+
+/** Backoff for a failed resume while the page is visible (ms). */
+export const RESUME_RETRY_DELAYS_MS: readonly number[] = [250, 1000, 3000];
 
 export interface AudioGraph {
   ctx: AudioContextLike;
@@ -140,6 +147,11 @@ export class AudioEngine {
   private graphState: AudioGraph | null = null;
   private creationFailed = false;
   private unlockTarget: EventTargetLike | null = null;
+  /** The element passed to attach(); gesture listeners are re-armed on it to heal a failed resume. */
+  private unlockHost: EventTargetLike | null = null;
+  private readonly timers: AudioTimers;
+  private retryHandle: unknown = null;
+  private retryAttempt = 0;
   private visibilityAttached = false;
   private unlockedFlag = false;
   private suspendedForHidden = false;
@@ -152,6 +164,7 @@ export class AudioEngine {
     this.visibility =
       opts.visibility === undefined ? (typeof document === 'undefined' ? null : (document as VisibilitySourceLike)) : opts.visibility;
     this.settingsState = loadAudioSettings(this.storage);
+    this.timers = opts.timers ?? globalTimers;
   }
 
   get settings(): Readonly<AudioSettings> {
@@ -232,15 +245,18 @@ export class AudioEngine {
   /** Attaches unlock-on-gesture to `target` and suspend-on-hidden. Idempotent. */
   attach(unlockTarget: EventTargetLike): void {
     if (this.destroyedFlag) return;
-    if (!this.unlockedFlag && this.unlockTarget !== unlockTarget) {
-      this.detachUnlock();
-      this.unlockTarget = unlockTarget;
-      for (const type of UNLOCK_EVENTS) unlockTarget.addEventListener(type, this.onGesture, UNLOCK_OPTIONS);
-    }
+    this.unlockHost = unlockTarget;
+    if (!this.unlockedFlag && this.unlockTarget !== unlockTarget) this.armGesture(unlockTarget);
     if (this.visibility && !this.visibilityAttached) {
       this.visibility.addEventListener('visibilitychange', this.onVisibility);
       this.visibilityAttached = true;
     }
+  }
+
+  private armGesture(target: EventTargetLike): void {
+    this.detachUnlock();
+    this.unlockTarget = target;
+    for (const type of UNLOCK_EVENTS) target.addEventListener(type, this.onGesture, UNLOCK_OPTIONS);
   }
 
   private detachUnlock(): void {
@@ -279,7 +295,7 @@ export class AudioEngine {
         if (this.destroyedFlag || this.graphState?.ctx !== ctx) return;
         if (ctx.state === 'running') {
           this.unlockedFlag = true;
-          this.detachUnlock();
+          this.resumeSucceeded();
         }
       },
       () => {
@@ -299,8 +315,52 @@ export class AudioEngine {
    */
   private readonly onVisibility: ListenerLike = () => {
     if (!this.graphState || this.destroyedFlag || !this.visibility) return;
-    this.visibilityChain = this.visibilityChain.then(() => this.reconcileVisibility());
+    // A fresh visibility event gets a fresh retry budget.
+    this.clearRetry();
+    this.retryAttempt = 0;
+    this.enqueueReconcile();
   };
+
+  private enqueueReconcile(): void {
+    this.visibilityChain = this.visibilityChain.then(() => this.reconcileVisibility());
+  }
+
+  private clearRetry(): void {
+    if (this.retryHandle !== null) this.timers.clearTimeout(this.retryHandle);
+    this.retryHandle = null;
+  }
+
+  /**
+   * A resume failed (rejected, or resolved without reaching 'running') while
+   * the page should be audible. Heal on two paths: (a) bounded timer backoff
+   * (RESUME_RETRY_DELAYS_MS) re-running reconciliation, and (b) the unlock
+   * gesture listeners are re-armed so any tap/key resumes from inside a user
+   * gesture — the path browsers always honour.
+   */
+  private resumeFailed(): void {
+    if (this.destroyedFlag) return;
+    if (this.unlockHost && !this.unlockTarget) this.armGesture(this.unlockHost);
+    if (this.retryHandle !== null || this.retryAttempt >= RESUME_RETRY_DELAYS_MS.length) return;
+    const delay = RESUME_RETRY_DELAYS_MS[this.retryAttempt++]!;
+    this.retryHandle = this.timers.setTimeout(() => {
+      this.retryHandle = null;
+      this.enqueueReconcile();
+    }, delay);
+  }
+
+  /** Context is running again: drop retries and healing listeners. */
+  private resumeSucceeded(): void {
+    this.unlockedFlag = true; // a running context is unlocked, however it got there
+    this.suspendedForHidden = false;
+    this.clearRetry();
+    this.retryAttempt = 0;
+    this.detachUnlock();
+  }
+
+  /** Pending resume retry (tests / harness). */
+  get resumeRetryPending(): boolean {
+    return this.retryHandle !== null;
+  }
 
   private visibilityChain: Promise<void> = Promise.resolve();
 
@@ -322,23 +382,37 @@ export class AudioEngine {
     if (!graph || this.destroyedFlag || !this.visibility) return false;
     const { ctx } = graph;
     const hidden = this.visibility.visibilityState === 'hidden';
-    try {
-      if (hidden) {
-        if (ctx.state !== 'running') return false;
-        this.suspendedForHidden = true;
+    if (hidden) {
+      this.clearRetry();
+      if (ctx.state !== 'running') return false;
+      this.suspendedForHidden = true;
+      try {
         await ctx.suspend();
-        return true;
+      } catch {
+        return false;
       }
-      if ((this.suspendedForHidden || this.unlockedFlag) && ctx.state !== 'running' && ctx.state !== 'closed') {
-        this.suspendedForHidden = false;
-        await ctx.resume();
-        return true;
-      }
-      if (ctx.state === 'running') this.suspendedForHidden = false;
-      return false;
-    } catch {
-      return false;
+      return true;
     }
+    if ((this.suspendedForHidden || this.unlockedFlag) && ctx.state !== 'running' && ctx.state !== 'closed') {
+      let ok = false;
+      try {
+        await ctx.resume();
+        ok = ctx.state === 'running';
+      } catch {
+        ok = false;
+      }
+      if (this.destroyedFlag || this.graphState?.ctx !== ctx) return false;
+      // suspendedForHidden stays set until a resume actually succeeds.
+      if (!ok) {
+        // Only retry if the page is still meant to be audible.
+        if (this.visibility.visibilityState !== 'hidden') this.resumeFailed();
+        return false;
+      }
+      this.resumeSucceeded();
+      return true;
+    }
+    if (ctx.state === 'running') this.suspendedForHidden = false;
+    return false;
   }
 
   private smooth(node: GainNodeLike, value: number): void {
@@ -376,7 +450,9 @@ export class AudioEngine {
   async destroy(): Promise<void> {
     if (this.destroyedFlag) return;
     this.destroyedFlag = true;
+    this.clearRetry();
     this.detachUnlock();
+    this.unlockHost = null;
     if (this.visibility && this.visibilityAttached) {
       this.visibility.removeEventListener('visibilitychange', this.onVisibility);
       this.visibilityAttached = false;

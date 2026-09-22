@@ -170,6 +170,8 @@ export interface FakeContextBehaviour {
    * until the test calls `settleSuspend()` — reproduces the async race.
    */
   deferSuspend?: boolean;
+  /** The next N resume() calls reject (then behave normally). */
+  resumeRejectCount?: number;
 }
 
 export class FakeAudioContext implements AudioContextLike {
@@ -211,6 +213,10 @@ export class FakeAudioContext implements AudioContextLike {
     this.resumeCalls++;
     if (this.state === 'closed') return Promise.reject(new Error('closed'));
     if (this.behaviour.resumeRejects) return Promise.reject(new Error('not allowed'));
+    if (this.behaviour.resumeRejectCount && this.behaviour.resumeRejectCount > 0) {
+      this.behaviour.resumeRejectCount--;
+      return Promise.reject(new Error('transient'));
+    }
     if (!this.behaviour.resumeNoop) this.state = 'running';
     return Promise.resolve();
   }

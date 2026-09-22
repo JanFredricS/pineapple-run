@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   AUDIO_STORAGE_KEY,
+  RESUME_RETRY_DELAYS_MS,
   AudioEngine,
   DEFAULT_AUDIO_SETTINGS,
   MUSIC_BUS_LEVEL,
@@ -8,7 +9,7 @@ import {
   SFX_BUS_LEVEL,
   UNLOCK_EVENTS,
 } from '../../src/audio/engine';
-import { FakeAudioContext, FakeStorage, FakeTarget, fakeFactory, flush, quotaError, type FakeGain } from './fakeAudio';
+import { FakeAudioContext, FakeStorage, FakeTarget, FakeTimers, fakeFactory, flush, quotaError, type FakeGain } from './fakeAudio';
 
 function make(opts: { behaviour?: ConstructorParameters<typeof FakeAudioContext>[0]; storage?: FakeStorage | null } = {}) {
   const { factory, created } = fakeFactory(opts.behaviour);
@@ -16,6 +17,20 @@ function make(opts: { behaviour?: ConstructorParameters<typeof FakeAudioContext>
   const doc = new FakeTarget();
   const engine = new AudioEngine({ createContext: factory, storage, visibility: doc });
   return { engine, created, storage, doc };
+}
+
+async function unlockedWithTimers() {
+  const { factory, created } = fakeFactory();
+  const doc = new FakeTarget();
+  const timers = new FakeTimers();
+  const engine = new AudioEngine({ createContext: factory, storage: null, visibility: doc, timers });
+  const el = new FakeTarget();
+  engine.attach(el);
+  el.dispatch('pointerdown');
+  await flush();
+  expect(engine.unlocked).toBe(true);
+  expect(el.count()).toBe(0);
+  return { engine, created, doc, timers, el };
 }
 
 describe('AudioEngine: lazy context', () => {
@@ -191,6 +206,90 @@ describe('AudioEngine: visibility', () => {
     ctx.settleSuspend();
     await engine.visibilitySettled;
     expect(ctx.state).toBe('suspended');
+  });
+
+  it('a transiently rejected resume on show is retried by the timer backoff', async () => {
+    const { engine, created, doc, timers, el } = await unlockedWithTimers();
+    const ctx = created[0]!;
+    doc.visibilityState = 'hidden';
+    doc.dispatch('visibilitychange');
+    await engine.visibilitySettled;
+    expect(ctx.state).toBe('suspended');
+    ctx.behaviour.resumeRejectCount = 1;
+    doc.visibilityState = 'visible';
+    doc.dispatch('visibilitychange');
+    await engine.visibilitySettled;
+    expect(ctx.state).toBe('suspended'); // first resume rejected
+    expect(engine.resumeRetryPending).toBe(true);
+    expect(el.count()).toBe(UNLOCK_EVENTS.length); // gesture healing re-armed
+    timers.advance(RESUME_RETRY_DELAYS_MS[0]!);
+    await engine.visibilitySettled;
+    await flush();
+    expect(ctx.state).toBe('running');
+    expect(engine.resumeRetryPending).toBe(false);
+    expect(el.count()).toBe(0); // healing listeners removed again
+    expect(timers.pending).toBe(0);
+  });
+
+  it('persistent rejection: bounded retries, then a user gesture heals it', async () => {
+    const { engine, created, doc, timers, el } = await unlockedWithTimers();
+    const ctx = created[0]!;
+    doc.visibilityState = 'hidden';
+    doc.dispatch('visibilitychange');
+    await engine.visibilitySettled;
+    ctx.behaviour.resumeRejects = true;
+    doc.visibilityState = 'visible';
+    doc.dispatch('visibilitychange');
+    await engine.visibilitySettled;
+    const before = ctx.resumeCalls;
+    for (const d of RESUME_RETRY_DELAYS_MS) {
+      expect(engine.resumeRetryPending).toBe(true);
+      timers.advance(d);
+      await engine.visibilitySettled;
+      await flush();
+    }
+    expect(ctx.resumeCalls).toBe(before + RESUME_RETRY_DELAYS_MS.length);
+    expect(engine.resumeRetryPending).toBe(false); // budget exhausted, no busy loop
+    expect(timers.pending).toBe(0);
+    expect(ctx.state).toBe('suspended');
+    expect(el.count()).toBe(UNLOCK_EVENTS.length);
+    // The browser now allows it (user activation): a tap heals.
+    ctx.behaviour.resumeRejects = false;
+    el.dispatch('pointerdown');
+    await flush();
+    expect(ctx.state).toBe('running');
+    expect(el.count()).toBe(0);
+  });
+
+  it('show then immediately hide: no resume attempt and no retry', async () => {
+    const { engine, created, doc, timers } = await unlockedWithTimers();
+    const ctx = created[0]!;
+    doc.visibilityState = 'hidden';
+    doc.dispatch('visibilitychange');
+    await engine.visibilitySettled;
+    ctx.behaviour.resumeRejectCount = 1;
+    doc.visibilityState = 'visible';
+    doc.dispatch('visibilitychange');
+    doc.visibilityState = 'hidden'; // hidden before the resume step even runs
+    await engine.visibilitySettled;
+    expect(engine.resumeRetryPending).toBe(false);
+    expect(timers.pending).toBe(0);
+    expect(ctx.state).toBe('suspended');
+  });
+
+  it('destroy cancels a pending resume retry', async () => {
+    const { engine, created, doc, timers } = await unlockedWithTimers();
+    const ctx = created[0]!;
+    doc.visibilityState = 'hidden';
+    doc.dispatch('visibilitychange');
+    await engine.visibilitySettled;
+    ctx.behaviour.resumeRejects = true;
+    doc.visibilityState = 'visible';
+    doc.dispatch('visibilitychange');
+    await engine.visibilitySettled;
+    expect(timers.pending).toBe(1);
+    await engine.destroy();
+    expect(timers.pending).toBe(0);
   });
 
   it('does not resume a context that was never unlocked', async () => {

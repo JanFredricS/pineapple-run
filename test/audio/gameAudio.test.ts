@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BLENDER_WHIR_SECONDS, GameAudio, musicThemeForCourse, stageForEndlessDistance } from '../../src/audio';
+import { audioViolations, scanImports, stripComments } from './importScan';
 import { FakeStorage, FakeTarget, FakeTimers, fakeFactory, flush, quotaError, type FakeOscillator } from './fakeAudio';
 
 function make() {
@@ -131,42 +132,90 @@ describe('audio architecture', () => {
   const dir = join(__dirname, '..', '..', 'src', 'audio');
   const files = readdirSync(dir).filter((f) => f.endsWith('.ts'));
 
-  /** Comments are stripped first (headers mention src/run etc. in prose); string literals are kept. */
-  const code = (f: string) =>
-    readFileSync(join(dir, f), 'utf8')
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/(^|[^:'"])\/\/.*$/gm, '$1');
-
-  /** Every module specifier: `from '…'`, side-effect `import '…'`, dynamic `import('…')`, `require('…')`. */
-  const specifiers = (text: string) => [
-    ...[...text.matchAll(/\bfrom\s*['"]([^'"]+)['"]/g)].map((m) => m[1]!),
-    ...[...text.matchAll(/\bimport\s*['"]([^'"]+)['"]/g)].map((m) => m[1]!),
-    ...[...text.matchAll(/\b(?:import|require)\s*\(\s*['"`]([^'"`]+)['"`]/g)].map((m) => m[1]!),
-  ];
-
   it('src/audio depends only on itself and (type-only) src/model', () => {
-    const bad: string[] = [];
-    for (const f of files) {
-      const text = code(f);
-      for (const spec of specifiers(text)) {
-        if (spec.startsWith('./')) continue;
-        if (spec.startsWith('../model/')) continue; // checked type-only below
-        bad.push(`${f} -> ${spec}`);
-      }
-      // Any value (non-type) import of src/model is also a violation.
-      for (const m of text.matchAll(/^\s*import\s+(type\s+)?[^'"]*?from\s*['"](\.\.\/model\/[^'"]+)['"]/gm)) {
-        if (!m[1]) bad.push(`${f} -> ${m[2]} (value import)`);
-      }
-      // Blunt backstop: no path into other game layers anywhere in code.
-      for (const m of text.matchAll(/\.\.\/(run|ui|render|builder|physics|terrain|spike|app)\b/g)) bad.push(`${f} mentions ../${m[1]}`);
-    }
+    const bad = files.flatMap((f) => audioViolations(readFileSync(join(dir, f), 'utf8'), f));
     expect(bad).toEqual([]);
+    // Sanity: the scan does see the real type-only model import.
+    const index = stripComments(readFileSync(join(dir, 'index.ts'), 'utf8'));
+    expect(scanImports(index)).toContainEqual({ spec: '../model/runEvents', typeOnly: true, form: 'static' });
   });
 
-  it('the specifier scan catches side-effect, dynamic and re-export forms', () => {
-    const sample = `import '../run/x';\nconst m = await import('../ui/y');\nexport * from '../render/z';\nimport { a } from './ok';`;
-    expect(specifiers(sample).sort()).toEqual(['../render/z', '../run/x', '../ui/y', './ok']);
+  it('scanner: every import form is found; only type-only ../model is exempt', () => {
+    const sample = [
+      "import '../run/x';",
+      "const m = await import('../ui/y');",
+      "export * from '../render/z';",
+      "import { a } from './ok';",
+      "const r = require('../builder/w');",
+      "import type { RunEvent } from '../model/runEvents';",
+      "export type { Ev } from '../model/types';",
+      "import { RunEventEmitter } from '../model/runEvents';",
+      "export { score } from '../model/score';",
+      "import '../model/side';",
+      "const lazy = () => import('../model/lazy');",
+      "const req = require('../model/req');",
+    ].join('\n');
+    expect(audioViolations(sample, 's').sort()).toEqual(
+      [
+        's -> ../builder/w (require)',
+        's -> ../model/lazy (dynamic)',
+        's -> ../model/req (require)',
+        's -> ../model/runEvents (static)',
+        's -> ../model/score (static)',
+        's -> ../model/side (side-effect)',
+        's -> ../render/z (static)',
+        's -> ../run/x (side-effect)',
+        's -> ../ui/y (dynamic)',
+        's mentions ../builder',
+        's mentions ../render',
+        's mentions ../run',
+        's mentions ../ui',
+      ].sort(),
+    );
   });
+
+  it('scanner: comment markers inside literals do not hide code', () => {
+    expect(audioViolations(`const marker = 'x//y'; require('../run/bootstrap');`)).toContain('src -> ../run/bootstrap (require)');
+    expect(audioViolations(`const m = "a/*b"; import('../ui/q'); const z = "*/";`)).toContain('src -> ../ui/q (dynamic)');
+    expect(audioViolations('const t = `//${1}`; require("../render/r");')).toContain('src -> ../render/r (require)');
+    // Genuine comments are ignored.
+    expect(audioViolations(`// import '../run/x'\n/* require('../ui/y') */\nconst ok = 1; // ../render`)).toEqual([]);
+  });
+});
+
+describe('stripComments', () => {
+  it('keeps comment markers inside strings and removes trailing comments', () => {
+    expect(stripComments(`const a = 'x//y'; b(); // tail`)).toBe(`const a = 'x//y'; b(); `);
+    expect(stripComments(`const a = "/* no */"; c();`)).toBe(`const a = "/* no */"; c();`);
+    expect(stripComments(`const a = 'it\\'s // not'; d();`)).toBe(`const a = 'it\\'s // not'; d();`);
+  });
+
+  it('replaces block comments with spaces, keeping newlines', () => {
+    const src = `a();/* one\ntwo */b();`;
+    const out = stripComments(src);
+    expect(out).toBe(`a();      \n      b();`);
+    expect(out.length).toBe(src.length);
+  });
+
+  it('handles templates with nested expressions, templates and braces', () => {
+    const src = "const s = `a ${ `b ${'//'} c` } d ${ {k: '/*'}.k } e //`; f(); // gone";
+    expect(stripComments(src)).toBe("const s = `a ${ `b ${'//'} c` } d ${ {k: '/*'}.k } e //`; f(); ");
+    const multi = 'x = `${ fn({ a: { b: 1 } }) } // still template`; /* c */ y();';
+    expect(stripComments(multi)).toBe('x = `${ fn({ a: { b: 1 } }) } // still template`;         y();');
+  });
+
+  it('copies regex literals verbatim (quotes / slashes inside do not open strings or comments)', () => {
+    const src = `const r = /['"]\\/\\/[/*]/g; require('../run/x'); // c`;
+    expect(stripComments(src)).toBe(`const r = /['"]\\/\\/[/*]/g; require('../run/x'); `);
+    expect(stripComments(`if (ok) return /a"b/.test(s); // c`)).toBe(`if (ok) return /a"b/.test(s); `);
+    // Division is not a regex.
+    expect(stripComments(`const q = a / b; const w = 'x'; // c`)).toBe(`const q = a / b; const w = 'x'; `);
+  });
+});
+
+describe('audio architecture (misc)', () => {
+  const dir = join(__dirname, '..', '..', 'src', 'audio');
+  const files = readdirSync(dir).filter((f) => f.endsWith('.ts'));
 
   it('loads nothing external (all audio is synthesized)', () => {
     for (const f of files) {
