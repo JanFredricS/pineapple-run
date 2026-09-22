@@ -11,7 +11,9 @@ import {
   MIN_PIECE_WIDTH,
   sanitizePiece,
   surfaceYAt,
+  vertexTurn,
 } from '../../src/terrain/chunks';
+import { auditorProfile, auditorProfileConvex } from './profiles';
 
 const W = CHUNK_WIDTH;
 
@@ -25,6 +27,41 @@ function wiggly(x0: number, x1: number, step: number): Vec2[] {
 function segDir(a: Vec2, b: Vec2): Vec2 {
   const l = Math.hypot(b.x - a.x, b.y - a.y);
   return { x: (b.x - a.x) / l, y: (b.y - a.y) / l };
+}
+
+/** physics/engine.ts#addChain's ghost: `to` continued 1 m along from->to. */
+function engineGhost(from: Vec2, to: Vec2): Vec2 {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  return { x: to.x + dx / len, y: to.y + dy / len };
+}
+
+/**
+ * Across every seam between consecutive pieces, the engine's extrapolated ghost
+ * on each side lies on the ray from the shared cut vertex through the
+ * NEIGHBOUR's true adjacent vertex (Box2D uses the ghost only through the
+ * direction of the ghost segment, so this is "ghost == true neighbour").
+ */
+function expectExactSeams(pieces: Vec2[][]): void {
+  expect(pieces.length).toBeGreaterThan(1);
+  for (let i = 1; i < pieces.length; i++) {
+    const L = pieces[i - 1]!;
+    const R = pieces[i]!;
+    const cut = L.at(-1)!;
+    expect(R[0]).toEqual(cut);
+    const onRay = (ghost: Vec2, trueNeighbour: Vec2) => {
+      const gx = ghost.x - cut.x;
+      const gy = ghost.y - cut.y;
+      const nx = trueNeighbour.x - cut.x;
+      const ny = trueNeighbour.y - cut.y;
+      const nl = Math.hypot(nx, ny);
+      expect(Math.abs(gx * ny - gy * nx) / nl, `seam at x=${cut.x}`).toBeLessThan(1e-9); // collinear
+      expect(gx * nx + gy * ny).toBeGreaterThan(0); // same direction
+    };
+    onRay(engineGhost(L.at(-2)!, cut), R[1]!); // left piece's right ghost -> right piece's 2nd vertex
+    onRay(engineGhost(R[1]!, cut), L.at(-2)!); // right piece's left ghost -> left piece's 2nd-to-last vertex
+  }
 }
 
 describe('cutSpan', () => {
@@ -126,6 +163,44 @@ describe('cutSpan', () => {
         }
       }
     }
+  });
+
+  it('audit S3-2 #1: vertex-fallback seams are exact — each piece\'s ghost vertex points at the neighbour\'s true vertex', () => {
+    // the auditor's profile: horizontal ending exactly at x = 40, then > 0.5 m of a 5 mm-spaced 45° incline
+    const span = auditorProfile();
+    const pieces = cutSpan(span);
+    expect(pieces.map((p) => p.chunk)).toEqual([-1, 0, 1, 2]);
+    const seam = pieces[1]!.points.at(-1)!; // chunk 0 | chunk 1, the boundary at x = 40
+    expect(seam.x).toBeGreaterThan(40); // not the corner at x = 40
+    expect(seam.x).toBeLessThanOrEqual(40 + MAX_CUT_SHIFT + MIN_CUT_CLEARANCE);
+    expectExactSeams(pieces.map((p) => p.points));
+    expectExactSeams(cutSpan(auditorProfileConvex()).map((p) => p.points));
+    // and the same for a span whose dense run straddles several boundaries at different phases
+    for (const off of [0, 0.0013, 0.0049]) {
+      const zig: Vec2[] = [{ x: -3, y: 10 }];
+      for (let i = 0; off + 38 + i * 0.005 < 125; i++) zig.push({ x: off + 38 + i * 0.005, y: 10 - Math.floor(i / 60) * 0.2 - (i % 60) * 0.004 });
+      zig.push({ x: 140, y: 5 });
+      expectExactSeams(cutSpan(zig).map((p) => p.points));
+    }
+  });
+
+  it('audit S3-2 #1: with no straight vertex in the window, the fallback takes the straightest one', () => {
+    // dense arc: every vertex turns, but by a tiny, varying amount; plus one sharp corner at x = 40
+    const span: Vec2[] = [{ x: 0, y: 10 }];
+    for (let i = 0; 40 + i * 0.006 < 41; i++) {
+      const x = 40 + i * 0.006;
+      span.push({ x, y: 10 - (x - 40) * (1 + (x - 40) * (i % 2 ? 0.02 : 0.01)) });
+    }
+    span.push({ x: 60, y: 0 });
+    const [a, b] = cutSpan(span).map((p) => p.points);
+    const at = a!.at(-1)!;
+    const j = span.findIndex((v) => v.x === at.x && v.y === at.y);
+    expect(j).toBeGreaterThan(1); // a real vertex, not the corner
+    const chosen = vertexTurn(span[j - 1]!, span[j]!, span[j + 1]!);
+    for (let i = 1; i < span.length - 1; i++) {
+      if (span[i]!.x >= 40 && span[i]!.x <= 40 + MAX_CUT_SHIFT) expect(chosen).toBeLessThanOrEqual(vertexTurn(span[i - 1]!, span[i]!, span[i + 1]!));
+    }
+    expect(b![0]).toEqual(at);
   });
 
   it('merges near-duplicate vertices and drops fully degenerate spans', () => {

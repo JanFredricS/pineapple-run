@@ -596,15 +596,29 @@ export interface GenerateOptions {
 /** Longest level generateLevel accepts (m): the goal line of a MAX_GENERATED_BLOCKS level. */
 export const MAX_GENERATED_LENGTH = (MAX_GENERATED_BLOCKS - 1) * BLOCK_WIDTH + FINISH_GOAL_OFFSET;
 
-/** Blocks (including the finish block) needed so the goal line is at x >= length. */
+/**
+ * Shortest course generateLevel produces (m): the goal line of the minimum
+ * level, block 0 (start plateau + first terrain) followed by the finish block.
+ * Shorter requests are clamped UP to this (a finish inside block 0 would sit
+ * on the start plateau).
+ */
+export const MIN_GENERATED_LENGTH = BLOCK_WIDTH + FINISH_GOAL_OFFSET;
+
+/**
+ * Blocks (including the finish block) for a requested length. Contract, with
+ * L = max(length, MIN_GENERATED_LENGTH): the goal line x satisfies
+ * L <= goal < L + BLOCK_WIDTH.
+ */
 export function blocksForLength(length: number): number {
-  return Math.max(2, 1 + Math.ceil((length - FINISH_GOAL_OFFSET) / BLOCK_WIDTH));
+  const L = Math.max(length, MIN_GENERATED_LENGTH);
+  return Math.max(2, 1 + Math.ceil((L - FINISH_GOAL_OFFSET) / BLOCK_WIDTH));
 }
 
 /**
- * A finite, valid LevelDef whose goal line is at x >= `length` (so the course
- * is at least `length` metres long; the pit and end wall follow a few metres
- * later): start plateau, generated blocks, then a finish block with the goal.
+ * A finite, valid LevelDef whose goal line is at x >= max(length,
+ * MIN_GENERATED_LENGTH) and less than one block (BLOCK_WIDTH) beyond it (see
+ * blocksForLength); the pit and end wall follow a few metres after the goal
+ * line: start plateau, generated blocks, then a finish block with the goal.
  * Blocks 0..blocks-2 are exactly the blocks the endless source streams, so
  * their chunks are identical to ProceduralChunkSource's.
  */

@@ -17,6 +17,7 @@ import {
   MAX_GENERATED_BLOCKS,
   MAX_GENERATED_LENGTH,
   blocksForLength,
+  MIN_GENERATED_LENGTH,
   ProceduralChunkSource,
   slopeLimitsFor,
   START_CART,
@@ -89,6 +90,7 @@ describe('validity', () => {
     expect(() => generateLevel(1, NaN)).toThrow(RangeError);
     expect(() => generateLevel(1, MAX_GENERATED_LENGTH + 1)).toThrow(RangeError);
     expect(generateLevel(1, 1).blocks).toBe(2); // minimum: start + finish
+    expect(generateLevel(1, 1).level.goal.lineX).toBeCloseTo(MIN_GENERATED_LENGTH, 9); // clamped up
   });
 
   it('starts on a flat plateau with the cart on it and ends with a goal', () => {
@@ -102,11 +104,13 @@ describe('validity', () => {
     expect(level.goal.lineX).toBeGreaterThan(1900);
   });
 
-  it('the goal line is at least the requested length, and less than one block past it', () => {
-    for (const len of [1, 40, 41.3, 100, 599.9, 600, 2000, 2021.3, 2021.31, 12345, MAX_GENERATED_LENGTH]) {
+  it('goal line: L <= goal < L + one block, with L = max(requested, MIN_GENERATED_LENGTH)', () => {
+    const lens = [0.001, 1, 21.3, 40, 41.3, 61.29, MIN_GENERATED_LENGTH, 61.31, 100, 101.3, 101.31, 599.9, 600, 2000, 2021.3, 2021.31, 12345, MAX_GENERATED_LENGTH];
+    for (const len of lens) {
       const g = generateLevel('len', len);
-      expect(g.level.goal.lineX).toBeGreaterThanOrEqual(len);
-      if (g.blocks > 2) expect(g.level.goal.lineX - len).toBeLessThan(BLOCK_WIDTH);
+      const L = Math.max(len, MIN_GENERATED_LENGTH);
+      expect(g.level.goal.lineX, `len ${len}`).toBeGreaterThanOrEqual(L);
+      expect(g.level.goal.lineX - L, `len ${len}`).toBeLessThan(BLOCK_WIDTH);
       expect(g.blocks).toBe(blocksForLength(len));
       const end = g.level.terrain.spans.at(-1)!.points.at(-1)!.x;
       expect(end).toBeGreaterThan(g.level.goal.lineX);

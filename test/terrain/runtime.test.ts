@@ -8,6 +8,7 @@ import { PhysicsWorld } from '../../src/physics/engine';
 import { LevelChunkSource, type ChunkLifecycleListener, type ReadonlyTerrainChunk } from '../../src/terrain/chunks';
 import { ProceduralChunkSource } from '../../src/terrain/generator';
 import { TerrainStreamer } from '../../src/terrain/runtime';
+import { auditorProfile, auditorProfileConvex } from './profiles';
 
 const terrainOf = (...spans: Vec2[][]): TerrainDef => ({
   spans: spans.map((points, i) => ({ id: `s${i}`, points })),
@@ -171,6 +172,94 @@ describe('TerrainStreamer', () => {
         }
         expect(worst).toBeLessThan(0.005);
       }
+    }
+  });
+
+  it('audit S3-2 #1: a body rolls across a vertex-fallback seam (flat -> dense 45° incline at x = 40) as on one chain', async () => {
+    // The auditor's exact (concave) profile. A concave seam is physically forgiving (the next
+    // chain's surface masks a wrong ghost), so this is a regression check; the convex test below
+    // is the discriminating one.
+    const pts = auditorProfile();
+    // the seam really is a vertex-fallback cut (no segment in the window is cuttable)
+    const src = new LevelChunkSource({ spans: [{ id: 'a', points: pts }], friction: 0.9, restitution: 0 });
+    const seam = src.chunk(0).pieces.at(-1)!.at(-1)!;
+    expect(pts.some((v) => v.x === seam.x && v.y === seam.y)).toBe(true);
+    const run = async (chunked: boolean, body: 'ball' | 'box', vx: number) => {
+      const w = await PhysicsWorld.create();
+      const mat = { friction: 0.9, restitution: 0 };
+      if (chunked) new TerrainStreamer(w, new LevelChunkSource({ spans: [{ id: 'a', points: pts }], ...mat })).loadAll();
+      else w.addChain(w.createBody({ type: 'static', position: { x: 0, y: 0 }, role: 'terrain' }), pts, mat);
+      let b: number;
+      if (body === 'ball') b = ball(w, 36, 9.6, vx);
+      else {
+        // low-friction box (mixed friction ≈ 0.2) so it slides up to and onto the seam
+        b = w.createBody({ type: 'dynamic', position: { x: 38.5, y: 9.5 }, linearVelocity: { x: vx, y: 0 } });
+        w.addPolygon(b, [{ x: -0.5, y: -0.5 }, { x: 0.5, y: -0.5 }, { x: 0.5, y: 0.5 }, { x: -0.5, y: 0.5 }], { friction: 0.05, restitution: 0 });
+      }
+      const trace: { x: number; y: number; angle: number }[] = [];
+      for (let i = 0; i < 360; i++) {
+        w.step();
+        trace.push(w.getTransform(b));
+      }
+      w.destroy();
+      return trace;
+    };
+    for (const body of ['ball', 'box'] as const) {
+      for (const vx of [3, 6, 8]) {
+        const one = await run(false, body, vx);
+        const many = await run(true, body, vx);
+        // reached the seam: in contact with the incline past x = 40.005 (ball: contact point on a
+        // 45° slope is r·sin45 ≈ 0.28 m ahead of the centre; box: front face 0.5 m ahead)
+        expect(Math.max(...one.map((t) => t.x))).toBeGreaterThan(body === 'ball' ? 39.75 : 39.5);
+        let worst = 0;
+        for (let i = 0; i < one.length; i++) {
+          const da = Math.abs(one[i]!.angle - many[i]!.angle);
+          worst = Math.max(worst, Math.hypot(one[i]!.x - many[i]!.x, one[i]!.y - many[i]!.y), Math.min(da, 2 * Math.PI - da));
+        }
+        expect(worst, `${body} @ ${vx} m/s`).toBeLessThan(0.005);
+        // ... and it came back down across the seam too
+        expect(one.at(-1)!.x).toBeLessThan(40);
+      }
+    }
+  });
+
+  it('audit S3-2 #1: convex vertex-fallback seam (flat -> dense 45° decline at x = 40) matches one chain', async () => {
+    // Discriminating case (mutation-checked): with the old first-vertex fallback the cut sits ON the
+    // corner at x = 40, each chain extrapolates its own ghost, and these runs deviate by 0.08..2.1
+    // (spin/path change at the corner); with the straightest-vertex fallback they stay < 0.005.
+    const pts = auditorProfileConvex();
+    const src = new LevelChunkSource({ spans: [{ id: 'a', points: pts }], friction: 0.9, restitution: 0 });
+    const seam = src.chunk(0).pieces.at(-1)!.at(-1)!;
+    expect(seam.x).toBeGreaterThan(40); // not the corner
+    const run = async (chunked: boolean, body: 'ball' | 'box', vx: number) => {
+      const w = await PhysicsWorld.create();
+      const mat = { friction: 0.9, restitution: 0 };
+      if (chunked) new TerrainStreamer(w, new LevelChunkSource({ spans: [{ id: 'a', points: pts }], ...mat })).loadAll();
+      else w.addChain(w.createBody({ type: 'static', position: { x: 0, y: 0 }, role: 'terrain' }), pts, mat);
+      let b: number;
+      if (body === 'ball') b = ball(w, 39, 9.6, vx);
+      else {
+        b = w.createBody({ type: 'dynamic', position: { x: 39, y: 9.5 }, linearVelocity: { x: vx, y: 0 } });
+        w.addPolygon(b, [{ x: -0.5, y: -0.5 }, { x: 0.5, y: -0.5 }, { x: 0.5, y: 0.5 }, { x: -0.5, y: 0.5 }], { friction: 0.05, restitution: 0 });
+      }
+      const trace: { x: number; y: number; angle: number }[] = [];
+      for (let i = 0; i < 240; i++) {
+        w.step();
+        trace.push(w.getTransform(b));
+      }
+      w.destroy();
+      return trace;
+    };
+    for (const [body, vx] of [['ball', 0.5], ['ball', 1], ['box', 4]] as const) {
+      const one = await run(false, body, vx);
+      const many = await run(true, body, vx);
+      expect(one.at(-1)!.x).toBeGreaterThan(41); // went over the corner and down the slope
+      let worst = 0;
+      for (let i = 0; i < one.length; i++) {
+        const da = Math.abs(one[i]!.angle - many[i]!.angle);
+        worst = Math.max(worst, Math.hypot(one[i]!.x - many[i]!.x, one[i]!.y - many[i]!.y), Math.min(da, 2 * Math.PI - da));
+      }
+      expect(worst, `${body} @ ${vx} m/s`).toBeLessThan(0.005);
     }
   });
 

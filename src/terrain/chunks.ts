@@ -148,15 +148,26 @@ interface Cut {
  * both of its vertices (the seam rule above), at the first such position at
  * or after X. Segments too short for that clearance are skipped, but only up
  * to X + maxShift: if the span is so dense there that no segment qualifies,
- * the cut is placed ON the first vertex at/after X instead. A vertex cut can
- * leave a small ghost-direction mismatch at that seam — acceptable for such
- * sub-2-cm micro-geometry, and far better than drifting the cut (and the
- * piece's chunk) arbitrarily far from its boundary.
+ * the cut is placed ON a vertex instead (vertex fallback).
+ *
+ * Vertex fallback and the seam rule: the engine's ghost vertex continues each
+ * piece's END SEGMENT direction, so a vertex seam is exact (both ghosts point
+ * at the true neighbouring vertices) iff the segments meeting at that vertex
+ * are collinear. The fallback therefore picks, among the interior vertices in
+ * [lowX, X + maxShift], the one with the SMALLEST TURN (ties: the leftmost),
+ * preferring vertices whose neighbours are >= MIN_VERTEX_SPACING away (so
+ * sanitizePiece keeps those neighbours and the end segments are the true
+ * ones). Any straight vertex in the window gives an exact seam — e.g. inside
+ * a densely sampled incline that starts at the boundary. Residual (documented,
+ * audit S3-2 #1): if a 0.5 m window of sub-2-cm segments has NO straight
+ * vertex (dense zig-zag / curve), the seam's ghost mismatch equals the
+ * smallest vertex turn in that window.
  *
  * Invariant (relied on by cutSpan): a returned cut lies in
  * [X, X + maxShift + MIN_CUT_CLEARANCE] and after `afterX` + MIN_PIECE_WIDTH.
- * (The vertex fallback's vertex is the right end of a skipped short segment,
- * so it is at most MIN_CUT_CLEARANCE past the shift limit.)
+ * (A fallback vertex beyond X + maxShift is only taken when it is the first
+ * candidate — the right end of a skipped short segment, so at most
+ * MIN_CUT_CLEARANCE past the limit.)
  */
 function cutAt(pts: readonly Vec2[], X: number, afterX: number, width: number): Cut | null {
   const xs = pts[0]!.x;
@@ -183,14 +194,42 @@ function cutAt(pts: readonly Vec2[], X: number, afterX: number, width: number): 
     const t = (cx - a.x) / (b.x - a.x);
     return { leftEnd: i + 1, resume: i + 1, p: { x: cx, y: a.y + (b.y - a.y) * t } };
   }
-  // Vertex fallback: the first interior vertex at/after lowX.
+  // Vertex fallback: the straightest interior vertex in [lowX, limit].
+  let best = -1;
+  let bestTurn = Infinity;
   for (let j = Math.max(1, lo); j < pts.length - 1; j++) {
     const v = pts[j]!;
     if (v.x < lowX) continue;
-    if (xe - v.x < MIN_PIECE_WIDTH) return null; // the rest is an end sliver
-    return { leftEnd: j, resume: j + 1, p: { x: v.x, y: v.y } };
+    if (best >= 0 && v.x > limit) break;
+    if (xe - v.x < MIN_PIECE_WIDTH) break; // the rest is an end sliver
+    const turn = vertexTurn(pts[j - 1]!, v, pts[j + 1]!);
+    if (turn < bestTurn || best < 0) {
+      best = j;
+      bestTurn = turn;
+      if (turn === 0) break;
+    }
   }
-  return null;
+  if (best < 0) return null;
+  const v = pts[best]!;
+  return { leftEnd: best, resume: best + 1, p: { x: v.x, y: v.y } };
+}
+
+/**
+ * Turn score at vertex v between segments a->v and v->b: 1 − cos(turn), in
+ * [0, 2], monotonic in the turn angle (0 = straight). Only + − × ÷ and sqrt
+ * (correctly rounded everywhere), so the chosen cut is identical across JS
+ * engines. A neighbour closer than MIN_VERTEX_SPACING (which sanitizePiece
+ * would drop, changing the end segment) scores Infinity.
+ */
+export function vertexTurn(a: Vec2, v: Vec2, b: Vec2): number {
+  const ux = v.x - a.x;
+  const uy = v.y - a.y;
+  const wx = b.x - v.x;
+  const wy = b.y - v.y;
+  const lu = Math.sqrt(ux * ux + uy * uy);
+  const lw = Math.sqrt(wx * wx + wy * wy);
+  if (lu < MIN_VERTEX_SPACING || lw < MIN_VERTEX_SPACING) return Infinity;
+  return Math.max(0, 1 - (ux * wx + uy * wy) / (lu * lw));
 }
 
 /** Drop interior vertices closer than MIN_VERTEX_SPACING to the previous kept one (ends are kept). */
@@ -198,7 +237,12 @@ export function sanitizePiece(points: readonly Vec2[]): Vec2[] | null {
   if (points.length < 2) return null;
   const out: Vec2[] = [points[0]!];
   const last = points[points.length - 1]!;
-  const far = (p: Vec2, q: Vec2) => Math.hypot(p.x - q.x, p.y - q.y) >= MIN_VERTEX_SPACING;
+  // sqrt, not hypot: correctly rounded on every engine, and identical to vertexTurn's spacing test
+  const far = (p: Vec2, q: Vec2) => {
+    const dx = p.x - q.x;
+    const dy = p.y - q.y;
+    return Math.sqrt(dx * dx + dy * dy) >= MIN_VERTEX_SPACING;
+  };
   for (let i = 1; i < points.length - 1; i++) {
     const p = points[i]!;
     if (far(p, out[out.length - 1]!) && far(p, last)) out.push(p);
