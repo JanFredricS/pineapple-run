@@ -13,8 +13,9 @@ import type { LevelDef } from '../../src/model/level';
 import { validateLevelDef } from '../../src/model/validate';
 import { COURSES } from '../../src/ui/catalog';
 import { funnelFor, plateauRange } from '../../src/game/startArea';
-import { levelById, SHIPPED_LEVEL_IDS } from '../../src/game/courses';
-import { START_CART, START_FUNNEL } from '../../src/terrain/generator';
+import { courseFor, endlessTheme, levelById, SHIPPED_LEVEL_IDS } from '../../src/game/courses';
+import { ENDLESS_KILL_Y, ProceduralChunkSource, START_CART, START_FUNNEL } from '../../src/terrain/generator';
+import { LevelChunkSource } from '../../src/terrain/chunks';
 import { groundAt, PREMADE } from '../../tools/levels/premade';
 
 const root = join(__dirname, '..', '..');
@@ -142,5 +143,34 @@ describe('premade level design', () => {
     expect(gaps('beach')).toHaveLength(0);
     expect(gaps('kitchen').length).toBeGreaterThanOrEqual(2);
     expect(Math.max(...gaps('workbench'))).toBeGreaterThan(Math.max(...gaps('kitchen')));
+  });
+});
+
+describe('course loading (AppState.levelId -> course)', () => {
+  it('premade ids load validated levels on a LevelChunkSource', () => {
+    for (const id of SHIPPED_LEVEL_IDS) {
+      const c = courseFor(id)!;
+      expect(c.mode).toBe('level');
+      expect(c.level.id).toBe(id);
+      expect(c.source).toBeInstanceOf(LevelChunkSource);
+    }
+  });
+
+  it('endless:<SEED> is an endless course on the seeded generator with the shared start', () => {
+    const c = courseFor('endless:ABC123')!;
+    expect(c.mode).toBe('endless');
+    expect(c.seed).toBe('ABC123');
+    expect(c.source).toBeInstanceOf(ProceduralChunkSource);
+    expect(c.level.killY).toBe(ENDLESS_KILL_Y);
+    expect(c.level.cartStart).toEqual(START_CART);
+    expect(c.level.funnel).toEqual(funnelFor(START_CART));
+    expect(c.level.theme).toBe(endlessTheme('ABC123'));
+    expect(courseFor('endless:ABC123')!.level).toEqual(c.level); // deterministic
+  });
+
+  it('unknown or malformed ids have no course', () => {
+    expect(courseFor('nope')).toBeNull();
+    expect(courseFor('endless:bad seed!')).toBeNull();
+    expect(courseFor('__proto__')).toBeNull();
   });
 });

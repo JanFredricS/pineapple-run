@@ -72,6 +72,18 @@ export function themeFromCss(el: Element): BuilderTheme {
   };
 }
 
+/**
+ * The real level start area (S6, INTEGRATION #6), in design px (design
+ * (0, 0) = LevelDef.cartStart). Without one the builder draws its mock
+ * start area (flat ground + MOCK_FUNNEL).
+ */
+export interface StartAreaPx {
+  /** Funnel wall quads + plug quad (S1 funnelGeometry, converted to design px). */
+  funnel: { walls: readonly (readonly Vec2[])[]; plug: readonly Vec2[] };
+  /** Terrain surface polylines near the start (design px); ground fill is drawn below them. */
+  ground: readonly (readonly Vec2[])[];
+}
+
 export interface RenderOverlay {
   /** Id of the in-progress (draft) part inside `model.design`, if any. */
   draftId?: string | null;
@@ -92,6 +104,7 @@ export class BuilderRenderer {
   private readonly partsG = new Graphics();
   private readonly markersG = new Graphics();
   private theme: BuilderTheme = DEFAULT_THEME;
+  private startArea: StartAreaPx | null = null;
 
   constructor() {
     this.world.addChild(this.partsG, this.markersG);
@@ -100,6 +113,11 @@ export class BuilderRenderer {
 
   setTheme(theme: BuilderTheme): void {
     this.theme = theme;
+  }
+
+  /** Draw the real level start area instead of the mock (null = mock). */
+  setStartArea(area: StartAreaPx | null): void {
+    this.startArea = area;
   }
 
   draw(model: PreviewModel, overlay: RenderOverlay, v: BuilderView, viewportW: number, viewportH: number): void {
@@ -133,14 +151,35 @@ export class BuilderRenderer {
       line(0, sy, w, sy, y % 50 === 0 ? t.gridMajor : t.grid);
     }
     const S = (p: Vec2) => ({ x: p.x * v.scale + v.offsetX, y: p.y * v.scale + v.offsetY });
-    // Ground (design y = 0) with a filled "terrain" below it.
-    const gy = S({ x: 0, y: 0 }).y;
-    g.rect(0, gy, w, Math.max(0, h - gy)).fill({ color: t.groundFill, alpha: 0.8 });
-    g.moveTo(0, gy).lineTo(w, gy).stroke({ width: 2, color: t.ground });
+    const sa = this.startArea;
+    if (sa && sa.ground.length) {
+      // Real terrain near the start: fill below each polyline, then its edge.
+      for (const line of sa.ground) {
+        if (line.length < 2) continue;
+        const pts = line.map(S);
+        const first = pts[0]!;
+        const last = pts[pts.length - 1]!;
+        g.poly([...pts.flatMap((p) => [p.x, p.y]), last.x, h, first.x, h], true).fill({ color: t.groundFill, alpha: 0.8 });
+        g.moveTo(first.x, first.y);
+        for (const p of pts.slice(1)) g.lineTo(p.x, p.y);
+        g.stroke({ width: 2, color: t.ground });
+      }
+    } else {
+      // Ground (design y = 0) with a filled "terrain" below it.
+      const gy = S({ x: 0, y: 0 }).y;
+      g.rect(0, gy, w, Math.max(0, h - gy)).fill({ color: t.groundFill, alpha: 0.8 });
+      g.moveTo(0, gy).lineTo(w, gy).stroke({ width: 2, color: t.ground });
+    }
     // Build area outline.
     const a0 = S({ x: BUILD_AREA.minX, y: BUILD_AREA.minY });
     const a1 = S({ x: BUILD_AREA.maxX, y: BUILD_AREA.maxY });
     g.rect(a0.x, a0.y, a1.x - a0.x, a1.y - a0.y).stroke({ width: 1.5, color: t.area, alpha: 0.7 });
+    if (sa) {
+      // The level's real funnel (walls + plug) above the area.
+      for (const wall of sa.funnel.walls) g.poly(wall.map(S).flatMap((p) => [p.x, p.y]), true).fill({ color: t.area, alpha: 0.35 }).stroke({ width: 2, color: t.area });
+      g.poly(sa.funnel.plug.map(S).flatMap((p) => [p.x, p.y]), true).fill({ color: t.ground, alpha: 0.8 });
+      return;
+    }
     // Mock funnel above the area.
     const f = MOCK_FUNNEL;
     const p = [

@@ -23,7 +23,7 @@ import { InputRouter, type DraftView } from './input';
 import { PressRegistry } from './pressRegistry';
 import { highlightMap } from './messages';
 import { buildPreview, type PreviewModel } from './preview';
-import { BuilderRenderer, themeFromCss } from './render';
+import { BuilderRenderer, themeFromCss, type StartAreaPx } from './render';
 import { browserCartStore, type CartStore } from './storage';
 import { fitView, zoomAbout, type BuilderView } from './view';
 
@@ -35,6 +35,11 @@ export interface BuilderOptions {
   onTestCart?: (design: CartDesign, spec: CompoundSpec) => void;
   /** Called after every committed design change. */
   onChange?: (design: CartDesign) => void;
+  /**
+   * The level's real start area (S6): terrain + funnel in design px. Without
+   * it the builder shows its mock start area (flat ground + MOCK_FUNNEL).
+   */
+  startArea?: StartAreaPx;
 }
 
 export interface BuilderHandle {
@@ -160,6 +165,7 @@ export async function mountBuilder(host: HTMLElement, options: BuilderOptions = 
   stage.append(canvas);
   const renderer = new BuilderRenderer();
   renderer.setTheme(themeFromCss(root));
+  renderer.setStartArea(options.startArea ?? null);
   app.stage.addChild(renderer.view);
 
   // ---------------------------------------------------------------- state
@@ -458,8 +464,11 @@ export async function mountBuilder(host: HTMLElement, options: BuilderOptions = 
     requestDraw();
   };
   const fit = (explicit = false) => {
-    // include the bottom of the mock funnel so the start area reads as one scene
-    const area = { ...BUILD_AREA, minY: Math.min(BUILD_AREA.minY, MOCK_FUNNEL.y - 10) };
+    // include the bottom of the funnel so the start area reads as one scene
+    const funnelBottom = options.startArea
+      ? Math.min(...options.startArea.funnel.plug.map((p) => p.y)) - 40
+      : MOCK_FUNNEL.y - 10;
+    const area = { ...BUILD_AREA, minY: Math.min(BUILD_AREA.minY, funnelBottom) };
     view = fitView(area, stageW(), stageH(), paletteReserve(), 24);
     if (explicit) userMovedView = false;
     requestDraw();

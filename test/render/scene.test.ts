@@ -317,3 +317,75 @@ describe('AssetLibrary destroyed while loading', () => {
     expect(() => lib.texture('a/b')).toThrow(/destroyed/);
   });
 });
+
+describe('S6 level decor conventions', () => {
+  const noArt: TextureProvider = { has: (id) => !id.startsWith('prop/'), texture: provider.texture };
+
+  it('the blender prop is the goal: BlenderView stands on its bottom-centre and no placeholder is drawn', () => {
+    const r = new SceneRenderer(provider, { background: false });
+    const level = mockLevel('beach');
+    r.setLevel({
+      ...level,
+      props: [{ id: 'blender', art: 'blender', solid: true, position: { x: 50, y: 12.2 }, size: { x: 1.5, y: 3.6 } }],
+    });
+    const decor = layer(r, 'decor');
+    expect(decor.children).toHaveLength(1); // just the BlenderView
+    const bv = r.blenderView!;
+    expect(decor.children[0]).toBe(bv.view);
+    expect(bv.view.position.x).toBeCloseTo(50, 9);
+    expect(bv.view.position.y).toBeCloseTo(12.2 + 1.8, 9);
+    r.destroy();
+  });
+
+  it('solid props are drawn CENTRED on position (run/props.ts convention), decor props stand on it', () => {
+    const r = new SceneRenderer(noArt, { background: false });
+    const level = mockLevel('beach');
+    r.setLevel({
+      ...level,
+      props: [
+        { id: 'crate', art: 'crate', solid: true, position: { x: 5, y: 3 }, size: { x: 2, y: 1 }, angle: 0.3 },
+        { id: 'deco', art: 'thing', position: { x: 8, y: 4 } },
+      ],
+    });
+    const [crate, deco] = layer(r, 'decor').children;
+    expect(crate!.position.x).toBe(5);
+    expect(crate!.position.y).toBe(3);
+    expect(crate!.rotation).toBeCloseTo(0.3, 9);
+    const b = crate!.getLocalBounds();
+    expect(b.minX).toBeCloseTo(-1, 1); // + half the outline stroke
+    expect(b.maxX).toBeCloseTo(1, 1);
+    expect((b.minY + b.maxY) / 2).toBeCloseTo(0, 3); // centred, not bottom-anchored
+    const d = deco!.getLocalBounds();
+    expect(d.maxY).toBeCloseTo(0, 3); // decor placeholder still stands on its position
+    r.destroy();
+  });
+
+  it('solid props with art stand the art on the box bottom', () => {
+    const r = new SceneRenderer(provider, { background: false });
+    r.setLevel({ ...mockLevel('beach'), props: [{ id: 'p', art: 'palm', solid: true, position: { x: 4, y: 2 }, size: { x: 1, y: 3 } }] });
+    const holder = layer(r, 'decor').children[0] as Container;
+    expect(holder.position.y).toBe(2);
+    expect(holder.children[0]!.position.y).toBeCloseTo(1.5, 9);
+    r.destroy();
+  });
+
+  it('funnel: drawn from geometry, plug hidden on release, survives level and theme changes', () => {
+    const r = new SceneRenderer(provider, { background: false });
+    r.setLevel(mockLevel('beach'));
+    const wall = [{ x: 0, y: 0 }, { x: -1, y: -3 }, { x: -1.2, y: -3 }, { x: -0.2, y: 0 }];
+    r.setFunnel({ walls: [wall, wall.map((p) => ({ x: -p.x, y: p.y }))], plug: [{ x: -1, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 0.2 }, { x: -1, y: 0.2 }] });
+    expect(r.stats.funnel).toBe(true);
+    const funnel = () => r.world.children.find((c) => c.label === 'funnel') as Container;
+    expect(funnel().children).toHaveLength(3);
+    expect(funnel().children[2]!.visible).toBe(true);
+    r.setFunnelOpen(true);
+    expect(funnel().children[2]!.visible).toBe(false);
+    r.setTheme('kitchen');
+    r.setLevel(mockLevel('workbench'));
+    expect(r.world.children.filter((c) => c.label === 'funnel')).toHaveLength(1);
+    expect(funnel().children[2]!.visible).toBe(false);
+    r.setFunnel(null);
+    expect(r.stats.funnel).toBe(false);
+    r.destroy();
+  });
+});

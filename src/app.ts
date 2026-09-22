@@ -1,9 +1,11 @@
 /**
- * App state machine skeleton: title -> select -> build -> run -> results.
+ * App state machine: title -> select -> build -> run -> results.
  *
- * S0 ships stubs for every screen except `run`, which mounts the stability
- * spike page (the current entry point). Later slices replace the stubs:
- * level select (S5), builder (S3), run screen (S1/S4), results (S5/S6).
+ * Screens (S6 integration): title / select / results are S5's; build is the
+ * real S2 builder over the course's start area (src/game/buildScreen); run
+ * is the real run (src/game/runScreen: S1 controller + S3 terrain + S4
+ * renderer + S5 HUD). Per-state overrides (`AppOptions.screens`) are for
+ * harnesses and tests.
  */
 
 import type { RunEvent } from './model/runEvents';
@@ -82,7 +84,7 @@ export function transition(state: AppState, action: AppAction): AppState {
   }
 }
 
-/** S0 entry: the run screen on the spike level. */
+/** S0's spike level id (the spike page is no longer an App screen; kept for reference). */
 export const SPIKE_LEVEL_ID = 's0-spike';
 
 export interface Screen {
@@ -198,9 +200,8 @@ export class App {
     if (override) return override(this.host, state, (a) => this.dispatch(a), ctx);
     switch (state.name) {
       case 'run': {
-        // S0: the stability spike is the run screen.
-        const { mountSpikePage } = await import('./spike/page');
-        return mountSpikePage(this.host);
+        const { mountRunScreen } = await import('./game/runScreen');
+        return mountRunScreen(this.host, state, (a) => this.dispatch(a), ctx);
       }
       case 'title':
       case 'select':
@@ -209,21 +210,10 @@ export class App {
         const { mountAppScreen } = await import('./ui/appScreens');
         return mountAppScreen(this.host, state, (a) => this.dispatch(a), ctx);
       }
-      case 'build':
-        return this.stub('Build (coming in S3)', 'Run', { type: 'startRun' });
+      case 'build': {
+        const { mountBuildScreen } = await import('./game/buildScreen');
+        return mountBuildScreen(this.host, state, (a) => this.dispatch(a), ctx);
+      }
     }
-  }
-
-  private stub(title: string, button: string, action: AppAction): Screen {
-    const el = document.createElement('div');
-    el.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px';
-    const h = document.createElement('h1');
-    h.textContent = title;
-    const b = document.createElement('button');
-    b.textContent = button;
-    b.addEventListener('click', () => void this.dispatch(action));
-    el.append(h, b);
-    this.host.appendChild(el);
-    return { destroy: () => el.remove() };
   }
 }

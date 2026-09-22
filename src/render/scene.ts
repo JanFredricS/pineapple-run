@@ -75,6 +75,14 @@ export const BLENDER_HEIGHT_M = 3.6;
 /** Visual thickness of the umbrella shaft (m). */
 const SHOCK_SHAFT_M = 0.09;
 const PIN_DIAMETER_M = 0.16;
+/** LevelDef prop art id of the goal blender (drawn as the animated BlenderView). */
+export const BLENDER_ART = 'blender';
+
+/** Funnel outline in world metres (S1 run/funnel funnelGeometry walls + plug). */
+export interface FunnelShape {
+  walls: readonly (readonly Vec2[])[];
+  plug: readonly Vec2[];
+}
 
 interface BodyVisual {
   id: number;
@@ -205,6 +213,7 @@ export class SceneRenderer {
     this.rebuildBackground();
     this.terrainState = null; // force re-skin
     if (this.blender) this.placeLevelDecor();
+    else this.drawFunnel();
   }
 
   /** Static level context: theme, props, blender goal. Terrain comes from the manifest. */
@@ -583,11 +592,36 @@ export class SceneRenderer {
     for (const ch of this.decorLayer.removeChildren()) ch.destroy({ children: true });
     this.blender = null;
     const level = this.level;
-    if (!level) return;
+    if (!level) {
+      this.drawFunnel();
+      return;
+    }
+    // S6 (INTEGRATION #7): the level's 'blender' prop is the goal's SOLID
+    // body (position = box centre); the animated BlenderView stands on its
+    // bottom-centre. Without one, it stands on the goal sensor's bottom-centre.
+    const blenderProp = level.props.find((p) => p.art === BLENDER_ART);
     for (const prop of level.props) {
+      if (prop === blenderProp) continue;
       const art = PROP_ART.get(prop.art);
       let v: Container;
-      if (art && this.textures.has(art.id)) {
+      const hasArt = !!art && this.textures.has(art.id);
+      if (prop.solid && prop.size) {
+        // S6 (INTEGRATION #12): solid props are boxes CENTRED on `position`,
+        // rotated by `angle` — the same convention as src/run/props.ts. Art
+        // (anchored at its foot) stands on the box's bottom edge; without
+        // art the box itself is drawn.
+        if (hasArt) {
+          const tex = this.textures.texture(art.id);
+          const s = new Sprite(tex);
+          s.anchor.set(art.anchor.x, art.anchor.y);
+          s.scale.set(((prop.scale ?? 1) * art.metresTall) / tex.height);
+          s.position.set(0, prop.size.y / 2);
+          v = new Container();
+          v.addChild(s);
+        } else {
+          v = this.solidPropView(prop.size);
+        }
+      } else if (hasArt && art) {
         const tex = this.textures.texture(art.id);
         const s = new Sprite(tex);
         s.anchor.set(art.anchor.x, art.anchor.y);
@@ -603,9 +637,79 @@ export class SceneRenderer {
     }
     const g = level.goal.sensor;
     this.blender = new BlenderView(this.textures, hexToNumber(this.theme.palette.blenderFill));
-    this.blender.view.position.set(g.x + g.width / 2, g.y + g.height);
+    if (blenderProp) {
+      const half = (blenderProp.size?.y ?? 0) / 2;
+      this.blender.view.position.set(blenderProp.position.x, blenderProp.position.y + half);
+    } else {
+      this.blender.view.position.set(g.x + g.width / 2, g.y + g.height);
+    }
     this.blender.view.scale.set(BLENDER_HEIGHT_M / BLENDER_LAYOUT.height);
     this.decorLayer.addChild(this.blender.view);
+    this.drawFunnel();
+  }
+
+  private solidPropView(size: Vec2): Graphics {
+    const ink = hexToNumber(this.theme.palette.ink);
+    return new Graphics()
+      .roundRect(-size.x / 2, -size.y / 2, size.x, size.y, Math.min(size.x, size.y) * 0.12)
+      .fill({ color: hexToNumber(this.theme.palette.groundEdge) })
+      .stroke({ color: ink, width: 0.06, alpha: 0.6 });
+  }
+
+  // ---------------------------------------------------------------- funnel
+
+  private funnel: FunnelShape | null = null;
+  private funnelOpen = false;
+  private funnelView: Container | null = null;
+  private funnelPlug: Graphics | null = null;
+
+  /**
+   * S6: the start funnel. Its walls/plug are manifest 'prop' bodies, which
+   * are not drawn (see header), so the owner passes the funnel geometry (world
+   * metres) here. Pass null to remove it.
+   */
+  setFunnel(shape: FunnelShape | null): void {
+    this.funnel = shape;
+    this.funnelOpen = false;
+    this.drawFunnel();
+  }
+
+  /** Hide the plug once the load is released. */
+  setFunnelOpen(open: boolean): void {
+    this.funnelOpen = open;
+    if (this.funnelPlug) this.funnelPlug.visible = !open;
+  }
+
+  private drawFunnel(): void {
+    if (this.funnelView) {
+      this.funnelView.destroy({ children: true });
+      this.funnelView = null;
+      this.funnelPlug = null;
+    }
+    const f = this.funnel;
+    if (!f) return;
+    const view = new Container();
+    view.label = 'funnel';
+    const ink = hexToNumber(this.theme.palette.ink);
+    const body = hexToNumber(this.theme.palette.accentAlt);
+    for (const wall of f.walls) {
+      view.addChild(
+        new Graphics()
+          .poly(wall.flatMap((p) => [p.x, p.y]))
+          .fill({ color: body })
+          .stroke({ color: ink, width: 0.05, alpha: 0.7 }),
+      );
+    }
+    const plug = new Graphics()
+      .poly(f.plug.flatMap((p) => [p.x, p.y]))
+      .fill({ color: hexToNumber(this.theme.palette.accent) })
+      .stroke({ color: ink, width: 0.05, alpha: 0.7 });
+    plug.visible = !this.funnelOpen;
+    view.addChild(plug);
+    // in front of the pineapples: the load shows through the open V top
+    this.world.addChild(view);
+    this.funnelView = view;
+    this.funnelPlug = plug;
   }
 
   /** The current manifest (for callers that inspect what was drawn). */
@@ -622,13 +726,14 @@ export class SceneRenderer {
   }
 
   /** Diagnostics for tests / the style guide (counts only; no internals exposed). */
-  get stats(): { bodies: number; terrainChains: number; decor: number; shocks: number } {
+  get stats(): { bodies: number; terrainChains: number; decor: number; shocks: number; funnel: boolean } {
     const fills = this.terrainLayer.children[0];
     return {
       bodies: this.bodies.size,
       terrainChains: fills ? fills.children.length : 0,
       decor: this.decorLayer.children.length,
       shocks: this.shocks.length,
+      funnel: this.funnelView !== null,
     };
   }
 

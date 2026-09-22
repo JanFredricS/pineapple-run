@@ -78,3 +78,16 @@ work. S6 works through this list; each item is a plan-owner ruling.
   (port 9333, tender-analysis) and navigated it; restored via history but
   page state may be lost. All later browser checks use isolated instances
   with a port-collision guard.
+
+## S6 status (implementer notes)
+
+- #3: every shipped level (premade, original, endless) has `cartStart` = the
+  ground under design (0, 0); `src/game/startArea.ts` holds the shared
+  start-area rules (funnel outlet = cartStart + (115, −225) px). The S0
+  spike/run-harness fixtures keep their own cart offset (the spike cart's
+  wheels reach design y = +52 px); they are dev fixtures, not App levels.
+- #7/#12: the blender is a solid LevelDef prop (centre convention); S4 places
+  the BlenderView on its bottom-centre and draws other solid props centred.
+- Funnel: manifest 'prop' bodies are not drawn by S4, so the run screen passes
+  `funnelGeometry` to `SceneRenderer.setFunnel` (plug hidden on release).
+- Audio: `src/game/audioHooks.ts` is the no-op seam for S7 (TODO(S7)).

@@ -19,6 +19,11 @@ import { STRAW_THICKNESS_PX } from '../model/cart';
 import type { Vec2 } from '../model/geometry';
 import { PX_PER_M } from '../model/coords';
 import { BUILD_AREA } from '../builder/constants';
+import type { StartAreaPx } from '../builder/render';
+import type { LevelDef } from '../model/level';
+import { TOTAL_PINEAPPLES } from '../model/score';
+import { funnelGeometry } from '../run/funnel';
+import { chunkIndexAt, type TerrainSource } from '../terrain/chunks';
 
 /** Funnel outlet centre relative to cartStart, design px (x = the example cart's bed centre). */
 export const FUNNEL_OFFSET_PX: Readonly<Vec2> = { x: 115, y: BUILD_AREA.minY - 15 };
@@ -67,4 +72,31 @@ export function designBottomPx(design: CartDesign): number {
 /** Design-px position of a world point for a course starting at cartStart (builder backdrop). */
 export function worldToDesignPx(p: Vec2, cartStart: Vec2): Vec2 {
   return { x: (p.x - cartStart.x) * PX_PER_M, y: (p.y - cartStart.y) * PX_PER_M };
+}
+
+/** World x-range of terrain shown behind the builder (a little beyond the build area). */
+const BACKDROP_MARGIN_M = 8;
+
+/**
+ * The level's real start area for the S2 builder (INTEGRATION #6), in design
+ * px: the S1 funnel (walls + plug from funnelGeometry at `level.funnel`) and
+ * the terrain surface near the start, read from the course's TerrainSource.
+ */
+export function startAreaPx(level: LevelDef, source: TerrainSource): StartAreaPx {
+  const cs = level.cartStart;
+  const toPx = (p: Vec2) => worldToDesignPx(p, cs);
+  const geo = funnelGeometry(level.funnel, TOTAL_PINEAPPLES);
+  const range = plateauRange(cs);
+  const x0 = range.minX - BACKDROP_MARGIN_M;
+  const x1 = range.maxX + BACKDROP_MARGIN_M;
+  const ground: Vec2[][] = [];
+  const k0 = Math.max(source.firstChunk, chunkIndexAt(x0, source.chunkWidth));
+  const k1 = Math.min(source.lastChunk, chunkIndexAt(x1, source.chunkWidth));
+  for (let k = k0; k <= k1; k++) {
+    for (const piece of source.chunk(k).pieces) {
+      const pts = piece.filter((p) => p.x >= x0 - 2 && p.x <= x1 + 2);
+      if (pts.length >= 2) ground.push(pts.map(toPx));
+    }
+  }
+  return { funnel: { walls: geo.walls.map((w) => w.map(toPx)), plug: geo.plug.map(toPx) }, ground };
 }

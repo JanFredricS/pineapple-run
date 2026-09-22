@@ -94,7 +94,7 @@ describe('production build emits a complete precache manifest', () => {
     const chunks = all.filter((f) => f.startsWith('assets/') && f.endsWith('.js'));
     expect(chunks.length).toBeGreaterThan(5);
     for (const c of chunks) expect(manifest.assets).toContain(c);
-    expect(manifest.assets.some((f) => /\/page-[\w-]+\.js$/.test(f))).toBe(true); // lazy chunk
+    expect(manifest.assets.some((f) => /\/runScreen-[\w-]+\.js$/.test(f))).toBe(true); // lazy chunk (S6 run screen)
 
     // Recompute the digest from what actually landed on disk: proves it covers
     // every emitted file (HTML pages included) plus every public file.
