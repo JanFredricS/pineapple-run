@@ -43,3 +43,30 @@ export function fitView(area: Area, viewportW: number, viewportH: number, reserv
   const cy = (area.minY + area.maxY) / 2;
   return { scale, offsetX: w / 2 - cx * scale, offsetY: h / 2 - cy * scale };
 }
+
+/** Top clearance kept above the funnel's highest point when fitting (design px). */
+export const FUNNEL_FIT_CLEARANCE = 12;
+
+/**
+ * The area the builder's Fit frames: the build area plus the whole start-area
+ * funnel (every wall and plug vertex, with a small clearance above its top),
+ * so entering a course's builder shows the full funnel over the build area.
+ * Without a real start area the mock funnel's bottom is included (S2 default).
+ */
+export function fitArea(
+  build: Area,
+  startArea?: { funnel: { walls: readonly (readonly Vec2[])[]; plug: readonly Vec2[] } },
+  mockFunnelY = -250,
+): Area {
+  if (!startArea) return { ...build, minY: Math.min(build.minY, mockFunnelY - 10) };
+  const pts = [...startArea.funnel.walls.flat(), ...startArea.funnel.plug];
+  if (!pts.length) return { ...build };
+  const xs = pts.map((p) => p.x);
+  const ys = pts.map((p) => p.y);
+  return {
+    minX: Math.min(build.minX, ...xs),
+    maxX: Math.max(build.maxX, ...xs),
+    minY: Math.min(build.minY, Math.min(...ys) - FUNNEL_FIT_CLEARANCE),
+    maxY: Math.max(build.maxY, ...ys),
+  };
+}

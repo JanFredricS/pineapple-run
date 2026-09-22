@@ -36,6 +36,7 @@ import { NO_AUDIO, type AudioHooks } from './audioHooks';
 import { mountMissingCourse } from './buildScreen';
 import { testedDesign } from './cartState';
 import { courseFor } from './courses';
+import { acquireRunResources } from './runResources';
 import { RunSession } from './session';
 import './game.css';
 
@@ -84,7 +85,7 @@ function pixiApp(): Promise<Application> {
 
 // ------------------------------------------------------------------- screen
 
-/** Dev/test handle on the live run (the browser check drives it). */
+/** Dev-only handle on the live run (browser checks drive it via `npm run dev`). */
 export interface RunDebugHandle {
   session: RunSession;
   level: LevelDef;
@@ -116,22 +117,24 @@ export async function mountRunScreen(
   root.append(canvasHost, loading, hudHost);
   host.appendChild(root);
 
-  let session: RunSession | null = null;
-  let app: Application;
-  let lib: AssetLibrary;
+  let res: { app: Application; lib: AssetLibrary; session: RunSession };
   try {
-    [app, lib, session] = await Promise.all([pixiApp(), assetsFor(level.theme), RunSession.create(design, course)]);
+    // A failure in any loader destroys a session that did get created.
+    res = await acquireRunResources({
+      app: pixiApp,
+      lib: () => assetsFor(level.theme),
+      session: () => RunSession.create(design, course),
+    });
   } catch (err) {
-    session?.destroy();
     root.remove();
     throw err;
   }
+  const { app, lib, session: s } = res;
   if (!ctx.isCurrent()) {
-    session.destroy();
+    s.destroy();
     root.remove();
     return { destroy() {} };
   }
-  const s = session;
   loading.remove();
 
   // ---------------------------------------------------------------- render
@@ -224,7 +227,8 @@ export async function mountRunScreen(
   s.start(); // physics on, `started` -> HUD shows Release
   loop.start();
 
-  if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) window.__prRun = { session: s, level };
+  // Dev-server builds only; never reachable in a production build.
+  if (import.meta.env.DEV) window.__prRun = { session: s, level };
 
   let destroyed = false;
   return {
@@ -241,7 +245,7 @@ export async function mountRunScreen(
       renderer.destroy();
       app.canvas.remove();
       s.destroy();
-      if (window.__prRun?.session === s) window.__prRun = null;
+      if (import.meta.env.DEV && window.__prRun?.session === s) window.__prRun = null;
       audio.runStopped?.();
       root.remove();
     },

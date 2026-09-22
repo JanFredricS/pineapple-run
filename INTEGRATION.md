@@ -71,6 +71,9 @@ work. S6 works through this list; each item is a plan-owner ruling.
     rigid body) crossing killY ends the cart; other bodies are removed
     individually with their joints; detached parts remain as debris bodies.
     S6/S8: check debris growth over long endless runs.
+    STATUS: S6 verified bounded debris/body counts headlessly
+    (test/integration/debris.test.ts); S8 owns long-duration perf
+    profiling — see "S6 status" below.
 
 ## Incidents / environment
 
@@ -91,3 +94,28 @@ work. S6 works through this list; each item is a plan-owner ruling.
 - Funnel: manifest 'prop' bodies are not drawn by S4, so the run screen passes
   `funnelGeometry` to `SceneRenderer.setFunnel` (plug hidden on release).
 - Audio: `src/game/audioHooks.ts` is the no-op seam for S7 (TODO(S7)).
+- #13 (debris growth), S6 coverage — `test/integration/debris.test.ts`: an
+  endless run (ABC123) with a spring-heavy cart (example cart + a shock-held
+  arm carrying a tip held only by the arm). A scripted crash severs the arm's
+  shocks and drops it past killY; the controller removes it, the tip becomes
+  detached debris, and the cart drives on for 7,200 more steps (2 min sim,
+  ~550 m). Verified: removed/detached parts never come back (cart body count
+  non-increasing), the debris is NOT a streaming anchor so its terrain
+  unloads behind the cart and it falls past killY and is removed (~29 s
+  after the shed), `manifest().bodies` always equals the world's bodies, and
+  the world body count in the second half of the run is no higher than in
+  the first (max 24–25 bodies: terrain window + cart + live pineapples).
+  Remaining for S8: long-duration performance profiling (frame time, WASM
+  heap via `heapBytesInUse()`, GC pressure from per-frame snapshots/renderer
+  views over 10+ minute endless runs, on real devices). Reason: that is a
+  timing/device measurement, not a correctness property a headless unit test
+  can assert; the S6 test only proves body/manifest counts stay bounded. Also
+  unexercised: debris that comes to rest INSIDE the kept terrain window (e.g.
+  the cart reversing to park next to it) lives until the cart moves away —
+  bounded by the cart's own part count, so not a growth risk.
+- Run screen (audit fix 1): Pixi app, theme textures and the RunSession load
+  via `acquireRunResources` (allSettled) — a created session is destroyed if
+  any other loader fails. `window.__prRun` exists only in `import.meta.env.DEV`
+  builds (browser checks use `npm run dev`).
+- Builder Fit (audit fix 3): `fitArea` frames the build area plus every funnel
+  wall/plug vertex (12 px clearance above the walls' top).
