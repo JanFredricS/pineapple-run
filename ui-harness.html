@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Pineapple Run — S5 UI harness</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #1d2330; color: #eee;
+        font-family: system-ui, sans-serif; touch-action: none; }
+      #app { position: fixed; inset: 0; }
+      .hx-backdrop { position: absolute; inset: 0;
+        background: repeating-linear-gradient(0deg, #e9eef3 0 1px, transparent 1px 24px),
+          repeating-linear-gradient(90deg, #e9eef3 0 1px, transparent 1px 24px), #f8fafc; }
+      .hx-backdrop::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 28%;
+        background: #c9b99a; clip-path: polygon(0 40%, 18% 20%, 35% 55%, 52% 30%, 70% 60%, 86% 25%, 100% 45%, 100% 100%, 0 100%); }
+      .hx-backdrop__label { position: absolute; left: 50%; top: 55%; transform: translate(-50%, -50%);
+        color: #9aa4b2; font: 600 13px ui-monospace, monospace; }
+      .hx-panel { position: fixed; z-index: 3000; top: 0; right: 0; bottom: 0; width: 280px; overflow-y: auto;
+        background: rgba(20, 24, 33, 0.94); color: #e8ecf2; font: 12px system-ui, sans-serif; padding: 8px 10px 48px;
+        box-shadow: -4px 0 16px rgba(0,0,0,.4); touch-action: pan-y; }
+      .hx-panel[hidden] { display: none; }
+      .hx-panel h1 { font-size: 14px; margin: 0 0 6px; }
+      .hx-panel fieldset { border: 1px solid #3a4152; border-radius: 6px; margin: 0 0 8px; padding: 4px 6px 6px;
+        display: flex; flex-wrap: wrap; gap: 4px; }
+      .hx-panel legend { color: #9fb0c8; padding: 0 4px; }
+      .hx-panel button { font: inherit; background: #2d3444; color: #fff; border: 1px solid #465068; border-radius: 5px;
+        padding: 3px 7px; cursor: pointer; }
+      .hx-panel button:hover { background: #3b4458; }
+      .hx-panel input { font: inherit; width: 80px; }
+      .hx-log { font: 11px ui-monospace, monospace; white-space: pre-wrap; max-height: 180px; overflow: auto;
+        background: #0e1117; padding: 6px; border-radius: 6px; color: #9fe39f; }
+      .hx-toggle { position: fixed; z-index: 3001; right: 6px; bottom: 6px; font: 11px system-ui; background: #1d2330;
+        color: #fff; border: 1px solid #465068; border-radius: 5px; padding: 3px 8px; opacity: .8; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/ui/harness/main.ts"></script>
+  </body>
+</html>

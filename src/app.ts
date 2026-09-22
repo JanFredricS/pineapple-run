@@ -8,19 +8,29 @@
 
 import type { RunEvent } from './model/runEvents';
 
+/**
+ * Endless-run stats that the lifecycle events don't carry (S5): furthest
+ * distance carried (metres) and pineapples aboard at the end. Supplied by the
+ * run screen alongside `runEnded`; absent for level runs.
+ */
+export interface EndlessRunStats {
+  furthestMetres: number;
+  aboard: number;
+}
+
 export type AppState =
   | { name: 'title' }
   | { name: 'select' }
   | { name: 'build'; levelId: string }
   | { name: 'run'; levelId: string }
-  | { name: 'results'; levelId: string; outcome: RunEvent | null };
+  | { name: 'results'; levelId: string; outcome: RunEvent | null; endless?: EndlessRunStats };
 
 export type AppAction =
   | { type: 'play' }
   | { type: 'selectLevel'; levelId: string }
   | { type: 'backToSelect' }
   | { type: 'startRun' }
-  | { type: 'runEnded'; outcome: RunEvent }
+  | { type: 'runEnded'; outcome: RunEvent; endless?: EndlessRunStats }
   | { type: 'backToBuild' }
   | { type: 'toTitle' };
 
@@ -39,12 +49,17 @@ export function transition(state: AppState, action: AppAction): AppState {
       if (action.type === 'toTitle') return { name: 'title' };
       return state;
     case 'run':
-      if (action.type === 'runEnded') return { name: 'results', levelId: state.levelId, outcome: action.outcome };
+      if (action.type === 'runEnded') {
+        const results: AppState = { name: 'results', levelId: state.levelId, outcome: action.outcome };
+        return action.endless ? { ...results, endless: action.endless } : results;
+      }
       if (action.type === 'backToBuild') return { name: 'build', levelId: state.levelId };
       return state;
     case 'results':
       if (action.type === 'backToBuild') return { name: 'build', levelId: state.levelId };
       if (action.type === 'startRun') return { name: 'run', levelId: state.levelId };
+      // S5: "Next level" / "New seed" go straight to that course's build.
+      if (action.type === 'selectLevel') return { name: 'build', levelId: action.levelId };
       if (action.type === 'backToSelect') return { name: 'select' };
       if (action.type === 'toTitle') return { name: 'title' };
       return state;
@@ -54,8 +69,22 @@ export function transition(state: AppState, action: AppAction): AppState {
 /** S0 entry: the run screen on the spike level. */
 export const SPIKE_LEVEL_ID = 's0-spike';
 
-interface Screen {
+export interface Screen {
   destroy(): void;
+}
+
+/** Mounts one screen into `host`; `dispatch` drives the app state machine. */
+export type ScreenFactory = (
+  host: HTMLElement,
+  state: AppState,
+  dispatch: (action: AppAction) => Promise<void>,
+) => Screen | Promise<Screen>;
+
+export interface AppOptions {
+  /** Per-state screen overrides (S6 run controller, the S5 UI harness). */
+  screens?: Partial<Record<AppState['name'], ScreenFactory>>;
+  /** Register the PWA service worker (production builds only). Default true. */
+  pwa?: boolean;
 }
 
 export class App {
@@ -66,7 +95,8 @@ export class App {
 
   constructor(
     private readonly host: HTMLElement,
-    initial: AppState = { name: 'run', levelId: SPIKE_LEVEL_ID },
+    initial: AppState = { name: 'title' },
+    private readonly options: AppOptions = {},
   ) {
     this.state = initial;
   }
@@ -76,7 +106,17 @@ export class App {
   }
 
   start(): Promise<void> {
+    // S5: rotate-device overlay, toast host, service worker (all idempotent).
+    void import('./ui/chrome').then((m) => m.installChrome({ pwa: this.options.pwa ?? true }));
     return this.mount();
+  }
+
+  /** Tear down the current screen (and cancel any pending mount). */
+  destroy(): void {
+    this.generation++;
+    this.screen?.destroy();
+    this.screen = null;
+    this.host.replaceChildren();
   }
 
   dispatch(action: AppAction): Promise<void> {
@@ -100,6 +140,8 @@ export class App {
   }
 
   private async createScreen(state: AppState): Promise<Screen> {
+    const override = this.options.screens?.[state.name];
+    if (override) return override(this.host, state, (a) => this.dispatch(a));
     switch (state.name) {
       case 'run': {
         // S0: the stability spike is the run screen.
@@ -107,13 +149,14 @@ export class App {
         return mountSpikePage(this.host);
       }
       case 'title':
-        return this.stub('Pineapple Run', 'Play', { type: 'play' });
       case 'select':
-        return this.stub('Level select (coming in S5)', 'Spike level', { type: 'selectLevel', levelId: SPIKE_LEVEL_ID });
+      case 'results': {
+        // S5 screens.
+        const { mountAppScreen } = await import('./ui/appScreens');
+        return mountAppScreen(this.host, state, (a) => this.dispatch(a));
+      }
       case 'build':
         return this.stub('Build (coming in S3)', 'Run', { type: 'startRun' });
-      case 'results':
-        return this.stub('Results (coming in S6)', 'Back to build', { type: 'backToBuild' });
     }
   }
 
