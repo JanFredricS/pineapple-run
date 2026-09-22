@@ -12,16 +12,31 @@
  * Each body gets a Container built once in BODY-LOCAL metres from its
  * manifest shapes; per frame only its position/rotation change.
  *
- * Invalidation: manifest revisions are SOURCE-LOCAL (a new physics world can
- * restart at the same number and reuse body ids), so the revision alone is
- * never trusted. Every frame the renderer does an O(n) reference check of each
- * body's role / shapes / partIds arrays against what it last drew (the physics
- * wrapper keeps those arrays stable for a body's lifetime); any difference —
- * or a revision change, or `resetSource()` — triggers a full diff by content
- * signature. Only bodies whose content actually changed are rebuilt, so
- * streamed terrain chunks or spawned pineapples never rebuild the rest.
- * Terrain meshes are keyed by theme + every terrain body's content signature
- * + pose; shocks are rebound whenever any body visual changes.
+ * Invalidation (see `sync`), three tiers:
+ *  1. Revision changed, or `resetSource()` / `setCartDesign()`: FULL content
+ *     diff — every body's signature (role + partIds + all shape data) is
+ *     recomputed, because the physics wrapper mutates `rec.shapes` IN PLACE
+ *     (addChain/addPolygon/addCircle push into the existing array and bump the
+ *     revision), so array identity says nothing across revisions.
+ *     Cost: O(total manifest size), paid once per revision change.
+ *  2. Same revision, identical role/shapes/partIds references (the physics
+ *     wrapper's steady state): nothing to do. Cost: O(#bodies) reference
+ *     compares per frame.
+ *  3. Same revision, some references differ (a source that rebuilds arrays
+ *     every frame, or a new world restarting at the same revision number):
+ *     compare a STRUCTURAL fingerprint per changed body — role, partIds,
+ *     shape count, and per shape its type, point count, end points (chains)
+ *     or full geometry (polygons ≤ 8 vertices, circles). Cost: O(#bodies +
+ *     #shapes) per frame, independent of chain point counts. A fingerprint
+ *     difference escalates to tier 1. A new world at the SAME revision whose
+ *     bodies match on all of that but differ only in interior chain points
+ *     is not detected: sources must call `resetSource()` when they swap
+ *     worlds (S6 does), which forces tier 1.
+ * Only bodies whose signature actually changed are rebuilt, so streamed
+ * terrain chunks or spawned pineapples never rebuild the rest. Terrain meshes
+ * are rebuilt when the theme, the set of terrain bodies, any terrain body's
+ * full signature (exact string compare, no hashing) or pose changes; shocks
+ * are rebound whenever any body visual changes.
  *
  * Ownership: prop ART belongs to `LevelDef.props` (drawn in the decor layer
  * together with the blender goal). Manifest `prop` bodies are the solid
@@ -79,9 +94,28 @@ interface SeenBody {
   role: RenderBodyInfo['role'];
   shapes: readonly RenderShape[];
   partIds: readonly string[] | undefined;
+  /** Full content signature (recomputed on every revision change). */
   sig: string;
-  /** Compact hash of `sig` (computed once per content change). */
-  hash: string;
+  /** Structural fingerprint (bounded size; see file header, tier 3). */
+  fp: string;
+}
+
+/** Structural fingerprint of a body: O(#shapes), independent of chain point counts. */
+export function bodyFingerprint(info: RenderBodyInfo): string {
+  const parts: (string | number)[] = [info.role, (info.partIds ?? []).join(','), info.shapes.length];
+  for (const sh of info.shapes) {
+    if (sh.type === 'chain') {
+      const a = sh.points[0];
+      const b = sh.points[sh.points.length - 1];
+      parts.push('c', sh.points.length, a?.x ?? '', a?.y ?? '', b?.x ?? '', b?.y ?? '');
+    } else if (sh.type === 'circle') {
+      parts.push('o', sh.partId, sh.center.x, sh.center.y, sh.radius);
+    } else {
+      parts.push('p', sh.partId, sh.vertices.length);
+      for (const v of sh.vertices.slice(0, 8)) parts.push(v.x, v.y);
+    }
+  }
+  return parts.join('|');
 }
 
 /** Roles that get a body visual (terrain is meshed separately; prop/debug are not drawn). */
@@ -130,7 +164,8 @@ export class SceneRenderer {
   /** Bumped whenever any body visual is added, rebuilt or removed (drives shock rebinding). */
   private bodyGeneration = 0;
   private manifest: SceneManifest | null = null;
-  private terrainKey = '';
+  /** What the current terrain meshes were built from (null = rebuild). */
+  private terrainState: { theme: ThemeId; bodies: { id: number; sig: string; x: number; y: number; angle: number }[] } | null = null;
   private horizonY = 0;
   private blender: BlenderView | null = null;
   private readonly withBackground: boolean;
@@ -155,7 +190,7 @@ export class SceneRenderer {
     if (id === this.theme.id) return;
     this.theme = getTheme(id);
     this.rebuildBackground();
-    this.terrainKey = ''; // force re-skin
+    this.terrainState = null; // force re-skin
     if (this.blender) this.placeLevelDecor();
   }
 
@@ -234,7 +269,20 @@ export class SceneRenderer {
 
   private sync(manifest: SceneManifest): void {
     this.manifest = manifest;
-    if (!this.forceSync && manifest.revision === this.manifestRevision && !this.manifestChanged(manifest)) return;
+    if (!this.forceSync && manifest.revision === this.manifestRevision) {
+      // tiers 2/3: same revision
+      const tier = this.sameRevisionChange(manifest);
+      if (tier === 'none') return;
+      if (tier === 'refs') {
+        // structurally identical content in new arrays: adopt the references, keep signatures
+        for (const info of manifest.bodies) {
+          const prev = this.seen.get(info.id)!;
+          this.seen.set(info.id, { ...prev, shapes: info.shapes, partIds: info.partIds });
+        }
+        return;
+      }
+    }
+    // tier 1: full content diff
     this.forceSync = false;
     this.manifestRevision = manifest.revision;
 
@@ -242,11 +290,8 @@ export class SceneRenderer {
     const live = new Set<number>();
     let changed = false;
     for (const info of manifest.bodies) {
-      const prev = this.seen.get(info.id);
-      const same = prev && prev.role === info.role && prev.shapes === info.shapes && prev.partIds === info.partIds;
-      const sig = same ? prev.sig : bodySignature(info);
-      const hash = same ? prev.hash : prev && prev.sig === sig ? prev.hash : hashString(sig);
-      seen.set(info.id, { role: info.role, shapes: info.shapes, partIds: info.partIds, sig, hash });
+      const sig = bodySignature(info);
+      seen.set(info.id, { role: info.role, shapes: info.shapes, partIds: info.partIds, sig, fp: bodyFingerprint(info) });
       if (!DRAWN_ROLES.has(info.role)) continue;
       live.add(info.id);
       const existing = this.bodies.get(info.id);
@@ -270,14 +315,23 @@ export class SceneRenderer {
     if (changed) this.bodyGeneration++;
   }
 
-  /** O(n) identity check: did any body appear/disappear or get new role/shapes/partIds arrays? */
-  private manifestChanged(manifest: SceneManifest): boolean {
-    if (manifest.bodies.length !== this.seen.size) return true;
+  /**
+   * Same-revision change detection. 'none': every reference identical
+   * (O(#bodies)). 'refs': some arrays are new but every changed body's
+   * structural fingerprint matches (O(#bodies + #shapes)). 'content':
+   * escalate to a full diff.
+   */
+  private sameRevisionChange(manifest: SceneManifest): 'none' | 'refs' | 'content' {
+    if (manifest.bodies.length !== this.seen.size) return 'content';
+    let refs = false;
     for (const info of manifest.bodies) {
       const s = this.seen.get(info.id);
-      if (!s || s.role !== info.role || s.shapes !== info.shapes || s.partIds !== info.partIds) return true;
+      if (!s || s.role !== info.role) return 'content';
+      if (s.shapes === info.shapes && s.partIds === info.partIds) continue;
+      if (bodyFingerprint(info) !== s.fp) return 'content';
+      refs = true;
     }
-    return false;
+    return refs ? 'refs' : 'none';
   }
 
   private layerFor(role: RenderBodyInfo['role']): Container {
@@ -427,17 +481,27 @@ export class SceneRenderer {
     const terrain = manifest.bodies.filter((b) => b.role === 'terrain');
     // wait until every terrain body has a pose
     if (terrain.some((b) => !byId.has(b.id))) return;
-    // content (signature hash, cached per shapes array by sync) + pose of every terrain body
-    const key =
-      `${this.theme.id}|` +
-      terrain
-        .map((b) => {
-          const t = byId.get(b.id)!;
-          return `${b.id}:${this.seen.get(b.id)?.hash ?? hashString(bodySignature(b))}@${t.x},${t.y},${t.angle}`;
-        })
-        .join(';');
-    if (key === this.terrainKey) return;
-    this.terrainKey = key;
+    // exact comparison against what the meshes were built from (full signatures, no hashing)
+    const state = {
+      theme: this.theme.id,
+      bodies: terrain.map((b) => {
+        const t = byId.get(b.id)!;
+        return { id: b.id, sig: this.seen.get(b.id)?.sig ?? bodySignature(b), x: t.x, y: t.y, angle: t.angle };
+      }),
+    };
+    const prev = this.terrainState;
+    if (
+      prev &&
+      prev.theme === state.theme &&
+      prev.bodies.length === state.bodies.length &&
+      prev.bodies.every((p, i) => {
+        const q = state.bodies[i]!;
+        return p.id === q.id && p.x === q.x && p.y === q.y && p.angle === q.angle && p.sig === q.sig;
+      })
+    ) {
+      return;
+    }
+    this.terrainState = state;
 
     const polylines: Vec2[][] = [];
     for (const b of terrain) {
@@ -555,21 +619,12 @@ export class SceneRenderer {
     };
   }
 
-  /** Terrain fill mesh vertex positions per chain (world metres) — for tests. */
+  /** Terrain fill mesh vertex positions per chain (world metres; copies) — for tests. */
   terrainFillPositions(): Float32Array[] {
     const fills = this.terrainLayer.children[0];
-    return fills ? fills.children.map((m) => (m as MeshSimple).geometry.getBuffer('aPosition').data as Float32Array) : [];
+    // copies: diagnostics must not be able to mutate the live GPU geometry
+    return fills ? fills.children.map((m) => Float32Array.from((m as MeshSimple).geometry.getBuffer('aPosition').data as Float32Array)) : [];
   }
-}
-
-/** FNV-1a 32-bit (terrain cache key compaction; collisions only cost a missed re-skin in ~1/2^32). */
-function hashString(str: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0).toString(36) + ':' + str.length.toString(36);
 }
 
 function mesh(data: MeshData, texture: Texture): MeshSimple {

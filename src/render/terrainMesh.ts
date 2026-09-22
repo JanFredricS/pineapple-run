@@ -31,23 +31,37 @@ export interface MeshData {
 
 const EPS = 1e-6;
 
-/**
- * Default join tolerance: float round-off only. Level validation defines no
- * minimum gap, so any real separation — however small — must stay a gap in
- * the render exactly as it does in physics. Pieces that genuinely continue
- * each other (split spans, streamed chunks) share the SAME endpoint value;
- * the only difference that can creep in is the body-transform arithmetic
- * (t.x + c·p.x − s·p.y), which is ~1e-15 m for metre-scale coordinates.
- */
-export const JOIN_TOLERANCE_M = 1e-9;
+/** Absolute floor of the join tolerance (m): double round-off near the origin. */
+export const JOIN_TOLERANCE_FLOOR_M = 1e-7;
+/** float32 unit roundoff (2^-23 relative spacing). */
+const F32_EPS = 2 ** -23;
 
 /**
- * Merge polylines whose end point coincides (within `tol`) with another's
- * start point. Input polylines run left -> right; output chains too, sorted
- * by their first x. Degenerate (< 2 point) polylines are dropped; exactly
- * repeated consecutive points are removed.
+ * Join tolerance for two endpoints, RELATIVE to coordinate magnitude.
+ *
+ * Why: terrain chunks are separate static Box2D bodies whose transforms are
+ * float32. A mathematically shared endpoint is reconstructed as
+ * `origin_f32 + local`, so two chunks can disagree by about one float32 ulp
+ * of the coordinate each — ~2 mm near x = 20 000 m (endless mode). The
+ * tolerance is 4 ulps of the larger coordinate magnitude (≈ 9.5 mm at
+ * 20 km, ≈ 0.5 µm at 1 km) with a 1e-7 m floor. Level validation defines no
+ * minimum gap, so anything above that is a real gap and stays a gap, exactly
+ * as in physics; physically meaningful gaps (≥ 1 cm, a fraction of a wheel)
+ * are always preserved at any coordinate below ~21 km.
  */
-export function chainPolylines(polylines: readonly (readonly Vec2[])[], tol = JOIN_TOLERANCE_M): Vec2[][] {
+export function joinTolerance(a: Vec2, b: Vec2): number {
+  const m = Math.max(Math.abs(a.x), Math.abs(a.y), Math.abs(b.x), Math.abs(b.y));
+  return Math.max(JOIN_TOLERANCE_FLOOR_M, 4 * F32_EPS * m);
+}
+
+/**
+ * Merge polylines whose end point coincides (within `joinTolerance`, or a
+ * fixed `tol` if given) with another's start point. Input polylines run
+ * left -> right; output chains too, sorted by their first x. Degenerate
+ * (< 2 point) polylines are dropped; exactly repeated consecutive points are
+ * removed.
+ */
+export function chainPolylines(polylines: readonly (readonly Vec2[])[], tol?: number): Vec2[][] {
   const lines = polylines
     .map((pl) => dedupe(pl))
     .filter((pl) => pl.length >= 2)
@@ -87,8 +101,9 @@ export function chainPolylines(polylines: readonly (readonly Vec2[])[], tol = JO
   return chains.sort((a, b) => a[0]!.x - b[0]!.x);
 }
 
-function near(a: Vec2, b: Vec2, tol: number): boolean {
-  return Math.abs(a.x - b.x) <= tol && Math.abs(a.y - b.y) <= tol;
+function near(a: Vec2, b: Vec2, tol: number | undefined): boolean {
+  const t = tol ?? joinTolerance(a, b);
+  return Math.abs(a.x - b.x) <= t && Math.abs(a.y - b.y) <= t;
 }
 
 function dedupe(pl: readonly Vec2[]): Vec2[] {
@@ -276,31 +291,53 @@ export function medianY(chains: readonly (readonly Vec2[])[]): number {
 
 /**
  * Horizon reference for the parallax layers: the median terrain height over
- * HORIZONTAL DISTANCE — the weighted median of segment mid-heights, each
- * segment weighted by its |dx|. Equivalent to sampling the profile uniformly
- * in x, so how densely a stretch is sampled does not matter (a 2 m pit with
- * 100 vertices weighs 2 m, not 100 votes). Vertical segments carry no weight.
- * Falls back to the vertex median when the terrain has no horizontal extent.
+ * HORIZONTAL DISTANCE — the exact median of the height distribution of the
+ * piecewise-linear profile when x is sampled uniformly. Each segment of
+ * horizontal extent w = |dx| contributes mass w spread uniformly over
+ * [min(ya,yb), max(ya,yb)] (a point mass if flat). Splitting a segment at a
+ * collinear point splits its uniform distribution into two uniform pieces of
+ * the same total, so the result is invariant under any resampling of the same
+ * geometry. Vertical segments carry no mass. Falls back to the vertex median
+ * when the terrain has no horizontal extent. O(n log n).
  */
 export function horizonReferenceY(chains: readonly (readonly Vec2[])[]): number {
-  const segs: { y: number; w: number }[] = [];
+  // events: at y, slope changes (density ramps) and point masses
+  const slopeAt = new Map<number, number>();
+  const massAt = new Map<number, number>();
+  const add = (m: Map<number, number>, y: number, v: number) => m.set(y, (m.get(y) ?? 0) + v);
   let total = 0;
   for (const c of chains) {
     for (let i = 1; i < c.length; i++) {
       const a = c[i - 1]!;
       const b = c[i]!;
       const w = Math.abs(b.x - a.x);
-      if (w <= 0) continue;
-      segs.push({ y: (a.y + b.y) / 2, w });
+      if (!(w > 0)) continue;
       total += w;
+      const lo = Math.min(a.y, b.y);
+      const hi = Math.max(a.y, b.y);
+      if (hi > lo) {
+        const d = w / (hi - lo);
+        add(slopeAt, lo, d);
+        add(slopeAt, hi, -d);
+      } else add(massAt, lo, w);
     }
   }
-  if (total <= 0) return medianY(chains);
-  segs.sort((p, q) => p.y - q.y);
-  let acc = 0;
-  for (const s of segs) {
-    acc += s.w;
-    if (acc >= total / 2) return s.y;
+  if (!(total > 0)) return medianY(chains);
+  const half = total / 2;
+  const ys = [...new Set([...slopeAt.keys(), ...massAt.keys()])].sort((p, q) => p - q);
+  let F = 0; // cumulative mass below the current y
+  let slope = 0; // density (mass per metre of height) just above the current y
+  for (let k = 0; k < ys.length; k++) {
+    const y = ys[k]!;
+    const jump = massAt.get(y) ?? 0;
+    if (F + jump >= half) return y;
+    F += jump;
+    slope += slopeAt.get(y) ?? 0;
+    const next = ys[k + 1];
+    if (next === undefined) break;
+    const Fn = F + slope * (next - y);
+    if (Fn >= half && slope > 0) return y + (half - F) / slope;
+    F = Fn;
   }
-  return segs[segs.length - 1]!.y;
+  return ys[ys.length - 1]!;
 }

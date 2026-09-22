@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { Vec2 } from '../../src/model/geometry';
 import {
-  JOIN_TOLERANCE_M,
+  JOIN_TOLERANCE_FLOOR_M,
   chainPolylines,
+  joinTolerance,
   edgeStrip,
   horizonReferenceY,
   fillMesh,
@@ -72,7 +73,7 @@ describe('chainPolylines', () => {
     expect(chainPolylines([[{ x: 0, y: 0 }, p], [rt, { x: 2, y: 0 }]])).toHaveLength(1);
   });
 
-  it('keeps tiny but real gaps (level validation has no minimum gap)', () => {
+  it('keeps tiny but real gaps near the origin (level validation has no minimum gap)', () => {
     for (const gap of [5e-5, 1e-6]) {
       const chains = chainPolylines([
         [{ x: 0, y: 0 }, { x: 1, y: 0 }],
@@ -80,7 +81,43 @@ describe('chainPolylines', () => {
       ]);
       expect(chains, `gap ${gap}`).toHaveLength(2);
     }
-    expect(JOIN_TOLERANCE_M).toBeLessThanOrEqual(1e-9);
+    expect(joinTolerance({ x: 0, y: 0 }, { x: 0, y: 0 })).toBe(JOIN_TOLERANCE_FLOOR_M);
+    expect(joinTolerance({ x: 1, y: 0 }, { x: 1, y: 0 })).toBe(4 * 2 ** -23); // 4 float32 ulps of 1 m
+  });
+
+  it('joins chunk seams through float32 body transforms at x ≈ 20 000 m, keeps 1 cm gaps', () => {
+    const f = Math.fround;
+    // Chunk k is a static body at a (double) origin that Box2D stores as float32;
+    // its chain points are stored body-local in doubles (manifest). The renderer
+    // reconstructs world = origin_f32 + local. A shared mathematical endpoint X
+    // is therefore off by that chunk's origin rounding error.
+    let maxSeamError = 0;
+    let joined = 0;
+    for (let k = 0; k < 200; k++) {
+      const oA = 19_950 + k * 0.731 + 0.0001234; // arbitrary non-representable origins
+      const oB = oA + 50.000_0567;
+      const X = oA + 49.99_31; // shared endpoint (world, double)
+      const Y = 3.217;
+      const worldA = (o: number, px: number, py: number) => ({ x: f(o) + (px - o), y: f(4.1) + (py - 4.1) });
+      const endA = worldA(oA, X, Y);
+      const startB = worldA(oB, X, Y);
+      maxSeamError = Math.max(maxSeamError, Math.abs(endA.x - startB.x));
+      const chains = chainPolylines([
+        [worldA(oA, oA, 3), endA],
+        [startB, worldA(oB, oB + 40, 3)],
+      ]);
+      if (chains.length === 1) joined++;
+      // a genuine 1 cm gap at the same place stays a gap
+      const gapped = chainPolylines([
+        [worldA(oA, oA, 3), endA],
+        [{ x: startB.x + 0.01, y: startB.y }, worldA(oB, oB + 40, 3)],
+      ]);
+      expect(gapped).toHaveLength(2);
+    }
+    // the scenario is real: seams differ by far more than double round-off
+    expect(maxSeamError).toBeGreaterThan(1e-4);
+    expect(joined).toBe(200);
+    expect(joinTolerance({ x: 20_000, y: 0 }, { x: 20_000, y: 0 })).toBeLessThan(0.01);
   });
 
   it('maxY / medianY', () => {
@@ -89,16 +126,44 @@ describe('chainPolylines', () => {
     expect(medianY([])).toBe(0);
   });
 
+  it('horizon reference is invariant under collinear resampling of the same geometry', () => {
+    const line = [{ x: 0, y: 0 }, { x: 10, y: 10 }];
+    expect(horizonReferenceY([line])).toBeCloseTo(5, 12);
+    // the auditor's case: add the collinear point (1,1)
+    expect(horizonReferenceY([[line[0]!, { x: 1, y: 1 }, line[1]!]])).toBeCloseTo(5, 12);
+    // arbitrary non-uniform collinear subdivisions of a multi-segment profile
+    const profile = [{ x: 0, y: 4 }, { x: 3, y: 1 }, { x: 7, y: 1 }, { x: 8, y: 9 }, { x: 20, y: 6 }];
+    const base = horizonReferenceY([profile]);
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let trial = 0; trial < 20; trial++) {
+      const sub: { x: number; y: number }[] = [profile[0]!];
+      for (let i = 1; i < profile.length; i++) {
+        const a = profile[i - 1]!;
+        const b = profile[i]!;
+        const ts = Array.from({ length: Math.floor(rnd() * 6) }, rnd).sort((p, q) => p - q);
+        for (const t of ts) sub.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+        sub.push(b);
+      }
+      // also split into separate touching polylines at a random vertex
+      const cut = 1 + Math.floor(rnd() * (sub.length - 2));
+      expect(horizonReferenceY([sub])).toBeCloseTo(base, 9);
+      expect(horizonReferenceY([sub.slice(0, cut + 1), sub.slice(cut)])).toBeCloseTo(base, 9);
+    }
+  });
+
   it('horizon reference is weighted by horizontal distance, not vertex count', () => {
     // 100 m of flat ground at y=2 (2 vertices) + a 2 m pit at y=30 sampled with 101 vertices
     const flat = [{ x: 0, y: 2 }, { x: 100, y: 2 }];
     const pit = Array.from({ length: 101 }, (_, i) => ({ x: 100 + i * 0.02, y: 30 }));
     expect(medianY([flat, pit])).toBe(30); // the vertex median follows the dense pit
     expect(horizonReferenceY([flat, pit])).toBe(2);
-    // resampling the same profile more densely does not move it
+    // a sampled curve converges as sampling densifies
     const dense = Array.from({ length: 1001 }, (_, i) => ({ x: i * 0.1, y: 2 + Math.sin(i * 0.1) }));
     const sparse = dense.filter((_, i) => i % 10 === 0);
     expect(horizonReferenceY([dense])).toBeCloseTo(horizonReferenceY([sparse]), 1);
+    // exact: the median of a uniform ramp is its middle height
+    expect(horizonReferenceY([[{ x: 0, y: 0 }, { x: 10, y: 10 }]])).toBeCloseTo(5, 12);
     // vertical-only / empty input falls back safely
     expect(horizonReferenceY([[{ x: 1, y: 0 }, { x: 1, y: 4 }]])).toBe(4);
     expect(horizonReferenceY([])).toBe(0);

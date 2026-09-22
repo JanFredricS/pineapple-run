@@ -293,14 +293,21 @@ export class AssetLibrary {
     const backend = opts.backend ?? createBrowserBackend();
     // Destroy-while-loading: rasterisation can't be aborted mid-decode, but a
     // destroyed library never uploads (no GPU sources are created), never
-    // becomes ready, and `ready` still settles (resolves) so awaiting callers
-    // don't hang; `texture()` then reports the destroyed state.
-    this.ready = bakeAssets(defs, backend, resolution).then((baked) => {
-      if (this.destroyed) return;
-      this.baked = baked;
-      this.upload(baked);
-      this.loaded = true;
-    });
+    // becomes ready, and `ready` RESOLVES — whether rasterisation succeeded or
+    // failed — so teardown paths awaiting it never see a rejection; `texture()`
+    // then reports the destroyed state. A failure on a live library rejects.
+    this.ready = bakeAssets(defs, backend, resolution).then(
+      (baked) => {
+        if (this.destroyed) return;
+        this.baked = baked;
+        this.upload(baked);
+        this.loaded = true;
+      },
+      (err: unknown) => {
+        if (this.destroyed) return;
+        throw err;
+      },
+    );
   }
 
   get isReady(): boolean {

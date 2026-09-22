@@ -4,7 +4,7 @@
  * ownership invariants the renderer relies on (audit round 1).
  */
 import { Container, Texture, TextureSource } from 'pixi.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { resolveAttachments } from '../../src/model/attach';
 import type { Camera } from '../../src/model/coords';
 import type { Vec2 } from '../../src/model/geometry';
@@ -78,14 +78,62 @@ describe('terrain cache invalidation', () => {
     const r = new SceneRenderer(provider, { background: false });
     const a: SceneManifest = { revision: 1, bodies: [terrainBody(1, courseA)] };
     r.render(a, snap(a), cam);
-    const first = r.terrainFillPositions()[0]!;
+    const fillMeshObj = () => (layer(r, 'terrain').children[0] as Container).children[0];
+    const first = fillMeshObj();
     // equal content, fresh arrays (e.g. a re-sent manifest): mesh kept
     const same: SceneManifest = { revision: 1, bodies: [terrainBody(1, courseA.map((p) => ({ ...p })))] };
     r.render(same, snap(same), cam);
-    expect(r.terrainFillPositions()[0]).toBe(first);
+    expect(fillMeshObj()).toBe(first);
+    // also across a revision bump with equal content
+    const bumped: SceneManifest = { revision: 2, bodies: same.bodies };
+    r.render(bumped, snap(bumped), cam);
+    expect(fillMeshObj()).toBe(first);
     // moved body: mesh rebuilt in world space
-    r.render(same, snap(same, { 1: { x: 3, y: -1 } }), cam);
+    r.render(bumped, snap(bumped, { 1: { x: 3, y: -1 } }), cam);
     expect(tops(r.terrainFillPositions()[0]!)[0]).toEqual({ x: 3, y: 4 });
+    r.destroy();
+  });
+
+  it('draws chains pushed IN PLACE into an existing shapes array when the revision bumps', () => {
+    // mirrors PhysicsWorld.addChain: rec.shapes.push(...) + revision++
+    const r = new SceneRenderer(provider, { background: false });
+    const body = terrainBody(1, courseA);
+    const m1: SceneManifest = { revision: 1, bodies: [body] };
+    r.render(m1, snap(m1), cam);
+    expect(r.stats.terrainChains).toBe(1);
+    body.shapes.push({ type: 'chain', points: [{ x: 40, y: 5 }, { x: 60, y: 5 }] });
+    const m2: SceneManifest = { revision: 2, bodies: [body] };
+    r.render(m2, snap(m2), cam);
+    expect(r.stats.terrainChains).toBe(2);
+    expect(tops(r.terrainFillPositions()[1]!)).toEqual([{ x: 40, y: 5 }, { x: 60, y: 5 }]);
+    r.destroy();
+  });
+
+  it('fresh arrays every frame at an unchanged revision cost no content signatures (bounded per-frame work)', () => {
+    const r = new SceneRenderer(provider, { background: false });
+    const big = Array.from({ length: 5000 }, (_, i) => ({ x: i * 0.1, y: Math.sin(i * 0.01) }));
+    const make = (): SceneManifest => ({ revision: 4, bodies: [terrainBody(1, big.map((p) => ({ ...p })))] });
+    const m = make();
+    r.render(m, snap(m), cam);
+    const spy = vi.spyOn(JSON, 'stringify');
+    try {
+      for (let i = 0; i < 5; i++) {
+        const f = make();
+        r.render(f, snap(f), cam);
+      }
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+    r.destroy();
+  });
+
+  it('diagnostic positions are copies (cannot corrupt the live mesh)', () => {
+    const r = new SceneRenderer(provider, { background: false });
+    const m: SceneManifest = { revision: 1, bodies: [terrainBody(1, courseA)] };
+    r.render(m, snap(m), cam);
+    r.terrainFillPositions()[0]![0] = Number.NaN;
+    expect(r.terrainFillPositions()[0]![0]).toBe(0);
     r.destroy();
   });
 
@@ -124,6 +172,18 @@ describe('body visuals across sources', () => {
     r.render(b, snap(b), cam);
     expect(layer(r, 'cart').children).toHaveLength(0);
     expect(layer(r, 'pineapple').children).toHaveLength(1);
+    r.destroy();
+  });
+
+  it('a new world at the same revision with identical structure is picked up after resetSource()', () => {
+    const r = new SceneRenderer(provider, { background: false });
+    const a: SceneManifest = { revision: 3, bodies: [terrainBody(1, [{ x: 0, y: 0 }, { x: 5, y: 1 }, { x: 10, y: 0 }])] };
+    r.render(a, snap(a), cam);
+    // same ids/structure/end points, different interior point: documented tier-3 blind spot
+    const b: SceneManifest = { revision: 3, bodies: [terrainBody(1, [{ x: 0, y: 0 }, { x: 5, y: 9 }, { x: 10, y: 0 }])] };
+    r.resetSource();
+    r.render(b, snap(b), cam);
+    expect(tops(r.terrainFillPositions()[0]!)[1]).toEqual({ x: 5, y: 9 });
     r.destroy();
   });
 
@@ -187,6 +247,28 @@ describe('prop ownership', () => {
 });
 
 describe('AssetLibrary destroyed while loading', () => {
+  it('ready resolves (not rejects) when rasterisation FAILS after destroy; rejects on a live library', async () => {
+    let fail!: (e: Error) => void;
+    const gate = new Promise<never>((_, rej) => (fail = rej));
+    const backend: RasterBackend = {
+      createCanvas: (width, height) => ({ width, height, getContext: () => ({ clearRect() {}, drawImage() {} }) }),
+      loadSvg: () => gate,
+    };
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"></svg>';
+    const lib = new AssetLibrary([{ id: 'x/y', svg }], { resolution: 1, backend });
+    lib.destroy();
+    fail(new Error('decode failed'));
+    await expect(lib.ready).resolves.toBeUndefined();
+    expect(lib.isReady).toBe(false);
+    expect(() => lib.texture('x/y')).toThrow(/destroyed/);
+
+    const live = new AssetLibrary([{ id: 'x/y', svg }], {
+      resolution: 1,
+      backend: { ...backend, loadSvg: () => Promise.reject(new Error('decode failed')) },
+    });
+    await expect(live.ready).rejects.toThrow(/x\/y/);
+  });
+
   it('never uploads, never becomes ready, and ready still settles', async () => {
     let release!: () => void;
     const gate = new Promise<void>((res) => (release = res));
