@@ -1,0 +1,49 @@
+<!doctype html>
+<!--
+  S2 builder harness — acceptance checklist (manual, mouse + touch):
+  [ ] Each build tool draws its part by click-drag; live size label; parts under
+      the minimum (straw/shock/wheel/lime 5 px, cube 7 px) are refused with a toast.
+  [ ] Overlapping straws/cubes/limes share one weld colour; wheels show a pin
+      marker when their centre is over a part; shock ends show snapped (filled),
+      attached (ring) or floating (red X).
+  [ ] The "Cart check" panel lists every problem (no wheels, loose shock, separate
+      pieces, shock to itself, too-small part); hovering one highlights its parts.
+  [ ] Delete tool highlights + removes one part; Clear all asks inline first.
+  [ ] Example Cart loads the original sample and reports "Cart OK".
+  [ ] Save / Load: save, overwrite (inline confirm), load, delete; a corrupted
+      save is discarded with a toast; a newer-version save is listed as unreadable.
+  [ ] Snap 15° constrains straws and shocks.
+  [ ] Touch: two-finger pinch zooms/pans and never commits a part; lifting one
+      finger of a pinch never starts a stroke; switching apps mid-stroke cancels it.
+  [ ] Mouse: wheel zooms about the cursor; right/middle-drag pans; Esc cancels.
+  [ ] Landscape phone (~800x400): palette fits (scrolls if needed), cart visible.
+  [ ] Test Cart (enabled only when valid) prints/downloads the CartDesign JSON.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Pineapple Run — Builder harness (S2)</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #1d2330; color: #eee;
+        font-family: system-ui, sans-serif; touch-action: none; }
+      #builder { position: fixed; inset: 0; }
+      #output { position: fixed; left: 8px; top: 8px; z-index: 10; max-width: min(520px, 60vw); max-height: 70vh;
+        display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 10px;
+        background: rgba(29, 35, 48, 0.94); box-shadow: 0 2px 10px rgba(0,0,0,.3); }
+      #output[hidden] { display: none; }
+      #output pre { margin: 0; overflow: auto; font-size: 11px; user-select: text; -webkit-user-select: text; }
+      #output .row { display: flex; gap: 6px; }
+      #output button { padding: 4px 10px; border-radius: 8px; border: 1px solid #fff4; background: #fff2; color: #fff; }
+    </style>
+  </head>
+  <body>
+    <div id="builder"></div>
+    <section id="output" hidden aria-label="Test Cart output">
+      <strong>Test Cart → CartDesign JSON (S6 will start a run here)</strong>
+      <div class="row"><button id="download" type="button">Download JSON</button><button id="close" type="button">Close</button></div>
+      <pre id="json"></pre>
+    </section>
+    <script type="module" src="/src/builder/harness.ts"></script>
+  </body>
+</html>
