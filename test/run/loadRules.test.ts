@@ -1,6 +1,6 @@
 /** Harness load checks, solid-prop parsing, swept/polygon geometry and the allLost mock stream (pure, no physics). */
 import { describe, expect, it } from 'vitest';
-import { MockRunEventStream, endlessAllLostMockRunScript, isTerminalRunEvent, type RunEvent } from '../../src/model/runEvents';
+import { MockRunEventStream, defaultMockRunScript, endlessAllLostMockRunScript, isTerminalRunEvent, type RunEvent } from '../../src/model/runEvents';
 import { loadFixtureCart, loadFlatGoalLevel } from '../../src/run/fixtures';
 import { checkCartJson, checkLevelJson } from '../../src/run/loadCheck';
 import { isSolidProp } from '../../src/run/props';
@@ -105,5 +105,21 @@ describe('allLost (additive contract 3 amendment)', () => {
     expect(mock.isEnded).toBe(true);
     mock.giveUp();
     expect(got).toHaveLength(6);
+  });
+
+  it('re-entrant: giveUp() called inside a scripted terminal event listener emits nothing more', () => {
+    for (const script of [endlessAllLostMockRunScript(2, 1), defaultMockRunScript()]) {
+      const mock = new MockRunEventStream(script);
+      const got: RunEvent[] = [];
+      mock.on((e) => {
+        got.push(e);
+        if (isTerminalRunEvent(e)) mock.giveUp();
+      });
+      mock.advance(1000);
+      expect(got.filter(isTerminalRunEvent)).toHaveLength(1);
+      expect(isTerminalRunEvent(got.at(-1)!)).toBe(true);
+      expect(got.at(-1)!.type).not.toBe('gaveUp');
+      expect(mock.isEnded).toBe(true);
+    }
   });
 });

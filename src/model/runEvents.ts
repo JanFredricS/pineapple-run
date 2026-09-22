@@ -123,8 +123,10 @@ export class MockRunEventStream implements RunEventSource {
     this.time += Math.max(0, dtSeconds);
     while (!this.ended && this.cursor < this.script.length && this.script[this.cursor]!.at <= this.time) {
       const { event } = this.script[this.cursor++]!;
-      this.emitter.emit(event);
+      // mark the end BEFORE dispatch: a listener calling giveUp() inside a
+      // terminal event must not produce a second terminal event
       if (isTerminalRunEvent(event)) this.ended = true;
+      this.emitter.emit(event);
     }
   }
 
