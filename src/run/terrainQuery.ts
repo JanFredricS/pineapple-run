@@ -16,10 +16,21 @@ interface Segment {
   b: Vec2;
 }
 
+/**
+ * What the run controller needs from terrain: ground contact for the lost
+ * rule and the x-extent for the default kept window. TerrainIndex answers it
+ * for static spans; S6's streamed terrain answers it per loaded chunk.
+ */
+export interface TerrainQuery {
+  readonly minX: number;
+  readonly maxX: number;
+  circleTouches(p: Vec2, radius: number, slop?: number): boolean;
+}
+
 /** Bucket width (metres) of the x-grid that indexes segments. */
 const BUCKET_M = 2;
 
-export class TerrainIndex {
+export class TerrainIndex implements TerrainQuery {
   private readonly segments: Segment[] = [];
   private readonly buckets = new Map<number, number[]>();
   /** Horizontal extent of all spans (metres); empty terrain -> [0, 0]. */

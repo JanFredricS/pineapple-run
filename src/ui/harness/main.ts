@@ -116,7 +116,7 @@ const runFactory: ScreenFactory = (host, state, dispatch) => {
       emitter.emit(e);
     },
     get simTime() {
-      return script ? script.simTime : simTime;
+      return script ? script.simTime() : simTime;
     },
     setTime(t) {
       simTime = t;
@@ -139,11 +139,11 @@ const runFactory: ScreenFactory = (host, state, dispatch) => {
       const offs = [emitter.on(l), script?.on(l)];
       return () => offs.forEach((o) => o?.());
     },
+    simTime: () => run.simTime,
   };
 
   const hud = mountRunHudScreen(host, state, dispatch, {
     source,
-    clock: () => run.simTime,
     telemetry: { furthestMetres: () => run.furthest, aboard: () => run.aboard },
     touchControls: touchMode,
     controls: {

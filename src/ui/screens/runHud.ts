@@ -58,8 +58,11 @@ export interface RunEndInfo {
 export interface RunHudOptions {
   mode: RunMode;
   source: RunEventSource;
-  /** Sim seconds since Release (S1's clock). Read-only: display only. */
-  clock: () => number;
+  /**
+   * Sim seconds since Release. Default: `source.simTime()` (RunEventSource
+   * contract amendment, S6). Override only for harnesses. Display only.
+   */
+  clock?: () => number;
   controls: RunControls;
   telemetry?: RunTelemetry;
   /** Called once, `endDelayMs` after the run-ending event (banner shows meanwhile). */
@@ -78,6 +81,7 @@ export interface RunHud {
 export function mountRunHud(host: HTMLElement, opts: RunHudOptions): RunHud {
   const d = disposer();
   let state = initialHud(opts.mode);
+  const clock = opts.clock ?? (() => opts.source.simTime());
   let endTimer: ReturnType<typeof setTimeout> | null = null;
   let endInfo: RunEndInfo | null = null;
   let destroyed = false;
@@ -218,7 +222,7 @@ export function mountRunHud(host: HTMLElement, opts: RunHudOptions): RunHud {
   let raf = 0;
   const tick = () => {
     if (destroyed) return;
-    const t = formatClock(displayTime(state, opts.clock()));
+    const t = formatClock(displayTime(state, clock()));
     if (t !== lastTimer) timerText.textContent = lastTimer = t;
     if (opts.mode === 'endless') {
       const m = formatDistance(endInfo ? endInfo.furthestMetres : (opts.telemetry?.furthestMetres() ?? 0));

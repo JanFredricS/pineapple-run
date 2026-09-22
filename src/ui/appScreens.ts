@@ -76,7 +76,8 @@ export function mountAppScreen(host: HTMLElement, state: AppState, dispatch: Dis
 
 export interface RunHudScreenOptions {
   source: RunEventSource;
-  clock: () => number;
+  /** Defaults to `source.simTime()` (the S6 contract amendment). */
+  clock?: () => number;
   controls: RunControls;
   telemetry?: RunTelemetry;
   touchControls?: 'auto' | 'always' | 'never';

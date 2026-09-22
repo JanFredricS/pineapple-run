@@ -21,6 +21,18 @@
  * rectangle (the original's shredder base sat over the pit behind the lip at
  * x ≈ 7660 px; exact sensor size not recovered), cart/funnel start positions
  * on the plateau (the original build area was x < 366 px), and killY.
+ *
+ * S6 integration (INTEGRATION.md #3, #4, #6, #7, #12): id is the catalog id
+ * 'original'; cartStart is the GROUND under design (0, 0) — the build area
+ * (design x −20..340 px) exactly covers the recovered plateau (x −12.8..355.7
+ * px), so it starts just right of the start wall, with y at the plateau's
+ * highest vertex (the plateau falls 0.5 px over its length, so nothing is
+ * spawned inside the ground); the funnel outlet sits at the shared start-area
+ * offset (+115, −225) px. The recovered course ends in a 0.8 m-wide chasm
+ * behind the lip, too narrow for a blender body, so the end wall is replaced
+ * by an added pit floor (PIT_FLOOR_M, flagged addition) with the SOLID
+ * blender standing on it (position = box centre) and the goal sensor over
+ * the floor's bottom 2.2 m, like the premade courses.
  */
 
 import { pxToM } from '../model/coords';
@@ -41,34 +53,53 @@ export function parseOriginalTerrain(text: string): Vec2[] {
 }
 
 export const ORIGINAL_GOAL_LINE_PX = 7670;
+/** Added pit floor after the last recovered vertex (m). */
+export const PIT_FLOOR_M = 7;
+/** Solid blender body (m): same as the premade courses (tools/levels/track.ts BLENDER_SIZE). */
+export const ORIGINAL_BLENDER_SIZE = { x: 1.5, y: 3.6 } as const;
+/** Start-area offsets, design px (must equal src/game/startArea.ts; an integration test checks). */
+const BUILD_MIN_X_PX = -20;
+const FUNNEL_OFFSET = { x: 115, y: -225 } as const;
 
 export function originalCourseLevel(pxVertices: readonly Vec2[]): LevelDef {
   const pts = pxVertices.map((p) => ({ x: pxToM(p.x), y: pxToM(p.y) }));
   const first = pts[0]!;
   const last = pts[pts.length - 1]!;
   const maxY = Math.max(...pts.map((p) => p.y));
-  const plateauY = first.y;
+  // Plateau = the recovered vertices up to the original build-area edge (366 px).
+  const plateau = pts.filter((p) => p.x <= pxToM(366));
+  const plateauY = Math.min(...plateau.map((p) => p.y));
+  const startX = first.x - pxToM(BUILD_MIN_X_PX) + 0.05;
+  const floorEnd = last.x + PIT_FLOOR_M;
   return {
     version: LEVEL_DEF_VERSION,
-    id: 'original-course',
+    id: 'original',
     name: 'The Original Course (2008)',
     theme: 'workbench',
     terrain: {
       spans: [
         { id: 'start-wall', points: [{ x: first.x - 0.1, y: first.y - 6 }, { ...first }] },
         { id: 'course', points: pts },
-        { id: 'end-wall', points: [{ ...last }, { x: last.x + 0.1, y: last.y - 8 }] },
+        { id: 'pit-floor', points: [{ ...last }, { x: floorEnd, y: last.y }, { x: floorEnd + 0.1, y: last.y - 8 }] },
       ],
       friction: DEFAULT_TERRAIN_FRICTION,
       restitution: DEFAULT_TERRAIN_RESTITUTION,
     },
-    cartStart: { x: 2, y: plateauY - 1.8 },
-    funnel: { x: 5, y: plateauY - 6 },
+    cartStart: { x: startX, y: plateauY },
+    funnel: { x: startX + pxToM(FUNNEL_OFFSET.x), y: plateauY + pxToM(FUNNEL_OFFSET.y) },
     goal: {
-      sensor: { x: pxToM(7665), y: last.y - 2.5, width: last.x - pxToM(7665) + 0.1, height: 2.5 },
+      sensor: { x: last.x, y: last.y - 2.2, width: PIT_FLOOR_M, height: 2.2 },
       lineX: pxToM(ORIGINAL_GOAL_LINE_PX),
     },
-    props: [{ id: 'blender', art: 'blender', position: { x: pxToM(7675), y: last.y } }],
+    props: [
+      {
+        id: 'blender',
+        art: 'blender',
+        solid: true,
+        position: { x: last.x + 4.5, y: last.y - ORIGINAL_BLENDER_SIZE.y / 2 },
+        size: { ...ORIGINAL_BLENDER_SIZE },
+      },
+    ],
     zones: [],
     killY: Math.ceil(maxY + 15),
   };

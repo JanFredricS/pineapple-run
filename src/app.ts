@@ -1,9 +1,11 @@
 /**
- * App state machine skeleton: title -> select -> build -> run -> results.
+ * App state machine: title -> select -> build -> run -> results.
  *
- * S0 ships stubs for every screen except `run`, which mounts the stability
- * spike page (the current entry point). Later slices replace the stubs:
- * level select (S5), builder (S3), run screen (S1/S4), results (S5/S6).
+ * Screens (S6 integration): title / select / results are S5's; build is the
+ * real S2 builder over the course's start area (src/game/buildScreen); run
+ * is the real run (src/game/runScreen: S1 controller + S3 terrain + S4
+ * renderer + S5 HUD). Per-state overrides (`AppOptions.screens`) are for
+ * harnesses and tests.
  */
 
 import type { RunEvent } from './model/runEvents';
@@ -82,7 +84,7 @@ export function transition(state: AppState, action: AppAction): AppState {
   }
 }
 
-/** S0 entry: the run screen on the spike level. */
+/** S0's spike level id (the spike page is no longer an App screen; kept for reference). */
 export const SPIKE_LEVEL_ID = 's0-spike';
 
 export interface Screen {
@@ -119,6 +121,28 @@ export interface AppOptions {
   screens?: Partial<Record<AppState['name'], ScreenFactory>>;
   /** Register the PWA service worker (production builds only). Default true. */
   pwa?: boolean;
+}
+
+/** Minimal dependency-free error state (see App.mount). */
+function mountFatalError(host: HTMLElement, err: unknown): Screen {
+  const root = document.createElement('section');
+  root.className = 'pr-screen pr-screen-error';
+  root.setAttribute('role', 'alert');
+  root.setAttribute('data-testid', 'app-error');
+  root.setAttribute('style', 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center');
+  const h = document.createElement('h2');
+  h.textContent = 'Something went wrong';
+  const p = document.createElement('p');
+  p.textContent = err instanceof Error && err.message ? err.message : 'Unknown error';
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'pr-btn pr-btn--primary';
+  b.setAttribute('data-testid', 'app-error-reload');
+  b.textContent = 'Reload';
+  b.addEventListener('click', () => location.reload());
+  root.append(h, p, b);
+  host.appendChild(root);
+  return { destroy: () => root.remove() };
 }
 
 export class App {
@@ -185,7 +209,17 @@ export class App {
     this.host.replaceChildren();
     if (this.state.name === 'results' && !this.state.resultId) this.state = { ...this.state, resultId: newResultId() };
     const ctx: MountContext = { isCurrent: () => gen === this.generation && !this.destroyed };
-    const screen = await this.createScreen(this.state, ctx);
+    let screen: Screen;
+    try {
+      screen = await this.createScreen(this.state, ctx);
+    } catch (err) {
+      // Last line of defence (e.g. a lazy screen chunk failed to load): never
+      // leave a blank host. Screens handle their own init errors with
+      // specific recovery; this only offers a page reload.
+      console.error('[app] screen failed to mount', err);
+      if (gen !== this.generation) return;
+      screen = mountFatalError(this.host, err);
+    }
     if (gen !== this.generation) {
       screen.destroy();
       return;
@@ -198,9 +232,8 @@ export class App {
     if (override) return override(this.host, state, (a) => this.dispatch(a), ctx);
     switch (state.name) {
       case 'run': {
-        // S0: the stability spike is the run screen.
-        const { mountSpikePage } = await import('./spike/page');
-        return mountSpikePage(this.host);
+        const { mountRunScreen } = await import('./game/runScreen');
+        return mountRunScreen(this.host, state, (a) => this.dispatch(a), ctx);
       }
       case 'title':
       case 'select':
@@ -209,21 +242,10 @@ export class App {
         const { mountAppScreen } = await import('./ui/appScreens');
         return mountAppScreen(this.host, state, (a) => this.dispatch(a), ctx);
       }
-      case 'build':
-        return this.stub('Build (coming in S3)', 'Run', { type: 'startRun' });
+      case 'build': {
+        const { mountBuildScreen } = await import('./game/buildScreen');
+        return mountBuildScreen(this.host, state, (a) => this.dispatch(a), ctx);
+      }
     }
-  }
-
-  private stub(title: string, button: string, action: AppAction): Screen {
-    const el = document.createElement('div');
-    el.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px';
-    const h = document.createElement('h1');
-    h.textContent = title;
-    const b = document.createElement('button');
-    b.textContent = button;
-    b.addEventListener('click', () => void this.dispatch(action));
-    el.append(h, b);
-    this.host.appendChild(el);
-    return { destroy: () => el.remove() };
   }
 }

@@ -66,7 +66,7 @@ describe('S1 run scenarios', () => {
     expect(goal.simTime).toBeLessThan(8.683 + 0.25);
     expect(rc.delivered).toBe(goal.delivered);
     expect(rc.phase).toBe('ended');
-    expect(rc.simTime).toBe(goal.simTime);
+    expect(rc.simTime()).toBe(goal.simTime);
   });
 
   it('full run at a gentle 3 m/s: the cart rolls into the pit and delivers all 15', async () => {
@@ -221,7 +221,7 @@ describe('S1 run scenarios', () => {
     rc.setDrive(1);
     for (let i = 0; i < 120; i++) rc.step();
     expect(w.getAngularVelocity(wheel)).toBeLessThan(20); // coasting, no torque applied
-    expect(rc.simTime).toBeCloseTo(5, 9);
+    expect(rc.simTime()).toBeCloseTo(5, 9);
     expect(rc.giveUp()).toBe(false);
     expect(rc.release()).toBe(false);
     expect(rc.start()).toBe(false);
@@ -239,7 +239,7 @@ describe('S1 run scenarios', () => {
     expect(rc.start()).toBe(true);
     expect(rc.start()).toBe(false);
     for (let i = 0; i < 90; i++) rc.step();
-    expect(rc.simTime).toBe(0);
+    expect(rc.simTime()).toBe(0);
     // plug still in: nothing has left the funnel
     expect(rc.funnel.plug).not.toBeNull();
     expect(rc.giveUp()).toBe(true);

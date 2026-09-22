@@ -74,7 +74,7 @@ import {
   unionBoxes,
   type AboardMargin,
 } from './shapes';
-import { TerrainIndex } from './terrainQuery';
+import { TerrainIndex, type TerrainQuery } from './terrainQuery';
 
 export type RunPhase = 'idle' | 'started' | 'released' | 'ended';
 export type RunMode = 'level' | 'endless';
@@ -112,6 +112,14 @@ export interface RunControllerOptions {
    * the level's whole terrain x-extent.
    */
   keptWindow?: () => KeptWindow;
+  /**
+   * Caller-owned terrain (S6: the S3 TerrainStreamer builds the chunked
+   * chain bodies from a LevelChunkSource / ProceduralChunkSource). When set,
+   * the controller builds NO terrain body from `level.terrain` and answers
+   * its ground-contact queries (lost rule) from this query instead. Without
+   * it, the whole `level.terrain` is built as one static body (S1 default).
+   */
+  terrain?: TerrainQuery;
 }
 
 interface PineappleState {
@@ -144,11 +152,12 @@ export class RunController implements RunEventSource {
   readonly mode: RunMode;
   readonly spec: CompoundSpec;
   readonly cart: CartInstance;
-  readonly ground: BodyHandle;
+  /** The controller's own terrain body; null when the caller owns the terrain (options.terrain). */
+  readonly ground: BodyHandle | null;
   readonly props: readonly SolidProp[];
   readonly funnel: FunnelInstance;
   readonly camera: CameraFollow;
-  readonly terrain: TerrainIndex;
+  readonly terrain: TerrainQuery;
   readonly total: number;
   /** BodySpec id of the chassis (heaviest rigid body): losing it loses the cart. */
   readonly chassisId: string;
@@ -173,6 +182,9 @@ export class RunController implements RunEventSource {
   private _lastAboardBox: AABB | null = null;
   private _events: RunEvent[] = [];
   private supportCache: { step: number; set: Set<PineappleState> } | null = null;
+  /** Chassis x at construction (distance origin for furthestMetres). */
+  private readonly startX: number;
+  private _furthest = 0;
 
   constructor(
     readonly world: PhysicsWorld,
@@ -186,10 +198,10 @@ export class RunController implements RunEventSource {
     }
     this.mode = options.mode ?? 'level';
     this.total = options.pineapples ?? TOTAL_PINEAPPLES;
-    this.terrain = new TerrainIndex(level.terrain.spans);
+    this.terrain = options.terrain ?? new TerrainIndex(level.terrain.spans);
     this.keptWindow = options.keptWindow ?? (() => ({ minX: this.terrain.minX, maxX: this.terrain.maxX }));
 
-    this.ground = buildTerrain(world, level.terrain);
+    this.ground = options.terrain ? null : buildTerrain(world, level.terrain);
     this.props = buildSolidProps(world, level.props);
     this.cart = buildCompound(world, this.spec, level.cartStart);
     this.cartBodies = this.spec.bodies.map((b) => ({ id: b.id, handle: this.cart.bodies.get(b.id)!, spec: b }));
@@ -199,6 +211,7 @@ export class RunController implements RunEventSource {
     let chassis = candidates[0]!;
     for (const b of candidates) if (world.getMass(b.handle) > world.getMass(chassis.handle)) chassis = b;
     this.chassisId = chassis.id;
+    this.startX = world.getTransform(chassis.handle).x;
     // Same drive law as compound.ts (used only once the cart is damaged,
     // when compound's preStep would touch a removed wheel).
     this.poweredWheels = this.cartBodies
@@ -248,8 +261,12 @@ export class RunController implements RunEventSource {
     return this._steps;
   }
 
-  /** Simulation seconds since Release (0 before; frozen once ended). */
-  get simTime(): number {
+  /**
+   * Simulation seconds since Release (0 before; frozen once ended).
+   * RunEventSource contract (INTEGRATION.md amendment 1): a method, polled
+   * by the HUD timer.
+   */
+  simTime(): number {
     if (this.endSimTime !== null) return this.endSimTime;
     return this.releaseStep === null ? 0 : (this._steps - this.releaseStep) * FIXED_DT;
   }
@@ -283,6 +300,17 @@ export class RunController implements RunEventSource {
   /** A non-chassis cart body has been removed by the kill-plane. */
   get cartDamaged(): boolean {
     return this._cartDamaged;
+  }
+
+  /**
+   * Furthest distance (metres) the cart has carried cargo: the chassis x
+   * travelled from its start, sampled every step after Release while at
+   * least one pineapple was aboard at the last 1 Hz check (PLAN "Endless
+   * mode rules"). Frozen once the run ends. Never negative. Controller
+   * surface for the endless HUD / results (INTEGRATION.md amendment 2).
+   */
+  furthestMetres(): number {
+    return this._furthest;
   }
 
   /** Every event emitted so far (for logs / tests). */
@@ -342,7 +370,7 @@ export class RunController implements RunEventSource {
   /** Give up: ends the run (any phase before ended). */
   giveUp(): boolean {
     if (this._phase === 'ended') return false;
-    const t = this.simTime;
+    const t = this.simTime();
     this.end();
     this.emit({ type: 'gaveUp', simTime: t });
     return true;
@@ -365,6 +393,7 @@ export class RunController implements RunEventSource {
       if (this.isOpen()) this.trackGround();
       if (this.isOpen() && (this._steps - this.releaseStep!) % ABOARD_CHECK_STEPS === 0) this.aboardCheck();
       if (this.isOpen()) this.checkGoal();
+      if (this.isOpen()) this.trackDistance();
       this.recordPositions();
     } else {
       // started: nothing can be lost before Release, but a cart can still be
@@ -385,7 +414,7 @@ export class RunController implements RunEventSource {
     this.funnel.pullPlug();
     if (this.world.hasBody(this.funnel.walls)) this.world.destroyBody(this.funnel.walls);
     for (const p of this.props) if (this.world.hasBody(p.handle)) this.world.destroyBody(p.handle);
-    if (this.world.hasBody(this.ground)) this.world.destroyBody(this.ground);
+    if (this.ground !== null && this.world.hasBody(this.ground)) this.world.destroyBody(this.ground);
   }
 
   // ------------------------------------------------------------ internals
@@ -407,7 +436,7 @@ export class RunController implements RunEventSource {
   }
 
   private end(): void {
-    this.endSimTime = this.simTime;
+    this.endSimTime = this.simTime();
     this._phase = 'ended';
     this.drive = 0;
     this.cart.setDrive(0);
@@ -434,9 +463,9 @@ export class RunController implements RunEventSource {
   private markLost(p: PineappleState): void {
     if (p.lost || this._phase !== 'released') return;
     p.lost = true;
-    this.emit({ type: 'pineappleLost', simTime: this.simTime, pineappleId: p.id, remaining: this.remaining });
+    this.emit({ type: 'pineappleLost', simTime: this.simTime(), pineappleId: p.id, remaining: this.remaining });
     if (this.mode === 'endless' && this.remaining === 0 && this._phase === 'released') {
-      const t = this.simTime;
+      const t = this.simTime();
       this.end();
       this.emit({ type: 'allLost', simTime: t });
     }
@@ -637,10 +666,18 @@ export class RunController implements RunEventSource {
     if (!touching) return;
     const lineX = this.level.goal.lineX;
     const delivered = this.pineapples.filter((p) => p.arrived || (p.alive && this.world.getTransform(p.handle).x > lineX)).length;
-    const t = this.simTime;
+    const t = this.simTime();
     this._delivered = delivered;
     this.end();
     this.emit({ type: 'goalReached', simTime: t, delivered });
+  }
+
+  private trackDistance(): void {
+    if (this._cartLost || this._aboard === 0) return;
+    const chassis = this.cartBodies.find((b) => b.id === this.chassisId);
+    if (!chassis || !this.world.hasBody(chassis.handle)) return;
+    const d = this.world.getTransform(chassis.handle).x - this.startX;
+    if (Number.isFinite(d) && d > this._furthest) this._furthest = d;
   }
 
   private recordPositions(): void {

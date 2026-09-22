@@ -196,7 +196,7 @@ async function main(): Promise<void> {
       const rm = run.rightmostCartBody();
       ui.hud.textContent =
         `${run.mode} · phase ${run.phase}${loop.clock.paused ? '  [paused]' : ''}   fps ${fps.toFixed(0)}\n` +
-        `sim ${run.simTime.toFixed(2)} s since Release  (step ${run.steps})\n` +
+        `sim ${run.simTime().toFixed(2)} s since Release  (step ${run.steps})\n` +
         `remaining ${run.remaining}/${run.total}  aboard ${run.aboard}  delivered ${run.delivered ?? '–'}\n` +
         `drive ${input.direction}  cart x ${rm ? rm.x.toFixed(1) : 'lost'} m`;
     },
