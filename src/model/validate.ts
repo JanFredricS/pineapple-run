@@ -18,7 +18,7 @@ import {
   PartKind,
 } from './cart';
 import type { Vec2 } from './geometry';
-import { MAX_SCORE_ID_LENGTH, MAX_SCORE_VALUE, SCORE_BOOK_VERSION, TOTAL_PINEAPPLES, type EndlessSeedBest, type LevelBest, type ScoreBook } from './score';
+import { MAX_SCORE_ID_LENGTH, MAX_SCORE_LEVELS, MAX_SCORE_SEEDS, MAX_SCORE_VALUE, SCORE_BOOK_VERSION, TOTAL_PINEAPPLES, type EndlessSeedBest, type LevelBest, type ScoreBook } from './score';
 import {
   DEFAULT_TERRAIN_FRICTION,
   DEFAULT_TERRAIN_RESTITUTION,
@@ -378,14 +378,14 @@ export function validateScoreBook(raw: unknown): ValidationResult<ScoreBook> {
   if (!m.ok) return m;
   const doc = m.value;
   return wrap(() => {
-    const levels = arr(doc.levels, 'levels', 10_000).map((l, i) => levelBestEntry(l, `levels[${i}]`));
+    const levels = arr(doc.levels, 'levels', MAX_SCORE_LEVELS).map((l, i) => levelBestEntry(l, `levels[${i}]`));
     const levelIds = new Set<string>();
     levels.forEach((l, i) => {
       if (levelIds.has(l.levelId)) fail(`levels[${i}].levelId`, `duplicate level "${l.levelId}"`);
       levelIds.add(l.levelId);
     });
     const e = obj(doc.endless, 'endless');
-    const seeds = arr(e.seeds, 'endless.seeds', 10_000).map((s, i) => seedBestEntry(s, `endless.seeds[${i}]`));
+    const seeds = arr(e.seeds, 'endless.seeds', MAX_SCORE_SEEDS).map((s, i) => seedBestEntry(s, `endless.seeds[${i}]`));
     const seedIds = new Set<string>();
     seeds.forEach((s, i) => {
       if (seedIds.has(s.seed)) fail(`endless.seeds[${i}].seed`, `duplicate seed "${s.seed}"`);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ScoreInputError, emptyScoreBook, levelBest, recordEndlessResult, recordLevelResult, type ScoreBook } from '../../src/model/score';
+import { MAX_SCORE_LEVELS, MAX_SCORE_SEEDS, ScoreInputError, emptyScoreBook, levelBest, recordEndlessResult, recordLevelResult, type ScoreBook } from '../../src/model/score';
 import { parseScoreBook, validateScoreBook } from '../../src/model/validate';
 
 const book = (): ScoreBook => ({
@@ -78,6 +78,75 @@ describe('ScoreBook updates', () => {
   });
 });
 
+describe('ScoreBook record caps', () => {
+  /** A valid book holding exactly MAX_SCORE_LEVELS levels and MAX_SCORE_SEEDS seeds. */
+  const fullBook = (): ScoreBook => ({
+    version: 1,
+    levels: Array.from({ length: MAX_SCORE_LEVELS }, (_, i) => ({
+      levelId: `l${i}`,
+      bestRating: i === 7 ? 1 : 50 + (i % 40),
+      seconds: 30,
+      delivered: 15,
+    })),
+    endless: {
+      overallBestDistance: 5000,
+      seeds: Array.from({ length: MAX_SCORE_SEEDS }, (_, i) => ({ seed: `s${i}`, bestDistance: i === 11 ? 2 : 100 + (i % 500) })),
+    },
+  });
+
+  it('the full fixture itself validates (caps are shared with the validator)', () => {
+    expect(validateScoreBook(fullBook()).ok).toBe(true);
+    const over = fullBook();
+    over.levels.push({ levelId: 'extra', bestRating: 1, seconds: 1, delivered: 1 });
+    expect(validateScoreBook(over)).toMatchObject({ ok: false, error: { path: 'levels' } });
+  });
+
+  it('updating an existing level / seed at the cap evicts nothing', () => {
+    const b0 = fullBook();
+    const b = recordLevelResult(b0, 'l7', 20, 15); // 1 -> 95
+    expect(b.levels).toHaveLength(MAX_SCORE_LEVELS);
+    expect(levelBest(b, 'l7')?.bestRating).toBe(95);
+    expect(new Set(b.levels.map((l) => l.levelId))).toEqual(new Set(b0.levels.map((l) => l.levelId)));
+    expect(validateScoreBook(b).ok).toBe(true);
+
+    const e = recordEndlessResult(b0, 's11', 200);
+    expect(e.endless.seeds).toHaveLength(MAX_SCORE_SEEDS);
+    expect(e.endless.seeds.find((s) => s.seed === 's11')?.bestDistance).toBe(200);
+    expect(new Set(e.endless.seeds.map((s) => s.seed))).toEqual(new Set(b0.endless.seeds.map((s) => s.seed)));
+    expect(validateScoreBook(e).ok).toBe(true);
+  });
+
+  it('a new level id at the cap evicts the lowest-rated record and keeps the new one', () => {
+    const b = recordLevelResult(fullBook(), 'new-level', 45, 15); // 70
+    expect(b.levels).toHaveLength(MAX_SCORE_LEVELS);
+    expect(levelBest(b, 'l7')).toBeUndefined();
+    expect(levelBest(b, 'new-level')?.bestRating).toBe(70);
+    expect(validateScoreBook(JSON.parse(JSON.stringify(b))).ok).toBe(true);
+    // Even a new result worse than every record is kept (the lowest existing one goes).
+    const w = recordLevelResult(b, 'worst', 1000, 1);
+    expect(w.levels).toHaveLength(MAX_SCORE_LEVELS);
+    expect(levelBest(w, 'worst')).toBeDefined();
+    expect(validateScoreBook(w).ok).toBe(true);
+  });
+
+  it('a new seed at the cap evicts the lowest-distance seed; overall best is untouched', () => {
+    const b = recordEndlessResult(fullBook(), 'new-seed', 150);
+    expect(b.endless.seeds).toHaveLength(MAX_SCORE_SEEDS);
+    expect(b.endless.seeds.find((s) => s.seed === 's11')).toBeUndefined();
+    expect(b.endless.seeds.find((s) => s.seed === 'new-seed')?.bestDistance).toBe(150);
+    expect(b.endless.overallBestDistance).toBe(5000);
+    expect(validateScoreBook(JSON.parse(JSON.stringify(b))).ok).toBe(true);
+  });
+
+  it('ties evict the earliest entry', () => {
+    const b0 = fullBook();
+    b0.levels[7]!.bestRating = 50; // now l0 (rating 50) is the earliest lowest
+    const b = recordLevelResult(b0, 'new-level', 45, 15);
+    expect(levelBest(b, 'l0')).toBeUndefined();
+    expect(levelBest(b, 'l7')).toBeDefined();
+  });
+});
+
 describe('ScoreBook helpers are total (property-style)', () => {
   const numbers = [NaN, Infinity, -Infinity, -1, -0, 0, 0.4, 14.99, 15, 16, 45.5, 115, 999_999.9, 1e6, 1e6 + 1, 1e12, Number.MAX_VALUE];
   const ids = ['', 'a', 'beach-1', '__proto__', 'constructor', 'x'.repeat(64), 'x'.repeat(65)];
@@ -117,6 +186,43 @@ describe('ScoreBook helpers are total (property-style)', () => {
     }
     expect(thrown).toBeGreaterThan(0);
     expect(recorded).toBeGreaterThan(0);
+  });
+
+  it('near the record caps, fresh ids/seeds never produce a book the validator rejects', () => {
+    const r = rng(7);
+    const start = MAX_SCORE_LEVELS - 3; // a few steps below the cap, so draws push past it
+    let book: ScoreBook = {
+      version: 1,
+      levels: Array.from({ length: start }, (_, i) => ({ levelId: `p${i}`, bestRating: i % 101, seconds: 20, delivered: 15 })),
+      endless: {
+        overallBestDistance: 1e6,
+        seeds: Array.from({ length: Math.min(start, MAX_SCORE_SEEDS - 3) }, (_, i) => ({ seed: `p${i}`, bestDistance: i % 997 })),
+      },
+    };
+    expect(validateScoreBook(book).ok).toBe(true);
+    let fresh = 0;
+    let atCap = 0;
+    for (let i = 0; i < 300; i++) {
+      // Mix of: brand-new ids (grow / evict), prefilled ids (update), edge ids (incl. invalid).
+      const u = r();
+      const id = u < 0.5 ? `n${fresh++}` : u < 0.8 ? `p${Math.floor(r() * start)}` : pick(r, ids);
+      try {
+        const next =
+          r() < 0.5
+            ? recordLevelResult(book, id, pick(r, numbers), pick(r, numbers))
+            : recordEndlessResult(book, id, pick(r, numbers));
+        const v = validateScoreBook(JSON.parse(JSON.stringify(next)));
+        if (!v.ok) throw new Error(`invalid book after step ${i}: ${v.error.message}`);
+        expect(next.levels.length).toBeLessThanOrEqual(MAX_SCORE_LEVELS);
+        expect(next.endless.seeds.length).toBeLessThanOrEqual(MAX_SCORE_SEEDS);
+        expect(next.endless.overallBestDistance).toBeGreaterThanOrEqual(book.endless.overallBestDistance);
+        if (next.levels.length === MAX_SCORE_LEVELS || next.endless.seeds.length === MAX_SCORE_SEEDS) atCap++;
+        book = next;
+      } catch (e) {
+        if (!(e instanceof ScoreInputError)) throw e;
+      }
+    }
+    expect(atCap).toBeGreaterThan(100); // the run actually spent time at the caps
   });
 
   it.each([

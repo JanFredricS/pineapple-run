@@ -82,6 +82,10 @@ export interface ScoreBook {
 export const MAX_SCORE_VALUE = 1e6;
 /** Max length of a level id or endless seed (validator limit). */
 export const MAX_SCORE_ID_LENGTH = 64;
+/** Max level records in a ScoreBook (validator limit). */
+export const MAX_SCORE_LEVELS = 10_000;
+/** Max endless seed records in a ScoreBook (validator limit). */
+export const MAX_SCORE_SEEDS = 10_000;
 
 /** Thrown by the record helpers for inputs that cannot be stored. */
 export class ScoreInputError extends Error {
@@ -104,6 +108,33 @@ function scoreNumber(v: number, what: string): number {
   return Math.min(MAX_SCORE_VALUE, Math.max(0, v));
 }
 
+/**
+ * Eviction rule for the record caps. validateScoreBook rejects a book with
+ * more than MAX_SCORE_LEVELS level records or MAX_SCORE_SEEDS seed records,
+ * so the record helpers must never return one. When recording a NEW id/seed
+ * would exceed the cap, the helpers keep the new result and drop the least
+ * valuable existing records instead: lowest bestRating (levels) / lowest
+ * bestDistance (seeds); ties drop the earliest entry in the array (updates
+ * re-append, so earlier = least recently improved). Updating an existing
+ * id/seed never grows the array and so never evicts. endless.overallBestDistance
+ * is a separate field and is never reduced by evicting a seed.
+ *
+ * Returns `entries` itself when already within `cap`; otherwise a copy with
+ * the `entries.length - cap` lowest-valued entries removed, order preserved.
+ */
+function evictLowest<T>(entries: T[], cap: number, value: (e: T) => number): T[] {
+  const excess = entries.length - cap;
+  if (excess <= 0) return entries;
+  const drop = new Set(
+    entries
+      .map((e, i) => ({ v: value(e), i }))
+      .sort((a, b) => a.v - b.v || a.i - b.i)
+      .slice(0, excess)
+      .map((x) => x.i),
+  );
+  return entries.filter((_, i) => !drop.has(i));
+}
+
 export function emptyScoreBook(): ScoreBook {
   return { version: SCORE_BOOK_VERSION, levels: [], endless: { overallBestDistance: 0, seeds: [] } };
 }
@@ -116,7 +147,8 @@ export function levelBest(book: ScoreBook, levelId: string): LevelBest | undefin
  * Returns a new book with the level result recorded if it beats the best.
  * Total: every returned book passes validateScoreBook. Non-finite inputs or a
  * bad level id throw ScoreInputError; finite out-of-range numbers are clamped
- * (seconds to [0, 1e6], delivered to an integer in [0, 15]).
+ * (seconds to [0, 1e6], delivered to an integer in [0, 15]). A new level id
+ * at the MAX_SCORE_LEVELS cap evicts the lowest-rated record (see evictLowest).
  */
 export function recordLevelResult(book: ScoreBook, levelId: string, seconds: number, delivered: number): ScoreBook {
   const id = scoreId(levelId, 'levelId');
@@ -126,19 +158,35 @@ export function recordLevelResult(book: ScoreBook, levelId: string, seconds: num
   const prev = levelBest(book, id);
   if (prev && prev.bestRating >= rating) return book;
   const entry: LevelBest = { levelId: id, bestRating: rating, seconds: secs, delivered: del };
-  return { ...book, levels: [...book.levels.filter((l) => l.levelId !== id), entry] };
+  const others = evictLowest(
+    book.levels.filter((l) => l.levelId !== id),
+    MAX_SCORE_LEVELS - 1,
+    (l) => l.bestRating,
+  );
+  return { ...book, levels: [...others, entry] };
 }
 
 /**
  * Returns a new book with the endless distance recorded per seed and overall.
  * Total like recordLevelResult: bad seed / non-finite distance throw
- * ScoreInputError; finite distances are clamped to [0, 1e6].
+ * ScoreInputError; finite distances are clamped to [0, 1e6]. A new seed at the
+ * MAX_SCORE_SEEDS cap evicts the lowest-distance seed record (see evictLowest).
  */
 export function recordEndlessResult(book: ScoreBook, seed: string, distance: number): ScoreBook {
   seed = scoreId(seed, 'seed');
   const d = scoreNumber(distance, 'distance');
   const prev = book.endless.seeds.find((s) => s.seed === seed);
-  const seeds = prev && prev.bestDistance >= d ? book.endless.seeds : [...book.endless.seeds.filter((s) => s.seed !== seed), { seed, bestDistance: d }];
+  const seeds =
+    prev && prev.bestDistance >= d
+      ? book.endless.seeds
+      : [
+          ...evictLowest(
+            book.endless.seeds.filter((s) => s.seed !== seed),
+            MAX_SCORE_SEEDS - 1,
+            (s) => s.bestDistance,
+          ),
+          { seed, bestDistance: d },
+        ];
   const overallBestDistance = Math.max(book.endless.overallBestDistance, d);
   if (seeds === book.endless.seeds && overallBestDistance === book.endless.overallBestDistance) return book;
   return { ...book, endless: { overallBestDistance, seeds } };
