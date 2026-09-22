@@ -100,18 +100,31 @@ interface SeenBody {
   fp: string;
 }
 
-/** Structural fingerprint of a body: O(#shapes), independent of chain point counts. */
+/**
+ * Length-prefixed string token: arbitrary ids may contain the '|' / ','
+ * delimiters, so raw joining would let different inputs collide. (Not
+ * JSON.stringify: the per-frame path must stay free of it, see tests.)
+ */
+const str = (s: string): string => `${s.length}:${s}`;
+
+/**
+ * Structural fingerprint of a body: O(#shapes), independent of chain point
+ * counts. Unambiguous: every string token is length-prefixed, every array is
+ * count-prefixed, numbers never contain '|', and each shape's token layout is
+ * fixed by its tag.
+ */
 export function bodyFingerprint(info: RenderBodyInfo): string {
-  const parts: (string | number)[] = [info.role, (info.partIds ?? []).join(','), info.shapes.length];
+  const ids = info.partIds ?? [];
+  const parts: (string | number)[] = [str(info.role), ids.length, ...ids.map(str), info.shapes.length];
   for (const sh of info.shapes) {
     if (sh.type === 'chain') {
       const a = sh.points[0];
       const b = sh.points[sh.points.length - 1];
       parts.push('c', sh.points.length, a?.x ?? '', a?.y ?? '', b?.x ?? '', b?.y ?? '');
     } else if (sh.type === 'circle') {
-      parts.push('o', sh.partId, sh.center.x, sh.center.y, sh.radius);
+      parts.push('o', str(sh.partId), sh.center.x, sh.center.y, sh.radius);
     } else {
-      parts.push('p', sh.partId, sh.vertices.length);
+      parts.push('p', str(sh.partId), sh.vertices.length);
       for (const v of sh.vertices.slice(0, 8)) parts.push(v.x, v.y);
     }
   }

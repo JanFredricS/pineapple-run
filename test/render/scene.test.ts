@@ -10,7 +10,7 @@ import type { Camera } from '../../src/model/coords';
 import type { Vec2 } from '../../src/model/geometry';
 import type { BodyTransform, RenderBodyInfo, RenderSnapshot, SceneManifest } from '../../src/model/snapshot';
 import { AssetLibrary, type RasterBackend } from '../../src/render/assets';
-import { SceneRenderer } from '../../src/render/scene';
+import { SceneRenderer, bodyFingerprint } from '../../src/render/scene';
 import { MOCK_CART, manifestFromSpec, mockLevel } from '../../src/render/styleguide/mockRun';
 import type { TextureProvider } from '../../src/render/textures';
 
@@ -195,6 +195,24 @@ describe('body visuals across sources', () => {
     r.render({ revision: 1, bodies: [strawBody] }, snap(a, { 10: { x: 2 } }), cam);
     expect(layer(r, 'cart').children[0]).toBe(view);
     expect(view!.position.x).toBe(2);
+    r.destroy();
+  });
+
+  it('same-revision fresh arrays whose partIds differ only in comma placement rebuild the body', () => {
+    const poly = strawBody.shapes[0]!;
+    const withIds = (partIds: string[]): SceneManifest => ({
+      revision: 7,
+      bodies: [{ ...strawBody, partIds, shapes: [{ ...poly }] }],
+    });
+    const a = withIds(['a,b', 'c']);
+    const b = withIds(['a', 'b,c']);
+    expect(bodyFingerprint(b.bodies[0]!)).not.toBe(bodyFingerprint(a.bodies[0]!));
+    const r = new SceneRenderer(provider, { background: false });
+    r.render(a, snap(a), cam);
+    const view = layer(r, 'cart').children[0];
+    r.render(b, snap(b), cam);
+    expect(layer(r, 'cart').children).toHaveLength(1);
+    expect(layer(r, 'cart').children[0]).not.toBe(view);
     r.destroy();
   });
 
