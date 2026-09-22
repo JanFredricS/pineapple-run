@@ -18,7 +18,7 @@ import {
   PartKind,
 } from './cart';
 import type { Vec2 } from './geometry';
-import { SCORE_BOOK_VERSION, TOTAL_PINEAPPLES, type EndlessSeedBest, type LevelBest, type ScoreBook } from './score';
+import { MAX_SCORE_ID_LENGTH, MAX_SCORE_VALUE, SCORE_BOOK_VERSION, TOTAL_PINEAPPLES, type EndlessSeedBest, type LevelBest, type ScoreBook } from './score';
 import {
   DEFAULT_TERRAIN_FRICTION,
   DEFAULT_TERRAIN_RESTITUTION,
@@ -59,6 +59,16 @@ export type MigrationTable = Record<number, Migration>;
 export const CART_MIGRATIONS: MigrationTable = {};
 export const LEVEL_MIGRATIONS: MigrationTable = {};
 export const SCORE_MIGRATIONS: MigrationTable = {};
+
+/**
+ * Aggregate terrain limits for a whole LevelDef (untrusted imports): checked
+ * on the RAW arrays before any point is copied, so a crafted file is rejected
+ * with a recoverable error instead of exhausting memory.
+ */
+export const MAX_TERRAIN_SPANS = 2_000;
+export const MAX_TERRAIN_POINTS_TOTAL = 200_000;
+/** Per-span point limit (kept; the aggregate limit is the binding one). */
+export const MAX_SPAN_POINTS = 100_000;
 
 /** Max absolute coordinate accepted anywhere (px for carts, m for levels). */
 const MAX_COORD = 1e6;
@@ -247,7 +257,7 @@ function rect(v: unknown, path: string): Rect {
 function span(v: unknown, path: string): TerrainSpan {
   const o = obj(v, path);
   const id = str(o.id, `${path}.id`, 64);
-  const points = arr(o.points, `${path}.points`, 100_000).map((p, i) => vec2(p, `${path}.points[${i}]`));
+  const points = arr(o.points, `${path}.points`, MAX_SPAN_POINTS).map((p, i) => vec2(p, `${path}.points[${i}]`));
   if (points.length < 2) fail(`${path}.points`, 'a span needs at least 2 points');
   for (let i = 1; i < points.length; i++) {
     if (!(points[i]!.x > points[i - 1]!.x)) fail(`${path}.points[${i}].x`, 'span x must strictly increase');
@@ -290,7 +300,16 @@ export function validateLevelDef(raw: unknown): ValidationResult<LevelDef> {
     const theme = doc.theme;
     if (typeof theme !== 'string' || !THEME_IDS.includes(theme as ThemeId)) fail('theme', 'unknown theme');
     const t = obj(doc.terrain, 'terrain');
-    const spans = arr(t.spans, 'terrain.spans', 10_000).map((s, i) => span(s, `terrain.spans[${i}]`));
+    const rawSpans = arr(t.spans, 'terrain.spans', MAX_TERRAIN_SPANS);
+    let totalPoints = 0;
+    rawSpans.forEach((s, i) => {
+      const pts = isObject(s) && Array.isArray(s.points) ? s.points.length : 0;
+      totalPoints += pts;
+      if (totalPoints > MAX_TERRAIN_POINTS_TOTAL) {
+        fail(`terrain.spans[${i}].points`, `terrain has more than ${MAX_TERRAIN_POINTS_TOTAL} points in total`);
+      }
+    });
+    const spans = rawSpans.map((s, i) => span(s, `terrain.spans[${i}]`));
     if (spans.length === 0) fail('terrain.spans', 'at least one span is required');
     const spanIds = new Set<string>();
     spans.forEach((s, i) => {
@@ -332,9 +351,6 @@ export function parseLevelDef(text: string): ValidationResult<LevelDef> {
 
 // ----------------------------------------------------------------- ScoreBook
 
-/** Distances / times beyond this are treated as corrupt. */
-const MAX_SCORE_VALUE = 1e6;
-
 function levelBestEntry(v: unknown, path: string): LevelBest {
   const o = obj(v, path);
   const bestRating = num(o.bestRating, `${path}.bestRating`, { min: 0, max: 100 });
@@ -342,7 +358,7 @@ function levelBestEntry(v: unknown, path: string): LevelBest {
   const delivered = num(o.delivered, `${path}.delivered`, { min: 0, max: TOTAL_PINEAPPLES });
   if (!Number.isInteger(delivered)) fail(`${path}.delivered`, 'expected an integer');
   return {
-    levelId: str(o.levelId, `${path}.levelId`, 64),
+    levelId: str(o.levelId, `${path}.levelId`, MAX_SCORE_ID_LENGTH),
     bestRating,
     seconds: num(o.seconds, `${path}.seconds`, { min: 0, max: MAX_SCORE_VALUE }),
     delivered,
@@ -352,7 +368,7 @@ function levelBestEntry(v: unknown, path: string): LevelBest {
 function seedBestEntry(v: unknown, path: string): EndlessSeedBest {
   const o = obj(v, path);
   return {
-    seed: str(o.seed, `${path}.seed`, 64),
+    seed: str(o.seed, `${path}.seed`, MAX_SCORE_ID_LENGTH),
     bestDistance: num(o.bestDistance, `${path}.bestDistance`, { min: 0, max: MAX_SCORE_VALUE }),
   };
 }

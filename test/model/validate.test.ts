@@ -173,3 +173,43 @@ describe('validateLevelDef', () => {
     expect(validateLevelDef({ ...clone(spikeLevelJson), version: 2 })).toMatchObject({ ok: false, error: { code: 'futureVersion' } });
   });
 });
+
+describe('validateLevelDef aggregate terrain limits', () => {
+  const flatSpan = (id: string, x0: number, n: number) => ({
+    id,
+    points: Array.from({ length: n }, (_, i) => ({ x: x0 + i, y: 10 })),
+  });
+
+  it('accepts terrain exactly at the total-point limit', async () => {
+    const { MAX_TERRAIN_POINTS_TOTAL } = await import('../../src/model/validate');
+    const lvl = clone(spikeLevelJson) as Record<string, any>;
+    const half = MAX_TERRAIN_POINTS_TOTAL / 2;
+    lvl.terrain.spans = [flatSpan('a', 0, half), flatSpan('b', half + 10, half)];
+    expect(validateLevelDef(lvl).ok).toBe(true);
+  });
+
+  it('rejects more points in total than the limit, even if every span is within its own limit', async () => {
+    const { MAX_TERRAIN_POINTS_TOTAL, MAX_SPAN_POINTS } = await import('../../src/model/validate');
+    const lvl = clone(spikeLevelJson) as Record<string, any>;
+    const per = MAX_SPAN_POINTS / 2;
+    const count = Math.floor(MAX_TERRAIN_POINTS_TOTAL / per) + 1;
+    lvl.terrain.spans = Array.from({ length: count }, (_, i) => flatSpan(`s${i}`, i * (per + 10), per));
+    const r = validateLevelDef(lvl);
+    expect(r).toMatchObject({ ok: false, error: { code: 'schema', path: `terrain.spans[${count - 1}].points` } });
+    if (!r.ok) expect(r.error.message).toMatch(/in total/);
+  });
+
+  it('rejects more spans than the limit before inspecting them', async () => {
+    const { MAX_TERRAIN_SPANS } = await import('../../src/model/validate');
+    const lvl = clone(spikeLevelJson) as Record<string, any>;
+    lvl.terrain.spans = Array.from({ length: MAX_TERRAIN_SPANS + 1 }, (_, i) => flatSpan(`s${i}`, i * 3, 2));
+    expect(validateLevelDef(lvl)).toMatchObject({ ok: false, error: { code: 'schema', path: 'terrain.spans' } });
+  });
+
+  it('still enforces the per-span limit', async () => {
+    const { MAX_SPAN_POINTS } = await import('../../src/model/validate');
+    const lvl = clone(spikeLevelJson) as Record<string, any>;
+    lvl.terrain.spans = [{ id: 'a', points: new Array(MAX_SPAN_POINTS + 1).fill({ x: 0, y: 0 }) }];
+    expect(validateLevelDef(lvl)).toMatchObject({ ok: false, error: { code: 'schema', path: 'terrain.spans[0].points' } });
+  });
+});
