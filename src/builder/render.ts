@@ -29,6 +29,8 @@ export interface BuilderTheme {
   error: string;
   hover: string;
   groups: string[];
+  /** Bright outlines for detached pieces (cycled) when an islands error is hovered. */
+  islands: string[];
 }
 
 export const DEFAULT_THEME: BuilderTheme = {
@@ -44,6 +46,7 @@ export const DEFAULT_THEME: BuilderTheme = {
   error: '#d62839',
   hover: '#ff8c00',
   groups: ['#5aa9e6', '#7fc8a9', '#f4a259', '#b388eb', '#e5989b', '#ffd166'],
+  islands: ['#d62839', '#7b2cbf', '#0077b6'],
 };
 
 /** Read theme overrides from CSS custom properties (--pr-canvas-*). */
@@ -65,6 +68,7 @@ export function themeFromCss(el: Element): BuilderTheme {
     error: get('--pr-canvas-error', t.error),
     hover: get('--pr-canvas-hover', t.hover),
     groups,
+    islands: t.islands.map((c, i) => get(`--pr-canvas-island-${i}`, c)),
   };
 }
 
@@ -74,8 +78,11 @@ export interface RenderOverlay {
   draftTooSmall?: boolean;
   /** Part under the delete tool. */
   hoverId?: string | null;
-  /** Parts highlighted from the error panel. */
-  highlight?: ReadonlySet<string>;
+  /**
+   * Parts highlighted from the error panel -> tone: 0 = dim (the main piece of
+   * a disconnected cart), 1.. = bright, one colour per detached piece.
+   */
+  highlight?: ReadonlyMap<string, number>;
 }
 
 export class BuilderRenderer {
@@ -154,13 +161,15 @@ export class BuilderRenderer {
     g.clear();
     m.clear();
     const px = 1 / scale; // one screen pixel in design px
-    const highlight = overlay.highlight ?? new Set<string>();
+    const highlight = overlay.highlight ?? new Map<string, number>();
 
-    const outline = (part: CartPart): { color: string; width: number } | null => {
-      if (part.id === overlay.hoverId) return { color: t.hover, width: 3 * px };
-      if (part.id === overlay.draftId && overlay.draftTooSmall) return { color: t.error, width: 2 * px };
-      if (highlight.has(part.id)) return { color: t.error, width: 3.5 * px };
-      if (model.errorParts.has(part.id)) return { color: t.error, width: 2 * px };
+    const outline = (part: CartPart): { color: string; width: number; alpha: number } | null => {
+      if (part.id === overlay.hoverId) return { color: t.hover, width: 3 * px, alpha: 1 };
+      if (part.id === overlay.draftId && overlay.draftTooSmall) return { color: t.error, width: 2 * px, alpha: 1 };
+      const tone = highlight.get(part.id);
+      if (tone === 0) return { color: t.ink, width: 2.5 * px, alpha: 0.75 };
+      if (tone !== undefined) return { color: t.islands[(tone - 1) % t.islands.length] ?? t.error, width: 3.5 * px, alpha: 1 };
+      if (model.errorParts.has(part.id)) return { color: t.error, width: 2 * px, alpha: 1 };
       return null;
     };
 
@@ -216,7 +225,7 @@ export class BuilderRenderer {
       const ol = outline(part);
       const bad = s.sameBody || s.a.state === 'floating' || s.b.state === 'floating';
       const color = bad ? t.error : t.shock;
-      if (ol) g.moveTo(s.a.point.x, s.a.point.y).lineTo(s.b.point.x, s.b.point.y).stroke({ width: ol.width + 6 * px, color: ol.color, alpha: 0.5 });
+      if (ol) g.moveTo(s.a.point.x, s.a.point.y).lineTo(s.b.point.x, s.b.point.y).stroke({ width: ol.width + 6 * px, color: ol.color, alpha: 0.5 * ol.alpha });
       this.spring(g, s.a.point, s.b.point, color, px, alpha);
       // raw drag point -> snapped centre (so the snap is visible)
       for (const [raw, end] of [

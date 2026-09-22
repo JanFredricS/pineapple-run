@@ -8,6 +8,7 @@ class MockStorage implements StorageLike {
   map = new Map<string, string>();
   quota = Infinity;
   failWith: unknown = null;
+  removeFailsWith: unknown = null;
   get length() {
     return this.map.size;
   }
@@ -30,6 +31,7 @@ class MockStorage implements StorageLike {
     this.map.set(k, v);
   }
   removeItem(k: string) {
+    if (this.removeFailsWith) throw this.removeFailsWith;
     this.map.delete(k);
   }
 }
@@ -176,5 +178,36 @@ describe('CartStore failure handling', () => {
     mem.map.set(CART_STORAGE_PREFIX + 'outer', JSON.stringify({ version: 1, name: 'inner', parts: [] }));
     const r = store.load('outer');
     expect(r.ok && r.value.name).toBe('outer');
+  });
+
+  it('damaged entry that cannot be removed: reported once as unavailable (not "discarded"), then not repeated by list', () => {
+    const { mem, store } = setup();
+    store.save('good', exampleCart());
+    mem.map.set(`${CART_STORAGE_PREFIX}broken`, '{nope');
+    mem.map.set(`${CART_STORAGE_PREFIX}%E0%A4%A`, '{}'); // undecodable name
+    mem.removeFailsWith = Object.assign(new Error('read-only'), { name: 'SecurityError' });
+
+    const first = store.list();
+    if (!first.ok) throw new Error('list failed');
+    expect(first.value.carts.map((c) => c.name)).toEqual(['good']);
+    expect(first.value.problems.map((p) => p.code)).toEqual(['unavailable', 'unavailable']);
+    for (const p of first.value.problems) {
+      expect(p.message).toMatch(/could not be removed/);
+      expect(p.message).not.toMatch(/discarded/);
+    }
+    expect(mem.map.has(`${CART_STORAGE_PREFIX}broken`)).toBe(true);
+
+    // no toast loop: later lists are quiet
+    const again = store.list();
+    expect(again.ok && again.value.problems).toEqual([]);
+    expect(again.ok && again.value.carts.map((c) => c.name)).toEqual(['good']);
+
+    // an explicit load still fails honestly
+    expect(store.load('broken')).toMatchObject({ ok: false, error: { code: 'unavailable', name: 'broken' } });
+
+    // once removal works again, the entry is discarded normally
+    mem.removeFailsWith = null;
+    expect(store.load('broken')).toMatchObject({ ok: false, error: { code: 'corrupt' } });
+    expect(mem.map.has(`${CART_STORAGE_PREFIX}broken`)).toBe(false);
   });
 });

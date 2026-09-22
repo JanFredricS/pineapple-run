@@ -17,13 +17,15 @@ import type { CartDesign } from '../model/cart';
 import type { Vec2 } from '../model/geometry';
 import './builder.css';
 import { BUILD_AREA, HIT_TOLERANCE_SCREEN_PX, MOCK_FUNNEL } from './constants';
-import { DRAW_TOOLS, hitTest, isInArea, kindName, makeDraft, nextPartId, type Draft, type DrawTool, type Tool } from './edits';
+import { DRAW_TOOLS, kindName, type Tool } from './edits';
 import { initialEditorState, reduceEditor, type EditorAction, type EditorState } from './editor';
-import { GestureMachine, type GestureEffect } from './gesture';
+import { InputRouter, type DraftView } from './input';
+import { PressRegistry } from './pressRegistry';
+import { highlightMap } from './messages';
 import { buildPreview, type PreviewModel } from './preview';
 import { BuilderRenderer, themeFromCss } from './render';
 import { browserCartStore, type CartStore } from './storage';
-import { fitView, screenToDesign, zoomAbout, type BuilderView } from './view';
+import { fitView, zoomAbout, type BuilderView } from './view';
 
 export interface BuilderOptions {
   /** Named-cart persistence (default: window.localStorage). */
@@ -86,8 +88,10 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text 
  * pointerdown (so a touch that starts on a button never leaks to the canvas),
  * and the action fires on pointerup only if the pointer is still over the
  * button. Keyboard activation (Enter/Space -> click with detail 0) also works.
+ * (A pointerdown here also cancels any live canvas stroke: see the window
+ * capture listener in mountBuilder.)
  */
-function pressable(button: HTMLButtonElement, onActivate: () => void, cleanups: Array<() => void>): void {
+function pressable(button: HTMLButtonElement, onActivate: () => void, registry: PressRegistry<HTMLButtonElement>): void {
   let active: number | null = null;
   const release = () => {
     active = null;
@@ -125,13 +129,13 @@ function pressable(button: HTMLButtonElement, onActivate: () => void, cleanups: 
   button.addEventListener('pointercancel', cancel);
   button.addEventListener('lostpointercapture', cancel);
   button.addEventListener('click', click);
-  cleanups.push(release);
+  registry.register(button, release);
 }
 
 export async function mountBuilder(host: HTMLElement, options: BuilderOptions = {}): Promise<BuilderHandle> {
   const store = options.store ?? browserCartStore();
   const cleanups: Array<() => void> = [];
-  const releasePalettePresses: Array<() => void> = [];
+  const presses = new PressRegistry<HTMLButtonElement>();
   const listen = <T extends EventTarget>(target: T, type: string, fn: EventListenerOrEventListenerObject, opts?: AddEventListenerOptions) => {
     target.addEventListener(type, fn, opts);
     cleanups.push(() => target.removeEventListener(type, fn, opts));
@@ -161,13 +165,11 @@ export async function mountBuilder(host: HTMLElement, options: BuilderOptions = 
   // ---------------------------------------------------------------- state
   let editor: EditorState = initialEditorState(options.initialDesign ?? undefined);
   let committed: PreviewModel = buildPreview(editor.design);
-  let draft: Draft | null = null;
-  let draftPreview: PreviewModel | null = null;
+  let draft: DraftView | null = null;
   let hoverId: string | null = null;
-  let highlight = new Set<string>();
+  let highlight: ReadonlyMap<string, number> = new Map();
   let view: BuilderView = { scale: 1, offsetX: 0, offsetY: 0 };
   let userMovedView = false;
-  const gestures = new GestureMachine();
 
   // ---------------------------------------------------------- palette DOM
   const palette = el('aside', 'pr-palette');
@@ -178,7 +180,7 @@ export async function mountBuilder(host: HTMLElement, options: BuilderOptions = 
     b.type = 'button';
     b.innerHTML = label;
     if (title) b.title = title;
-    pressable(b, onActivate, releasePalettePresses);
+    pressable(b, onActivate, presses);
     return b;
   };
   const mkTool = (tool: Tool) => {
@@ -264,6 +266,8 @@ export async function mountBuilder(host: HTMLElement, options: BuilderOptions = 
 
   // -------------------------------------------------------------- toasts
   const toasts = el('div', 'pr-toasts');
+  const toastTimers = new Set<number>();
+  cleanups.push(() => toastTimers.forEach((t) => window.clearTimeout(t)));
   root.append(toasts);
   const toast = (message: string, kind: 'info' | 'error' = 'info') => {
     const t = el('div', 'pr-toast', message);
@@ -271,8 +275,11 @@ export async function mountBuilder(host: HTMLElement, options: BuilderOptions = 
     t.setAttribute('role', kind === 'error' ? 'alert' : 'status');
     toasts.append(t);
     while (toasts.children.length > 3) toasts.firstElementChild?.remove();
-    const timer = window.setTimeout(() => t.remove(), kind === 'error' ? 6000 : 3000);
-    cleanups.push(() => window.clearTimeout(timer));
+    const timer = window.setTimeout(() => {
+      toastTimers.delete(timer);
+      t.remove();
+    }, kind === 'error' ? 6000 : 3000);
+    toastTimers.add(timer);
   };
 
   const draftLabel = el('div', 'pr-draft-label');
@@ -383,11 +390,11 @@ export async function mountBuilder(host: HTMLElement, options: BuilderOptions = 
       li.dataset.code = m.code;
       li.tabIndex = 0;
       const on = () => {
-        highlight = new Set(m.partIds);
+        highlight = highlightMap(m);
         requestDraw();
       };
       const off = () => {
-        highlight = new Set();
+        highlight = new Map();
         requestDraw();
       };
       li.addEventListener('pointerenter', on);
@@ -404,13 +411,16 @@ export async function mountBuilder(host: HTMLElement, options: BuilderOptions = 
   };
 
   function dispatch(action: EditorAction, notify = true) {
+    // Replacing the design while a stroke is live would commit against the
+    // wrong design: cancel all input first.
+    if (action.type === 'clearAll' || action.type === 'load' || action.type === 'loadExample') resetInput();
     const prev = editor.design;
     const r = reduceEditor(editor, action);
     editor = r.state;
     if (r.outcome?.kind === 'rejected' && r.outcome.reason !== 'nothingHere') toast(r.outcome.message, 'error');
     if (editor.design !== prev) {
       committed = buildPreview(editor.design);
-      highlight = new Set();
+      highlight = new Map();
       if (hoverId && !editor.design.parts.some((p) => p.id === hoverId)) hoverId = null;
       refreshStatus();
       if (notify) options.onChange?.(editor.design);
@@ -432,10 +442,10 @@ export async function mountBuilder(host: HTMLElement, options: BuilderOptions = 
     if (frame) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
-      const model = draftPreview ?? committed;
+      const model = draft?.preview ?? committed;
       renderer.draw(
         model,
-        { draftId: draft ? draft.part.id : null, draftTooSmall: draft?.tooSmall ?? false, hoverId, highlight },
+        { draftId: draft ? draft.draft.part.id : null, draftTooSmall: draft?.draft.tooSmall ?? false, hoverId, highlight },
         view,
         stageW(),
         stageH(),
@@ -460,61 +470,47 @@ export async function mountBuilder(host: HTMLElement, options: BuilderOptions = 
     const r = canvas.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
-  const toDesign = (p: Vec2) => screenToDesign(p, view);
   const tolerance = () => HIT_TOLERANCE_SCREEN_PX / view.scale;
 
-  const clearDraft = () => {
-    draft = null;
-    draftPreview = null;
-    draftLabel.hidden = true;
-  };
-
-  const updateDraft = (start: Vec2, pos: Vec2) => {
-    if (editor.tool === 'delete') {
-      hoverId = hitTest(editor.design, toDesign(pos), tolerance());
-      return;
-    }
-    const s = toDesign(start);
-    if (!isInArea(s)) {
-      clearDraft();
-      return;
-    }
-    const tool = editor.tool as DrawTool;
-    draft = makeDraft(tool, s, toDesign(pos), nextPartId(editor.design), { snap: editor.snap });
-    draftPreview = buildPreview({ ...editor.design, parts: [...editor.design.parts, draft.part] });
-    draftLabel.hidden = false;
-    draftLabel.textContent = draft.tooSmall ? `${draft.label} — too small` : `${kindName(draft.part.kind)} ${draft.label}`;
-    draftLabel.dataset.bad = String(draft.tooSmall);
-    draftLabel.style.left = `${Math.min(stageW() - 140, pos.x + 14)}px`;
-    draftLabel.style.top = `${Math.max(0, pos.y - 28)}px`;
-  };
-
-  const apply = (effects: GestureEffect[]) => {
-    for (const fx of effects) {
-      switch (fx.type) {
-        case 'strokeStart':
-          confirmSlot.replaceChildren();
-          updateDraft(fx.pos, fx.pos);
-          break;
-        case 'strokeUpdate':
-          updateDraft(fx.start, fx.pos);
-          break;
-        case 'strokeCommit':
-          clearDraft();
-          dispatch({ type: 'stroke', start: toDesign(fx.start), end: toDesign(fx.pos), tolerance: tolerance() });
-          if (editor.tool === 'delete') hoverId = null;
-          break;
-        case 'strokeCancel':
-          clearDraft();
-          hoverId = null;
-          break;
-        case 'view':
-          setView(zoomAbout(view, fx.factor, fx.from, fx.to));
-          break;
-      }
+  const showDraft = (d: DraftView | null) => {
+    draft = d;
+    draftLabel.hidden = !d;
+    if (d) {
+      const { draft: dr, screenPos: pos } = d;
+      draftLabel.textContent = dr.tooSmall ? `${dr.label} — too small` : `${kindName(dr.part.kind)} ${dr.label}`;
+      draftLabel.dataset.bad = String(dr.tooSmall);
+      draftLabel.style.left = `${Math.min(stageW() - 140, pos.x + 14)}px`;
+      draftLabel.style.top = `${Math.max(0, pos.y - 28)}px`;
     }
     requestDraw();
   };
+
+  let inputFrame = 0;
+  const router = new InputRouter({
+    getDesign: () => editor.design,
+    getTool: () => editor.tool,
+    getSnap: () => editor.snap,
+    getView: () => view,
+    tolerance,
+    setView,
+    commit: (tool, snap, start, end) => dispatch({ type: 'stroke', tool, snap, start, end, tolerance: tolerance() }),
+    onDraft: showDraft,
+    onHover: (id) => {
+      if (id !== hoverId) {
+        hoverId = id;
+        requestDraw();
+      }
+    },
+    onStrokeStart: () => confirmSlot.replaceChildren(),
+    requestFrame: () => {
+      if (!inputFrame)
+        inputFrame = requestAnimationFrame(() => {
+          inputFrame = 0;
+          router.frame();
+        });
+    },
+    buildPreview,
+  });
 
   listen(canvas, 'pointerdown', ((e: PointerEvent) => {
     e.preventDefault();
@@ -523,33 +519,34 @@ export async function mountBuilder(host: HTMLElement, options: BuilderOptions = 
     } catch {
       /* ignore */
     }
-    apply(gestures.send({ type: 'down', pointerId: e.pointerId, pos: localPos(e), time: e.timeStamp, button: e.pointerType === 'mouse' ? e.button : 0 }));
+    router.down(e.pointerId, localPos(e), e.timeStamp, e.pointerType === 'mouse' ? e.button : 0);
   }) as EventListener);
   listen(canvas, 'pointermove', ((e: PointerEvent) => {
-    const pos = localPos(e);
-    if (gestures.state.name === 'idle') {
+    if (router.gestureState.name === 'idle') {
       // hover preview for the delete tool (mouse/pen only)
-      if (editor.tool === 'delete' && e.pointerType !== 'touch') {
-        const id = hitTest(editor.design, toDesign(pos), tolerance());
-        if (id !== hoverId) {
-          hoverId = id;
-          requestDraw();
-        }
-      }
+      if (e.pointerType !== 'touch') router.hover(localPos(e));
       return;
     }
     const events = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
     const last = events.length ? events[events.length - 1]! : e;
-    apply(gestures.send({ type: 'move', pointerId: e.pointerId, pos: localPos(last), time: e.timeStamp }));
+    router.move(e.pointerId, localPos(last), e.timeStamp);
   }) as EventListener);
-  listen(canvas, 'pointerup', ((e: PointerEvent) => {
-    apply(gestures.send({ type: 'up', pointerId: e.pointerId, pos: localPos(e), time: e.timeStamp }));
-  }) as EventListener);
-  const cancelPointer = ((e: PointerEvent) => apply(gestures.send({ type: 'cancel', pointerId: e.pointerId }))) as EventListener;
-  listen(canvas, 'pointercancel', cancelPointer);
-  listen(canvas, 'lostpointercapture', cancelPointer);
+  listen(canvas, 'pointerup', ((e: PointerEvent) => router.up(e.pointerId, localPos(e), e.timeStamp)) as EventListener);
+  // pointercancel = the browser took the gesture over: full reset.
+  listen(canvas, 'pointercancel', (() => resetInput()) as EventListener);
+  // lostpointercapture also fires after a normal pointerup; the router ignores untracked pointers.
+  listen(canvas, 'lostpointercapture', ((e: PointerEvent) => router.cancel(e.pointerId)) as EventListener);
+  // Any pointerdown outside the canvas (palette, panels, page) cancels a live stroke.
+  listen(
+    window,
+    'pointerdown',
+    ((e: PointerEvent) => {
+      if (e.target !== canvas) router.outsideDown();
+    }) as EventListener,
+    { capture: true },
+  );
   listen(canvas, 'pointerleave', (() => {
-    if (gestures.state.name === 'idle' && hoverId) {
+    if (router.gestureState.name === 'idle' && hoverId) {
       hoverId = null;
       requestDraw();
     }
@@ -574,14 +571,15 @@ export async function mountBuilder(host: HTMLElement, options: BuilderOptions = 
   );
 
   /** Clear ALL input state: gestures, draft, hover, highlighted palette presses. */
-  const resetInput = () => {
-    apply(gestures.send({ type: 'reset' }));
-    clearDraft();
+  function resetInput() {
+    router.reset();
+    draft = null;
+    draftLabel.hidden = true;
     hoverId = null;
-    highlight = new Set();
-    for (const r of releasePalettePresses) r();
+    highlight = new Map();
+    presses.releaseAll();
     requestDraw();
-  };
+  }
   listen(window, 'blur', resetInput);
   listen(window, 'pagehide', resetInput);
   listen(document, 'visibilitychange', () => {
@@ -631,6 +629,7 @@ export async function mountBuilder(host: HTMLElement, options: BuilderOptions = 
     destroy() {
       resetInput();
       if (frame) cancelAnimationFrame(frame);
+      if (inputFrame) cancelAnimationFrame(inputFrame);
       for (const c of cleanups) c();
       app.stage.removeChild(renderer.view);
       renderer.destroy();

@@ -4,7 +4,7 @@ import type { CartDesign, CartPart } from '../../src/model/cart';
 import { validateCartDesign } from '../../src/model/validate';
 import { BUILD_AREA } from '../../src/builder/constants';
 import { EXAMPLE_CART, exampleCart } from '../../src/builder/exampleCart';
-import { describeErrors, partLabels } from '../../src/builder/messages';
+import { describeErrors, highlightMap, partLabels } from '../../src/builder/messages';
 import { buildPreview } from '../../src/builder/preview';
 import { fitView, designToScreen, screenToDesign, zoomAbout } from '../../src/builder/view';
 
@@ -155,8 +155,13 @@ describe('validation messages', () => {
     expect(msgs[0]!.text).toMatch(/missing wheels/);
     expect(msgs[1]!.text).toMatch(/^Umbrella shock 1: Both ends are loose/);
     expect(msgs[2]!.text).toMatch(/3 separate pieces/);
-    // the largest island is treated as the main cart; the others are highlighted
-    expect(msgs[2]!.partIds).toEqual(['b', 'c', 'a']);
+    // every island is highlighted; largest first (dim tone 0), detached pieces bright 1, 2, ...
+    expect(msgs[2]!.partIds).toEqual(['x', 'y', 'z', 'b', 'c', 'a']);
+    expect(msgs[2]!.islands).toEqual([['x', 'y', 'z'], ['b', 'c'], ['a']]);
+    expect([...highlightMap(msgs[2]!)]).toEqual([
+      ['x', 0], ['y', 0], ['z', 0], ['b', 1], ['c', 1], ['a', 2],
+    ]);
+    expect([...highlightMap(msgs[1]!)]).toEqual([['c', 1]]);
     expect(msgs[3]!.text).toMatch(/connects a piece to itself/);
     expect(msgs[4]!.text).toMatch(/Straw 1 is too small \(minimum 5 px\)/);
     expect(msgs[5]!.text).toMatch(/Sugar cube 1 is too small \(minimum 7 px\)/);

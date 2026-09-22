@@ -127,9 +127,26 @@ describe('gesture state machine — second pointer', () => {
     expect(m.state.name).toBe('pinch');
   });
 
-  it('pointercancel of a pinch pointer ends the pinch', () => {
+  it('pointercancel of a pinch pointer is a full reset (idle; the other finger must re-touch)', () => {
     const { m } = run([down(1, 0, 0, 0), down(2, 100, 0, 10), { type: 'cancel', pointerId: 2 }]);
-    expect(m.state).toEqual({ name: 'ignoring', pointers: [1] });
+    expect(m.state).toEqual({ name: 'idle' });
+  });
+
+  it('cancel of an ignored pointer during a stroke cancels the stroke and resets', () => {
+    const { types, m } = run([down(1, 0, 0, 0), down(2, 50, 50, 1000), { type: 'cancel', pointerId: 2 }, up(1, 10, 0)]);
+    expect(types).toEqual(['strokeStart', 'strokeCancel']);
+    expect(m.state).toEqual({ name: 'idle' });
+  });
+
+  it('cancel of a pointer the machine never tracked is ignored (e.g. lostpointercapture after up)', () => {
+    const { types, m } = run([down(1, 0, 0, 0), move(1, 20, 0), { type: 'cancel', pointerId: 9 }, up(1, 30, 0)]);
+    expect(types).toEqual(['strokeStart', 'strokeUpdate', 'strokeCommit']);
+    expect(m.state).toEqual({ name: 'idle' });
+  });
+
+  it('cancel while ignoring pointers resets to idle', () => {
+    const { m } = run([down(1, 0, 0, 0), down(2, 50, 50, 1000), up(1, 10, 0), { type: 'cancel', pointerId: 2 }]);
+    expect(m.state).toEqual({ name: 'idle' });
   });
 
   it('duplicate pointerdown for the drawing pointer is ignored', () => {

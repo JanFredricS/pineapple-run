@@ -18,8 +18,12 @@ export interface EditorState {
 export type EditorAction =
   | { type: 'setTool'; tool: Tool }
   | { type: 'setSnap'; snap: boolean }
-  /** A completed stroke in design px; `tolerance` = delete pick slop (design px). */
-  | { type: 'stroke'; start: Vec2; end: Vec2; tolerance: number }
+  /**
+   * A completed stroke in design px; `tolerance` = delete pick slop (design px).
+   * `tool`/`snap` are the values snapshotted when the stroke STARTED (default:
+   * the current ones) — a mid-stroke palette change never alters the commit.
+   */
+  | { type: 'stroke'; start: Vec2; end: Vec2; tolerance: number; tool?: Tool; snap?: boolean }
   | { type: 'clearAll' }
   | { type: 'loadExample' }
   /** Replace the design (must already be validated, e.g. from CartStore). */
@@ -41,7 +45,10 @@ export function reduceEditor(state: EditorState, action: EditorAction): EditorSt
     case 'setSnap':
       return { state: { ...state, snap: action.snap } };
     case 'stroke': {
-      const r = applyStroke(state.design, state.tool, action.start, action.end, { snap: state.snap, tolerance: action.tolerance });
+      const r = applyStroke(state.design, action.tool ?? state.tool, action.start, action.end, {
+        snap: action.snap ?? state.snap,
+        tolerance: action.tolerance,
+      });
       return { state: r.design === state.design ? state : { ...state, design: r.design }, outcome: r.outcome };
     }
     case 'clearAll': {

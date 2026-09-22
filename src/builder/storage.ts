@@ -98,6 +98,26 @@ export class CartStore {
    */
   constructor(private readonly storage: StorageLike | (() => StorageLike)) {}
 
+  /**
+   * Keys of damaged entries whose removal FAILED and was already reported.
+   * `list()` skips them silently afterwards, so a read-only / broken storage
+   * doesn't re-toast the same problem on every list.
+   */
+  private readonly undeletable = new Set<string>();
+
+  /** Remove a damaged entry; null on success, else an `unavailable` error (first time only reported by list). */
+  private discard(key: string, what: string): StoreError | null {
+    try {
+      this.s.removeItem(key);
+      this.undeletable.delete(key);
+      return null;
+    } catch (e) {
+      this.undeletable.add(key);
+      const base = unavailable(e);
+      return { ...base, message: `${what} is damaged and could not be removed: ${base.message}` };
+    }
+  }
+
   private get s(): StorageLike {
     return typeof this.storage === 'function' ? this.storage() : this.storage;
   }
@@ -157,11 +177,8 @@ export class CartStore {
         error: { code: 'incompatibleVersion', message: `"${name}" was saved by ${why} and can't be opened here`, name, cause: r.error },
       };
     }
-    try {
-      this.s.removeItem(keyFor(name));
-    } catch {
-      /* best effort */
-    }
+    const failed = this.discard(keyFor(name), `Saved cart "${name}"`);
+    if (failed) return { ok: false, error: { ...failed, name, cause: r.error } };
     return {
       ok: false,
       error: { code: 'corrupt', message: `Saved cart "${name}" was damaged and has been discarded (${r.error.message})`, name, cause: r.error },
@@ -184,6 +201,7 @@ export class CartStore {
     const carts: SavedCartEntry[] = [];
     const problems: StoreError[] = [];
     for (const k of keys) {
+      if (this.undeletable.has(k)) continue; // already reported; don't repeat every list
       const name = nameFromKey(k);
       let text: string | null = null;
       try {
@@ -194,12 +212,8 @@ export class CartStore {
       }
       const norm = name === null ? null : normalizeCartName(name);
       if (name === null || !norm || !norm.ok || norm.value !== name) {
-        try {
-          this.s.removeItem(k);
-        } catch {
-          /* best effort */
-        }
-        problems.push({ code: 'corrupt', message: 'A saved cart with an unreadable name was discarded' });
+        const failed = this.discard(k, 'A saved cart with an unreadable name');
+        problems.push(failed ?? { code: 'corrupt', message: 'A saved cart with an unreadable name was discarded' });
         continue;
       }
       if (text === null) continue;

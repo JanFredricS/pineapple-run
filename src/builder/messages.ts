@@ -23,8 +23,25 @@ export function partLabels(design: CartDesign): Map<string, string> {
 export interface ErrorMessage {
   code: AttachmentError['code'];
   text: string;
-  /** Parts to highlight when the message is hovered/focused. */
+  /** Parts to highlight when the message is hovered/focused (ALL involved parts). */
   partIds: string[];
+  /**
+   * disconnectedIslands only: every island, largest first. The largest (the
+   * likely "main" cart) is highlighted dimly, the others brightly in
+   * alternating colours, so every piece is visible and distinguishable.
+   */
+  islands?: string[][];
+}
+
+/**
+ * Highlight tone per part for a hovered message: 0 = dim (main piece),
+ * 1, 2, ... = bright, one distinct tone per detached piece.
+ */
+export function highlightMap(m: ErrorMessage): Map<string, number> {
+  const out = new Map<string, number>();
+  if (m.islands) m.islands.forEach((island, i) => island.forEach((id) => out.set(id, i)));
+  else for (const id of m.partIds) out.set(id, 1);
+  return out;
 }
 
 export function describeErrors(design: CartDesign, errors: readonly AttachmentError[]): ErrorMessage[] {
@@ -45,11 +62,13 @@ export function describeErrors(design: CartDesign, errors: readonly AttachmentEr
       }
       case 'disconnectedIslands': {
         const n = e.islands.length;
+        // stable sort: largest first, ties keep the model's order
+        const islands = [...e.islands].sort((a, b) => b.length - a.length).map((i) => [...i]);
         return {
           code: e.code,
           text: `Your cart is in ${n} separate pieces. Join them by overlapping parts, pinning a wheel over a part, or adding a shock.`,
-          // highlight every piece except the largest (the likely "main" cart)
-          partIds: [...e.islands].sort((a, b) => b.length - a.length).slice(1).flat(),
+          partIds: islands.flat(),
+          islands,
         };
       }
       case 'shockSameBody':

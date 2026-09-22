@@ -10,9 +10,12 @@
  *  - after a pinch, remaining pointers are ignored until every pointer is up,
  *    so lifting one finger of a pinch never starts an accidental stroke;
  *  - secondary mouse buttons (middle/right) pan;
- *  - `cancel` for the stroke/pinch pointer (pointercancel / lostpointercapture)
- *    and `reset` (blur, visibilitychange, phase transition) clear ALL state and
- *    cancel any stroke without committing.
+ *  - `cancel` of ANY pointer the machine is tracking (drawing, pinching,
+ *    panning or ignored) and `reset` clear ALL state and cancel any stroke
+ *    without committing. The DOM layer sends `reset` for every canvas
+ *    `pointercancel`, blur, visibilitychange and phase transition, and
+ *    `cancel` for `lostpointercapture` (which also fires, harmlessly, for
+ *    pointers already released — those are no longer tracked).
  *
  * The machine is a reducer: `step(state, event) -> { state, effects }`.
  * Positions are screen px; `time` is the event timestamp in ms.
@@ -93,8 +96,8 @@ export function stepGesture(state: GestureState, ev: GestureEvent, graceMs = GES
           if (!own) return same({ ...state, ignored: without(state.ignored, ev.pointerId) });
           return { state: settle(state.ignored), effects: [{ type: 'strokeCommit', start: state.start, pos: ev.pos }] };
         case 'cancel':
-          if (!own) return same({ ...state, ignored: without(state.ignored, ev.pointerId) });
-          return { state: settle(state.ignored), effects: [{ type: 'strokeCancel' }] };
+          if (!own && !state.ignored.includes(ev.pointerId)) return same(state);
+          return { state: { name: 'idle' }, effects: [{ type: 'strokeCancel' }] };
       }
       return same(state);
     }
@@ -118,12 +121,14 @@ export function stepGesture(state: GestureState, ev: GestureEvent, graceMs = GES
             effects: [{ type: 'view', factor, from: mid(state.posA, state.posB), to: mid(posA, posB) }],
           };
         }
-        case 'up':
-        case 'cancel': {
+        case 'up': {
           if (!isA && !isB) return same({ ...state, ignored: without(state.ignored, ev.pointerId) });
           const remaining = [isA ? state.b : state.a, ...state.ignored];
           return same(settle(remaining));
         }
+        case 'cancel':
+          if (!isA && !isB && !state.ignored.includes(ev.pointerId)) return same(state);
+          return same({ name: 'idle' });
       }
       return same(state);
     }
@@ -138,9 +143,11 @@ export function stepGesture(state: GestureState, ev: GestureEvent, graceMs = GES
           if (!own) return same(state);
           return { state: { ...state, pos: ev.pos }, effects: [{ type: 'view', factor: 1, from: state.pos, to: ev.pos }] };
         case 'up':
-        case 'cancel':
           if (!own) return same({ ...state, ignored: without(state.ignored, ev.pointerId) });
           return same(settle(state.ignored));
+        case 'cancel':
+          if (!own && !state.ignored.includes(ev.pointerId)) return same(state);
+          return same({ name: 'idle' });
       }
       return same(state);
     }
@@ -149,7 +156,8 @@ export function stepGesture(state: GestureState, ev: GestureEvent, graceMs = GES
       if (ev.type === 'down' && !state.pointers.includes(ev.pointerId)) {
         return same({ name: 'ignoring', pointers: [...state.pointers, ev.pointerId] });
       }
-      if (ev.type === 'up' || ev.type === 'cancel') return same(settle(without(state.pointers, ev.pointerId)));
+      if (ev.type === 'up') return same(settle(without(state.pointers, ev.pointerId)));
+      if (ev.type === 'cancel') return same(state.pointers.includes(ev.pointerId) ? { name: 'idle' } : state);
       return same(state);
     }
   }
