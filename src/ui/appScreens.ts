@@ -30,6 +30,20 @@ export function setScoreStore(s: ScoreStore | null): void {
   store = s;
 }
 
+/**
+ * Bare results states (no resultId — only possible via direct
+ * mountAppScreen calls; App always stamps one) get an id memoized on the
+ * state OBJECT, so mounting the same object twice is idempotent while two
+ * distinct runs with identical content still record separately.
+ */
+const bareIds = new WeakMap<object, string>();
+export function resultIdOf(state: Extract<AppState, { name: 'results' }>): string {
+  if (state.resultId) return state.resultId;
+  let id = bareIds.get(state);
+  if (!id) bareIds.set(state, (id = newResultId()));
+  return id;
+}
+
 const ALWAYS_CURRENT: MountContext = { isCurrent: () => true };
 
 export function mountAppScreen(host: HTMLElement, state: AppState, dispatch: Dispatch, ctx: MountContext = ALWAYS_CURRENT): Screen {
@@ -47,9 +61,7 @@ export function mountAppScreen(host: HTMLElement, state: AppState, dispatch: Dis
         onBack: () => go({ type: 'toTitle' }),
       });
     case 'results': {
-      // App always stamps resultId; the fallback keeps direct callers safe
-      // (they record once per mount, as before).
-      const model = resultsFor(state.resultId ?? newResultId(), state, getScoreStore());
+      const model = resultsFor(resultIdOf(state), state, getScoreStore());
       return mountResultsScreen(host, model, {
         retry: () => go({ type: 'startRun' }),
         editCart: () => go({ type: 'backToBuild' }),

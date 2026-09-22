@@ -60,6 +60,71 @@ describe('record once, render many (resultId)', () => {
     expect(again).toMatchObject({ newSeedBest: true, newOverallBest: true });
   });
 
+  it('no eviction: a result re-mounted after 32 / 33 / 600 later runs is still not re-recorded', async () => {
+    const storage = new MemStorage();
+    const store = new ScoreStore(storage);
+    const spy = vi.spyOn(store, 'recordLevel');
+    const first = { levelId: 'beach', outcome: { type: 'goalReached' as const, simTime: 12, delivered: 15 } }; // 100%
+    const m0 = resultsFor('first', first, store);
+    expect(m0).toMatchObject({ newBest: true });
+    const checkAfter = (n: number) => {
+      const calls = spy.mock.calls.length;
+      const again = resultsFor('first', first, store);
+      expect(again, `after ${n} runs`).toBe(m0);
+      expect(again).toMatchObject({ newBest: true });
+      expect(spy.mock.calls.length).toBe(calls);
+    };
+    let n = 0;
+    const runs = (k: number) => {
+      for (let i = 0; i < k; i++, n++) resultsFor(`later-${n}`, { levelId: 'kitchen', outcome: { type: 'goalReached', simTime: 30, delivered: 5 } }, store);
+    };
+    runs(31);
+    checkAfter(31);
+    runs(1);
+    checkAfter(32); // old LRU boundary
+    runs(1);
+    checkAfter(33); // first id past the old boundary
+    runs(600 - 33);
+    checkAfter(600);
+    expect(isResultRecorded('first', store)).toBe(true);
+    expect(isResultRecorded('later-0', store)).toBe(true);
+  });
+
+  it('bare results state (no resultId) mounted twice via mountAppScreen records once and renders identically', async () => {
+    const body = new FakeEl();
+    body.connectedRoot = true;
+    vi.stubGlobal('document', { body, documentElement: new FakeEl(), createElement: () => new FakeEl(), createTextNode: (t: string) => Object.assign(new FakeEl(), { textContent: t }) });
+    vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
+    try {
+      const { mountAppScreen, resultIdOf, setScoreStore } = await import('../../src/ui/appScreens');
+      const storage = new MemStorage();
+      const store = new ScoreStore(storage);
+      setScoreStore(store);
+      const spy = vi.spyOn(store, 'recordLevel');
+      const bare: AppState = { name: 'results', levelId: 'beach', outcome: { type: 'goalReached', simTime: 25, delivered: 11 } };
+      const render = () => {
+        const host = new FakeEl();
+        const screen = mountAppScreen(host as unknown as HTMLElement, bare, () => {});
+        const text = host.text;
+        screen.destroy();
+        return text;
+      };
+      const first = render();
+      const second = render();
+      expect(first).toContain('New best!');
+      expect(second).toBe(first);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(storage.writes).toBe(1);
+      expect(resultIdOf(bare)).toBe(resultIdOf(bare));
+      // a different object with identical content is a different run
+      expect(resultIdOf({ ...bare })).not.toBe(resultIdOf(bare));
+      expect(resultIdOf({ ...bare, resultId: 'given' })).toBe('given');
+      setScoreStore(null);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('transition carries resultId; App stamps one on runEnded and on bare results states', async () => {
     const outcome = { type: 'gaveUp' as const, simTime: 3 };
     expect(transition({ name: 'run', levelId: 'beach' }, { type: 'runEnded', outcome, resultId: 'x' })).toEqual({
@@ -184,6 +249,12 @@ class FakeEl {
   remove() {
     if (this.parent) this.parent.children = this.parent.children.filter((x) => x !== this);
     this.parent = null;
+  }
+  addEventListener() {}
+  removeEventListener() {}
+  focus() {}
+  get text(): string {
+    return (this.textContent ?? '') + this.children.map((c) => c.text).join('|');
   }
   set innerHTML(_: string) {
     this.content = { firstElementChild: new FakeEl() };

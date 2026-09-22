@@ -1,44 +1,50 @@
 /**
  * Service-worker registration (production builds only).
  *
- * Cache versioning is keyed to the build: the version is the hashed file
- * name of the entry module (`assets/index-<hash>.js`). Any change anywhere in
- * the build changes some chunk hash, which changes the entry's import graph
- * and so its hash; the SW URL (`sw.js?v=<version>`) then differs, the browser
- * installs a fresh worker with a fresh cache, and old caches are deleted on
- * activation. See public/sw.js for the fetch strategies (and why hashed WASM
- * can't go stale).
+ * Worker identity is the deploy's content digest: `precache-manifest.json`
+ * (generated at build time by src/ui/precache.ts) carries a `version` hashed
+ * over every deployed file. We register `sw.js?v=<version>`; sw.js uses the
+ * same value for its cache name. Any change to any deployed byte (JS, CSS,
+ * WASM, HTML, icons, the worker) => new worker URL => fresh install into a
+ * new cache, old caches deleted on activate. See public/sw.js.
+ *
+ * The manifest is fetched with `cache: 'no-cache'`; offline (or through an
+ * active worker's fallback) it yields the installed version, so registration
+ * is a no-op and the installed worker keeps serving.
  */
 
-/** Pure: derive the cache version from the entry script URL. */
-export function buildVersionFrom(entryUrl: string | null | undefined): string {
-  if (!entryUrl) return 'dev';
-  const file = entryUrl.split(/[?#]/)[0]!.split('/').pop() ?? '';
-  const m = /-([A-Za-z0-9_-]{6,})\.js$/.exec(file);
-  return m ? m[1]! : 'dev';
+export const PRECACHE_MANIFEST_PATH = 'precache-manifest.json';
+
+/** Pure: the manifest's version if well-formed (16 lowercase hex chars). */
+export function manifestVersion(json: unknown): string | null {
+  if (!json || typeof json !== 'object') return null;
+  const v = (json as { version?: unknown }).version;
+  return typeof v === 'string' && /^[0-9a-f]{16}$/.test(v) ? v : null;
+}
+
+/** Pure: worker script URL for a base path and manifest version. */
+export function workerUrl(base: string, version: string): string {
+  return `${base}sw.js?v=${encodeURIComponent(version)}`;
+}
+
+/** Pure: the cache name sw.js derives from the same version (kept in sync with public/sw.js). */
+export function cacheNameFor(version: string): string {
+  return `pineapple-run-${version}`;
 }
 
 export function registerServiceWorker(): void {
   if (!import.meta.env.PROD || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
-  const entry = document.querySelector<HTMLScriptElement>('script[type="module"][src]')?.src;
-  const version = buildVersionFrom(entry);
-  if (version === 'dev') return;
   const base = import.meta.env.BASE_URL;
-  const register = () => {
-    navigator.serviceWorker
-      .register(`${base}sw.js?v=${encodeURIComponent(version)}`, { scope: base })
-      .then(async () => {
-        // Cache what this page already loaded (lazy chunks, WASM) so the
-        // first visit is enough to play offline next time.
-        const reg = await navigator.serviceWorker.ready;
-        const urls = performance
-          .getEntriesByType('resource')
-          .map((e) => e.name)
-          .filter((u) => u.startsWith(location.origin + base));
-        reg.active?.postMessage({ type: 'cache-urls', urls });
-      })
-      .catch((err: unknown) => console.warn('Service worker registration failed', err));
+  const register = async () => {
+    try {
+      const res = await fetch(`${base}${PRECACHE_MANIFEST_PATH}`, { cache: 'no-cache' });
+      const version = res.ok ? manifestVersion(await res.json()) : null;
+      if (!version) return;
+      await navigator.serviceWorker.register(workerUrl(base, version), { scope: base });
+    } catch (err) {
+      console.warn('Service worker registration skipped', err);
+    }
   };
-  if (document.readyState === 'complete') register();
-  else window.addEventListener('load', register, { once: true });
+  if (document.readyState === 'complete') void register();
+  else window.addEventListener('load', () => void register(), { once: true });
 }

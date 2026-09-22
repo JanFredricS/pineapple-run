@@ -102,14 +102,28 @@ export function buildResults(input: ResultsInput, store: ScoreStore): ResultsMod
   };
 }
 
-const RESULT_CACHE_LIMIT = 32;
+/**
+ * Recorded results, per store, for the page's lifetime — deliberately NOT
+ * evicted. Contract: a resultId is recorded at most once per ScoreStore for
+ * as long as the page lives, and every mount of it renders the identical
+ * model.
+ *
+ * Why in memory, unbounded: resultIds only exist inside in-memory AppState
+ * (App state is never persisted), so no results state can outlive the page
+ * that holds this map — page-lifetime memory is exactly as durable as the
+ * ids themselves, and persisting them in the ScoreBook would add nothing.
+ * Growth is one small model (well under 1 KB) per FINISHED run; a run takes
+ * tens of seconds at least, so even a marathon 1,000-run session stays under
+ * ~1 MB. An LRU cap would silently break record-once (round-2 audit).
+ */
 const recorded = new WeakMap<ScoreStore, Map<string, ResultsModel>>();
 
 /**
  * Record-once / render-many: the first call for a `resultId` records the run
- * through `buildResults` and caches the model; later calls (re-mounts of the
- * same results state) return the cached model without touching the store, so
- * a result is never double-recorded and always renders identically.
+ * through `buildResults` and keeps the model; later calls (re-mounts of the
+ * same results state, however many runs later) return that model without
+ * touching the store, so a result is never double-recorded and always renders
+ * identically.
  */
 export function resultsFor(resultId: string, input: ResultsInput, store: ScoreStore): ResultsModel {
   let cache = recorded.get(store);
@@ -118,7 +132,6 @@ export function resultsFor(resultId: string, input: ResultsInput, store: ScoreSt
   if (hit) return hit;
   const model = buildResults(input, store);
   cache.set(resultId, model);
-  if (cache.size > RESULT_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
   return model;
 }
 

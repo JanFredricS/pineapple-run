@@ -3,7 +3,7 @@ import { transition, type AppState } from '../../src/app';
 import { emptyScoreBook, recordLevelResult } from '../../src/model/score';
 import { COURSES, endlessLevelId, isUnlocked, nextCourse, parseRunTarget } from '../../src/ui/catalog';
 import { shouldShowRotate } from '../../src/ui/orientation';
-import { buildVersionFrom } from '../../src/ui/pwa';
+import { cacheNameFor, manifestVersion, workerUrl } from '../../src/ui/pwa';
 import { randomSeed, SEED_MAX_LENGTH, validateSeed } from '../../src/ui/seed';
 
 describe('seed entry validation', () => {
@@ -99,10 +99,12 @@ describe('orientation + pwa helpers', () => {
     expect(shouldShowRotate(1024, 1366)).toBe(false);
     expect(shouldShowRotate(400, 400)).toBe(false);
   });
-  it('SW cache version comes from the hashed entry file name', () => {
-    expect(buildVersionFrom('https://x.io/pineapple-run/assets/main-0xaiCj1A.js')).toBe('0xaiCj1A');
-    expect(buildVersionFrom('https://x.io/pineapple-run/assets/index-Ab_c-12.js?v=1')).toBe('Ab_c-12');
-    expect(buildVersionFrom('/src/main.ts')).toBe('dev');
-    expect(buildVersionFrom(undefined)).toBe('dev');
+  it('SW identity comes from the precache manifest digest', () => {
+    expect(manifestVersion({ version: '0123456789abcdef', assets: [] })).toBe('0123456789abcdef');
+    for (const bad of [null, 42, {}, { version: 'main-0xaiCj1A' }, { version: '0123456789ABCDEF' }, { version: '0123' }]) {
+      expect(manifestVersion(bad)).toBeNull();
+    }
+    expect(workerUrl('/pineapple-run/', '0123456789abcdef')).toBe('/pineapple-run/sw.js?v=0123456789abcdef');
+    expect(cacheNameFor('0123456789abcdef')).toBe('pineapple-run-0123456789abcdef');
   });
 });
