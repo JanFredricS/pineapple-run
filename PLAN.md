@@ -253,10 +253,11 @@ A dedicated slice for making it FUN, driven by S6V's playtest backlog:
   difficulty ramp checked at 3 depths.
 - Builder part tuning: sizes, masses, costs of straws/boxes/wheels/
   springs so varied carts are viable.
-- Spring/shock ART decision: umbrella-spring concept is under review
-  (user doubt, 2026-09-22); replacement candidates are drink-native
-  coils — Hawthorne-strainer coil spring, bendy-straw bellows, curly
-  straw, citrus-peel spiral. Swap is art-only (artCatalog + SVGs);
+- Spring/shock ART decision (RESOLVED 2026-09-22, user choice):
+  replace the umbrella spring with a **Hawthorne-strainer coil spring**
+  — the coiled spring off a bartender's Hawthorne strainer, drawn as a
+  metal coil with compressed/rest/stretched states (same three-state
+  scheme the umbrella used). Swap is art-only (artCatalog + SVGs);
   physics untouched.
 
 ### S7 — Audio (parallel with S6)
