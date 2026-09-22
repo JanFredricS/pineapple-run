@@ -21,6 +21,17 @@ work. S6 works through this list; each item is a plan-owner ruling.
   inconsistency. Update src/model/score endless helper accordingly in S6
   (small change; re-run S5 display tests).
 
+## S1 audit rulings (plan owner, 2026-09-22)
+
+- **Lost is advisory in level runs**: the lost flag drives HUD/aboard counts
+  only; it never excludes a pineapple from triggering the goal or being
+  delivered. Catapulted/recovered cargo counts, as in the original.
+- **Run mode is explicit**: RunController takes `mode: "level" | "endless"`.
+  Endless ends when the last pineapple is lost, via a new terminal
+  `allLost` lifecycle event — an authorized ADDITIVE amendment to contract 3
+  (event + mock + docs). S5's remaining===0 inference is replaced by this
+  event at S6 wiring.
+
 ## Conventions to reconcile
 
 3. **Y-origin**: S2 builder assumes design y = 0 is the ground line;
