@@ -21,6 +21,12 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        'run-harness': fileURLToPath(new URL('./run-harness.html', import.meta.url)),
+      },
+    },
   },
   test: {
     environment: 'node',
