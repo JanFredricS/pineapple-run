@@ -1,0 +1,227 @@
+import { describe, expect, it } from 'vitest';
+import {
+  AUDIO_STORAGE_KEY,
+  AudioEngine,
+  DEFAULT_AUDIO_SETTINGS,
+  MUSIC_BUS_LEVEL,
+  parseAudioSettings,
+  SFX_BUS_LEVEL,
+  UNLOCK_EVENTS,
+} from '../../src/audio/engine';
+import { FakeAudioContext, FakeStorage, FakeTarget, fakeFactory, flush, quotaError, type FakeGain } from './fakeAudio';
+
+function make(opts: { behaviour?: ConstructorParameters<typeof FakeAudioContext>[0]; storage?: FakeStorage | null } = {}) {
+  const { factory, created } = fakeFactory(opts.behaviour);
+  const storage = opts.storage === undefined ? new FakeStorage() : opts.storage;
+  const doc = new FakeTarget();
+  const engine = new AudioEngine({ createContext: factory, storage, visibility: doc });
+  return { engine, created, storage, doc };
+}
+
+describe('AudioEngine: lazy context', () => {
+  it('creates no context until needed, then exactly one with the bus graph', () => {
+    const { engine, created } = make();
+    const el = new FakeTarget();
+    engine.attach(el);
+    expect(created).toHaveLength(0);
+    expect(engine.state).toBe('none');
+    const g = engine.ensureGraph()!;
+    expect(created).toHaveLength(1);
+    expect(engine.ensureGraph()).toBe(g);
+    expect(created).toHaveLength(1);
+    // musicBus → tone → master → limiter → destination; sfxBus → master
+    expect(g.musicBus.connect).toBeDefined();
+    const ctx = created[0]!;
+    const master = g.master as FakeGain;
+    expect((g.musicBus as FakeGain).outputs).toEqual([g.musicTone]);
+    expect((g.sfxBus as FakeGain).outputs).toEqual([master]);
+    expect(master.outputs).toEqual([g.limiter]);
+    expect((g.limiter as unknown as FakeGain).outputs).toEqual([ctx.destination]);
+    expect((g.musicBus as FakeGain).gain.value).toBeCloseTo(DEFAULT_AUDIO_SETTINGS.music * MUSIC_BUS_LEVEL, 12);
+    expect((g.sfxBus as FakeGain).gain.value).toBeCloseTo(DEFAULT_AUDIO_SETTINGS.sfx * SFX_BUS_LEVEL, 12);
+  });
+
+  it('a missing Web Audio (factory → null, or throws) is a silent no-op', () => {
+    const e1 = new AudioEngine({ createContext: () => null, storage: null, visibility: null });
+    expect(e1.ensureGraph()).toBeNull();
+    const e2 = new AudioEngine({
+      createContext: () => {
+        throw new Error('too many contexts');
+      },
+      storage: null,
+      visibility: null,
+    });
+    expect(e2.ensureGraph()).toBeNull();
+    expect(e2.setMuted(true)).toBe(false);
+  });
+});
+
+describe('AudioEngine: unlock on first gesture', () => {
+  it('adds capture listeners for every unlock event, removes them once running', async () => {
+    const { engine, created } = make();
+    const el = new FakeTarget();
+    engine.attach(el);
+    for (const t of UNLOCK_EVENTS) expect(el.count(t)).toBe(1);
+    expect(el.options.filter((o) => (UNLOCK_EVENTS as readonly string[]).includes(o.type)).every((o) => (o.options as AddEventListenerOptions).capture === true)).toBe(true);
+    expect(engine.awaitingUnlock).toBe(true);
+    el.dispatch('pointerdown');
+    const ctx = created[0]!;
+    expect(ctx.resumeCalls).toBe(1); // synchronously inside the gesture
+    // the iOS silent-buffer kick was started inside the gesture too
+    expect(ctx.ofKind<import('./fakeAudio').FakeBufferSource>('bufferSource')[0]!.startedAt).toBe(0);
+    await flush();
+    expect(engine.unlocked).toBe(true);
+    expect(el.count()).toBe(0);
+    expect(engine.awaitingUnlock).toBe(false);
+  });
+
+  it('keeps listening when resume rejects or leaves the context suspended', async () => {
+    for (const behaviour of [{ resumeRejects: true }, { resumeNoop: true }]) {
+      const { engine } = make({ behaviour });
+      const el = new FakeTarget();
+      engine.attach(el);
+      el.dispatch('touchend');
+      await flush();
+      expect(engine.unlocked).toBe(false);
+      expect(el.count()).toBe(UNLOCK_EVENTS.length);
+    }
+  });
+
+  it('stops listening when there is no Web Audio at all', () => {
+    const engine = new AudioEngine({ createContext: () => null, storage: null, visibility: null });
+    const el = new FakeTarget();
+    engine.attach(el);
+    el.dispatch('keydown');
+    expect(el.count()).toBe(0);
+  });
+
+  it('attach is idempotent and re-targeting moves the listeners', () => {
+    const { engine } = make();
+    const a = new FakeTarget();
+    const b = new FakeTarget();
+    engine.attach(a);
+    engine.attach(a);
+    expect(a.count()).toBe(UNLOCK_EVENTS.length);
+    engine.attach(b);
+    expect(a.count()).toBe(0);
+    expect(b.count()).toBe(UNLOCK_EVENTS.length);
+  });
+});
+
+describe('AudioEngine: visibility', () => {
+  it('suspends when hidden and resumes when visible again', async () => {
+    const { engine, created, doc } = make();
+    const el = new FakeTarget();
+    engine.attach(el);
+    expect(doc.count('visibilitychange')).toBe(1);
+    el.dispatch('pointerdown');
+    await flush();
+    const ctx = created[0]!;
+    doc.visibilityState = 'hidden';
+    doc.dispatch('visibilitychange');
+    expect(ctx.suspendCalls).toBe(1);
+    expect(ctx.state).toBe('suspended');
+    doc.visibilityState = 'visible';
+    doc.dispatch('visibilitychange');
+    expect(ctx.resumeCalls).toBe(2);
+    expect(ctx.state).toBe('running');
+  });
+
+  it('does not resume a context that was never unlocked', () => {
+    const { engine, created, doc } = make();
+    engine.attach(new FakeTarget());
+    engine.ensureGraph();
+    doc.visibilityState = 'hidden';
+    doc.dispatch('visibilitychange');
+    doc.visibilityState = 'visible';
+    doc.dispatch('visibilitychange');
+    expect(created[0]!.resumeCalls).toBe(0);
+  });
+});
+
+describe('AudioEngine: settings persistence honesty', () => {
+  it('persists mute/volumes and reports true on success', () => {
+    const { engine, storage } = make();
+    expect(engine.setMuted(true)).toBe(true);
+    expect(engine.setMusicVolume(0.25)).toBe(true);
+    expect(engine.setSfxVolume(2)).toBe(true); // clamped
+    const saved = JSON.parse(storage!.map.get(AUDIO_STORAGE_KEY)!);
+    expect(saved).toEqual({ v: 1, muted: true, music: 0.25, sfx: 1 });
+    // A fresh engine restores them.
+    const again = new AudioEngine({ createContext: fakeFactory().factory, storage, visibility: null });
+    expect(again.settings).toEqual({ muted: true, music: 0.25, sfx: 1 });
+    const g = again.ensureGraph()!;
+    expect((g.master as FakeGain).gain.value).toBe(0);
+  });
+
+  it('quota errors → false, but the setting still applies in memory and to the graph', () => {
+    const { engine, storage } = make();
+    const g = engine.ensureGraph()!;
+    storage!.throwOnSet = quotaError();
+    expect(engine.setMuted(true)).toBe(false);
+    expect(engine.settings.muted).toBe(true);
+    expect((g.master as FakeGain).gain.lastTarget()).toBe(0);
+    expect(engine.setMusicVolume(0.5)).toBe(false);
+    expect(engine.settings.music).toBe(0.5);
+    expect(storage!.map.has(AUDIO_STORAGE_KEY)).toBe(false);
+  });
+
+  it('no storage → false; unreadable storage → defaults', () => {
+    const { engine } = make({ storage: null });
+    expect(engine.setMuted(true)).toBe(false);
+    const s = new FakeStorage();
+    s.throwOnGet = new Error('SecurityError');
+    const e2 = new AudioEngine({ createContext: fakeFactory().factory, storage: s, visibility: null });
+    expect(e2.settings).toEqual(DEFAULT_AUDIO_SETTINGS);
+  });
+
+  it('parse is tolerant field by field', () => {
+    expect(parseAudioSettings(null)).toEqual(DEFAULT_AUDIO_SETTINGS);
+    expect(parseAudioSettings('{nope')).toEqual(DEFAULT_AUDIO_SETTINGS);
+    expect(parseAudioSettings('42')).toEqual(DEFAULT_AUDIO_SETTINGS);
+    expect(parseAudioSettings('{"muted":"yes","music":0.3,"sfx":7}')).toEqual({ muted: false, music: 0.3, sfx: 1 });
+    expect(parseAudioSettings('{"muted":true,"music":null}')).toEqual({ ...DEFAULT_AUDIO_SETTINGS, muted: true });
+  });
+
+  it('volume changes are smoothed, not stepped', () => {
+    const { engine } = make();
+    const g = engine.ensureGraph()!;
+    engine.setMusicVolume(0.5);
+    const last = (g.musicBus as FakeGain).gain.calls.at(-1)!;
+    expect(last.m).toBe('target');
+    expect((last as { v: number }).v).toBeCloseTo(0.5 * MUSIC_BUS_LEVEL, 12);
+  });
+});
+
+describe('AudioEngine: destroy', () => {
+  it('removes every listener, disconnects the buses and closes the context', async () => {
+    const { engine, created, doc } = make();
+    const el = new FakeTarget();
+    engine.attach(el);
+    const g = engine.ensureGraph()!;
+    await engine.destroy();
+    expect(el.count()).toBe(0);
+    expect(doc.count()).toBe(0);
+    const ctx = created[0]!;
+    expect(ctx.closeCalls).toBe(1);
+    expect(ctx.state).toBe('closed');
+    for (const n of [g.master, g.musicBus, g.musicTone, g.sfxBus, g.limiter]) expect((n as FakeGain).disconnectCount).toBeGreaterThan(0);
+    expect(engine.graph).toBeNull();
+    expect(engine.ensureGraph()).toBeNull(); // never resurrects
+    await engine.destroy(); // idempotent
+    expect(ctx.closeCalls).toBe(1);
+    engine.attach(el);
+    expect(el.count()).toBe(0);
+  });
+
+  it('a gesture resolving after destroy does not re-arm anything', async () => {
+    const { engine } = make();
+    const el = new FakeTarget();
+    engine.attach(el);
+    el.dispatch('pointerdown');
+    await engine.destroy();
+    await flush();
+    expect(engine.unlocked).toBe(false);
+    expect(el.count()).toBe(0);
+  });
+});

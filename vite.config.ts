@@ -30,6 +30,7 @@ export default defineConfig({
         'run-harness': fileURLToPath(new URL('./run-harness.html', import.meta.url)),
         uiHarness: fileURLToPath(new URL('./ui-harness.html', import.meta.url)),
         styleguide: fileURLToPath(new URL('./styleguide.html', import.meta.url)),
+        audioHarness: fileURLToPath(new URL('./audio-harness.html', import.meta.url)),
       },
     },
   },
