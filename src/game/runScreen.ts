@@ -267,6 +267,11 @@ async function mountRunOnce(
         release: () => void s.release(),
         giveUp: () => void s.giveUp(),
         setDrive: (d) => (hudDrive = d),
+        // a cancelled touch clears every held input (keys too), as input.ts touchCancel()
+        cancelInput: () => {
+          input.touchCancel();
+          hudDrive = 0;
+        },
       },
       ...(deps.endDelayMs !== undefined ? { endDelayMs: deps.endDelayMs } : {}),
       ...(deps.sound ? { sound: deps.sound } : {}),
