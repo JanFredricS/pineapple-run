@@ -1,5 +1,5 @@
 /**
- * Validation + version migration for CartDesign / LevelDef JSON
+ * Validation + version migration for CartDesign / LevelDef / ScoreBook JSON
  * (S0 contract 5).
  *
  * EVERY load path (localStorage carts & scores, level JSON, map-builder
@@ -18,6 +18,7 @@ import {
   PartKind,
 } from './cart';
 import type { Vec2 } from './geometry';
+import { SCORE_BOOK_VERSION, TOTAL_PINEAPPLES, type EndlessSeedBest, type LevelBest, type ScoreBook } from './score';
 import {
   DEFAULT_TERRAIN_FRICTION,
   DEFAULT_TERRAIN_RESTITUTION,
@@ -57,6 +58,7 @@ export type MigrationTable = Record<number, Migration>;
 /** No older cart format exists yet; add `{ 1: v1ToV2 }` when v2 ships. */
 export const CART_MIGRATIONS: MigrationTable = {};
 export const LEVEL_MIGRATIONS: MigrationTable = {};
+export const SCORE_MIGRATIONS: MigrationTable = {};
 
 /** Max absolute coordinate accepted anywhere (px for carts, m for levels). */
 const MAX_COORD = 1e6;
@@ -137,7 +139,7 @@ export function migrateDocument(
   }
   let doc: Record<string, unknown> = raw;
   for (let from = v; from < current; from++) {
-    const m = migrations[from];
+    const m = Object.prototype.hasOwnProperty.call(migrations, from) ? migrations[from] : undefined;
     if (!m) {
       return {
         ok: false,
@@ -326,4 +328,61 @@ export function validateLevelDef(raw: unknown): ValidationResult<LevelDef> {
 export function parseLevelDef(text: string): ValidationResult<LevelDef> {
   const j = parseJson(text, 'Level');
   return j.ok ? validateLevelDef(j.value) : j;
+}
+
+// ----------------------------------------------------------------- ScoreBook
+
+/** Distances / times beyond this are treated as corrupt. */
+const MAX_SCORE_VALUE = 1e6;
+
+function levelBestEntry(v: unknown, path: string): LevelBest {
+  const o = obj(v, path);
+  const bestRating = num(o.bestRating, `${path}.bestRating`, { min: 0, max: 100 });
+  if (!Number.isInteger(bestRating)) fail(`${path}.bestRating`, 'expected an integer');
+  const delivered = num(o.delivered, `${path}.delivered`, { min: 0, max: TOTAL_PINEAPPLES });
+  if (!Number.isInteger(delivered)) fail(`${path}.delivered`, 'expected an integer');
+  return {
+    levelId: str(o.levelId, `${path}.levelId`, 64),
+    bestRating,
+    seconds: num(o.seconds, `${path}.seconds`, { min: 0, max: MAX_SCORE_VALUE }),
+    delivered,
+  };
+}
+
+function seedBestEntry(v: unknown, path: string): EndlessSeedBest {
+  const o = obj(v, path);
+  return {
+    seed: str(o.seed, `${path}.seed`, 64),
+    bestDistance: num(o.bestDistance, `${path}.bestDistance`, { min: 0, max: MAX_SCORE_VALUE }),
+  };
+}
+
+export function validateScoreBook(raw: unknown): ValidationResult<ScoreBook> {
+  const m = migrateDocument(raw, SCORE_BOOK_VERSION, SCORE_MIGRATIONS, 'Saved scores');
+  if (!m.ok) return m;
+  const doc = m.value;
+  return wrap(() => {
+    const levels = arr(doc.levels, 'levels', 10_000).map((l, i) => levelBestEntry(l, `levels[${i}]`));
+    const levelIds = new Set<string>();
+    levels.forEach((l, i) => {
+      if (levelIds.has(l.levelId)) fail(`levels[${i}].levelId`, `duplicate level "${l.levelId}"`);
+      levelIds.add(l.levelId);
+    });
+    const e = obj(doc.endless, 'endless');
+    const seeds = arr(e.seeds, 'endless.seeds', 10_000).map((s, i) => seedBestEntry(s, `endless.seeds[${i}]`));
+    const seedIds = new Set<string>();
+    seeds.forEach((s, i) => {
+      if (seedIds.has(s.seed)) fail(`endless.seeds[${i}].seed`, `duplicate seed "${s.seed}"`);
+      seedIds.add(s.seed);
+    });
+    const overallBestDistance = num(e.overallBestDistance, 'endless.overallBestDistance', { min: 0, max: MAX_SCORE_VALUE });
+    const maxSeed = seeds.reduce((mx, s) => Math.max(mx, s.bestDistance), 0);
+    if (overallBestDistance < maxSeed) fail('endless.overallBestDistance', 'smaller than a per-seed best');
+    return { version: SCORE_BOOK_VERSION, levels, endless: { overallBestDistance, seeds } };
+  }, m.migratedFrom);
+}
+
+export function parseScoreBook(text: string): ValidationResult<ScoreBook> {
+  const j = parseJson(text, 'Saved scores');
+  return j.ok ? validateScoreBook(j.value) : j;
 }
