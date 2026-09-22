@@ -1,0 +1,293 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lang-data xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="lang.xsd">
+    <language>en-us</language>
+    <items>
+                <item key="nav.join_in"><![CDATA[Ingenious Careers]]></item>
+                <item key="nav.test_your_ingenuity"><![CDATA[Test Your Ingenuity]]></item>
+                <item key="nav.johnson_controls"><![CDATA[johnsoncontrols.com]]></item>
+                <item key="nav.home"><![CDATA[Home]]></item>
+                <item key="footer.privacy"><![CDATA[Privacy]]></item>
+                <item key="footer.terms"><![CDATA[Terms of Use]]></item>
+                <item key="footer.copyright"><![CDATA[Copyright]]></item>
+                <item key="footer.contact_us"><![CDATA[Contact Us]]></item>
+                <item key="global.button.test_your_ingenuity"><![CDATA[Test Your Ingenuity]]></item>
+                <item key="home.headline"><![CDATA[Ingenuity Welcome]]></item>
+                <item key="home.subhead"><![CDATA[A more comfortable, safe and sustainable world]]></item>
+                <item key="home.body"><![CDATA[At Johnson Controls, we believe that a little ingenuity goes a long way. Somewhere between common sense and brilliance, we find ingenious solutions that make the places where people live, work, and travel more comfortable, safe, and sustainable. Have a look around. Once you get to know us, you may want to join in on the ingenuity.]]></item>
+                <item key="global.button.comfortable_homes"><![CDATA[Living]]></item>
+                <item key="global.button.intelligent_buildings"><![CDATA[Working]]></item>
+                <item key="global.button.efficient_cars"><![CDATA[Driving]]></item>
+                <item key="global.button.back"><![CDATA[Back]]></item>
+                <item key="products.button.more"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.headline.car.landing"><![CDATA[Get More Mileage out of Ingenuity]]></item>
+                <item key="products.body.car.landing"><![CDATA[Drive into the future with more comfortable, safe, and sustainable vehicle interiors. We’ve been busy improving the way cars are made, the way they work, and the way they communicate. Whether it’s renewable seat cushions, high quality interiors, smarter electronics, or hybrid battery development, our technologies are steering innovation in promising directions.  For you, that means traveling in a lighter, safer, and more sustainable vehicle. Hop in.]]></item>
+                <item key="products.hotspot.car.interior_ceiling"><![CDATA[Above and Beyond]]></item>
+                <item key="products.hotspot.car.acoustics_lab"><![CDATA[Listen Closer ]]></item>
+                <item key="products.hotspot.car.seating"><![CDATA[Sustainable Comfort]]></item>
+                <item key="products.hotspot.car.cockpits_and_instrument_panels"><![CDATA[Enhanced Interaction]]></item>
+                <item key="products.hotspot.car.hybrid_batteries"><![CDATA[Drive Fuel Efficiency]]></item>
+                <item key="products.hotspot.car.door_panels"><![CDATA[Open to Solutions]]></item>
+                <item key="products.hotspot.car.battery_recycling"><![CDATA[Recycling Power]]></item>
+                <item key="products.hotspot.car.floor_consoles"><![CDATA[Interior Efficiency]]></item>
+                <item key="products.hotspot.car.electronics"><![CDATA[Connect to Integration]]></item>
+                <item key="products.headline.car.interior_ceiling"><![CDATA[Above and Beyond]]></item>
+                <item key="products.body.car.interior_ceiling"><![CDATA[Cost-effective solutions for vehicle overheads are looking up. With our help, auto manufacturers are bringing improved overhead form and function to the driving experience.<br><br>Best of all, the savings can be passed along to drivers when we deliver high-quality craftsmanship with cost-effective solutions. Whether it's our clever new tucked-edge technology for sun visors, or our back-injection molded textile pillar trim, we aim to aim high.<br><br>As a leading manufacturer of vehicle overhead systems and modules, including sun visors, grab handles, overhead consoles, and headliners, we know our way around vehicle interior overheads. Now, it’s time we got to know you.]]></item>
+                <item key="products.linkcopy.car.interior_ceiling"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.car.interior_ceiling"><![CDATA[]]></item>
+                <item key="products.headline.car.acoustics_lab"><![CDATA[Listen Closer ]]></item>
+                <item key="products.body.car.acoustics_lab"><![CDATA[We’re tuned into the growing demand for quieter vehicle interiors. That’s why we created a unique acoustics laboratory where -well- we listen.<br><br>The lab helps us study and address the acoustic and vibration properties of automotive interiors, especially those with hands-free systems. We can simulate noise environments, test absorption properties of materials, and predict the noise environment of a vehicle’s interior design. Then, we apply what we've learned to develop ingenious ways to make vehicles quieter.<br><br>Sound like something you need? We’re listening.]]></item>
+                <item key="products.linkcopy.car.acoustics_lab"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.car.acoustics_lab"><![CDATA[]]></item>
+                <item key="products.headline.car.seating"><![CDATA[Sustainable Comfort]]></item>
+                <item key="products.body.car.seating"><![CDATA[Take comfort in sustainable solutions. When our experts figured out a way to use coconut fiber to make seat padding, they simultaneously created a more comfortable and eco-friendly ride.<br><br>Now, we use coconut fiber as a renewable raw material in our FaserTec product to bring climatic, physical, economic, and ecological benefits to a variety of makes and models around the world. It’s just one of the ways we’ve applied new thinking to how vehicle seats function and feel, inside and out.<br><br>As one of the worlds leading suppliers for seating components and systems, we’re ready to help transform the driving experience with renewable seating solutions.]]></item>
+                <item key="products.linkcopy.car.seating"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.car.seating"><![CDATA[]]></item>
+                <item key="products.headline.car.cockpits_and_instrument_panels"><![CDATA[Enhanced Interaction]]></item>
+                <item key="products.body.car.cockpits_and_instrument_panels"><![CDATA[To make drivers feel at home behind the wheel, put experience in the driver’s seat. Our design, engineering, and manufacturing expertise help us focus the development of cockpits and instrument panels around performance, aesthetics, and value, for all types of vehicles.<br><br>Take our solutions for creating strong, light, recyclable, and cost-competitive instrument panels. Discerning drivers demand all this, as well as excellent finishes inside the vehicle. Our approach to creating panels allows us to tailor surface material, color and pattern to the customers' needs. Which means you don’t have to choose between performance and aesthetics.You get both.<br><br>As the main point of interaction between the driver and the vehicle, you deserve to get what you want in an instrument panel. Go ahead, demand more. We’re here to help.]]></item>
+                <item key="products.linkcopy.car.cockpits_and_instrument_panels"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.car.cockpits_and_instrument_panels"><![CDATA[]]></item>
+                <item key="products.headline.car.hybrid_batteries"><![CDATA[Drive Fuel Efficiency]]></item>
+                <item key="products.body.car.hybrid_batteries"><![CDATA[Go greener with your next car. As the leading independent provider of advanced battery systems that make vehicles more energy-efficient, we know your purchasing decision is momentous.<br><br>With dedicated research and development centers worldwide, including the United States, Europe, and China, our employees continue to break new ground in the development of advanced battery systems for Hybrid Electric Vehicles (HEVs). Plug-In Electric Vehicles (PHEVs) and Electric Vehicles (EVs).<br><br>HEVs and PHEVs combine the internal combustion engine of a conventional vehicle with the battery and electric motor of an electric vehicle, resulting in up to twice the fuel economy of traditional vehicles. And an EV can reduce your fuel bill by about 80% by displacing expensive petroleum with relatively cost effective electricity.<br><br>It took innovative minds from many companies and industries to make HEVs a reality. Can we help make it a reality for you?]]></item>
+                <item key="products.linkcopy.car.hybrid_batteries"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.car.hybrid_batteries"><![CDATA[]]></item>
+                <item key="products.headline.car.door_panels"><![CDATA[Open to Solutions]]></item>
+                <item key="products.body.car.door_panels"><![CDATA[Open the door to solutions that exceed expectations. When our research pointed to a demand for better aesthetics, craftsmanship, and long-term functionality, we answered with innovative materials and processes that make the driving experience more enjoyable.<br><br>It’s possible you’ve been enjoying our work without even knowing it. Auto manufacturers around the world choose from our industry-leading product portfolio to make their vehicle door panels and door systems. Our offerings include renewable, natural, fiber-based technologies that are lightweight and environmentally responsible, and that have good acoustic and energy-absorbing properties.<br><br>To you, it may be just a good car door. To us, it’s an open invitation to innovate.]]></item>
+                <item key="products.linkcopy.car.door_panels"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.car.door_panels"><![CDATA[]]></item>
+                <item key="products.headline.car.battery_recycling"><![CDATA[Recycling Power]]></item>
+                <item key="products.body.car.battery_recycling"><![CDATA[Harness the power of recycling lead-acid automotive batteries. Seeing the environmental and business benefits of recycling our own batteries, we developed a recycling plan and worked with other industries, retailers, and consumers to promote battery recycling worldwide.<br><br>The environmental benefit is obvious. And for auto manufacturers, the simplicity and profitability of our service is a bonus, too. First, we build the batteries with recycling in mind. Then, at each location where we deliver fresh batteries, we also pick up spent batteries and deliver them to a licensed smelter for recycling.<br><br>As a result, lead-acid automotive batteries are one of the most highly recycled consumer products, with return rates frequently exceeding 95% in North America. ]]></item>
+                <item key="products.linkcopy.car.battery_recycling"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.car.battery_recycling"><![CDATA[]]></item>
+                <item key="products.headline.car.floor_consoles"><![CDATA[Interior Efficiency]]></item>
+                <item key="products.body.car.floor_consoles"><![CDATA[The time we put into developing high-quality floor consoles is saving vehicle manufacturers time on the production floor. Why so much effort to make something most drivers take for granted?<br><br>Well, our floor consoles not only save manufacturers substantial time, but also reduce assembly fatigue. You see, our assembly process is more ergonomic than traditional assembly methods, so it further increases efficiency. And, when manufacturers save time and money building a car, drivers get more value.<br><br>We were the first manufacturer to bring a vehicle floor console module into series production. Now, we lead the industry in designing, engineering, and manufacturing storage solutions for all vehicle segments and trim levels. You could say we’ve walked the walk. And we’re happy to walk through it with you, too.]]></item>
+                <item key="products.linkcopy.car.floor_consoles"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.car.floor_consoles"><![CDATA[]]></item>
+                <item key="products.headline.car.electronics"><![CDATA[Connect to Integration]]></item>
+                <item key="products.body.car.electronics"><![CDATA[For a more comfortable, safe, and connected vehicle, plug into innovative electronics solutions. Our experts work closely with auto manufacturers to create cost-effective electronic systems that work across multiple model platforms.<br><br>For drivers, this means smarter vehicles to choose from. Our teams of engineers and designers develop ingenious solutions for driver information, connectivity and telematics, body electronics and HomeLink ®.<br><br>Using radio frequency technology, HomeLink allows your vehicle to communicate with your home, opening garage doors and estate gates, unlocking doors, and turning on your home lighting. Our Industrial Design team creates intelligent solutions that set new benchmarks in craftsmanship, design, ergonomics, user-friendliness, and integration.<br><br>Let’s team up and connect to a better driving experience.]]></item>
+                <item key="products.linkcopy.car.electronics"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link.car.electronics"><![CDATA[http://www.johnsoncontrols.com/publish/us/en/products/automotive_experience/Electronics.html?WT.mc_id=123555]]></item>
+                <item key="products.link2copy.car.electronics"><![CDATA[]]></item>
+                <item key="products.headline.house.landing"><![CDATA[Home, Sweet, Comfortable and<br>Sustainable Home]]></item>
+                <item key="products.body.house.landing"><![CDATA[The comforts of home are more reassuring every day. Heating, cooling, energy, and air quality systems are more efficient and sustainable. Sensors in your home that activate lights and doors can talk to your car. Technology connects your office to your home, to your favorite café, and to colleagues around the world. Welcome home to a growing number of innovative solutions. They seemed like the neighborly thing to do.]]></item>
+                <item key="products.hotspot.house.heating"><![CDATA[Cut Heating Costs]]></item>
+                <item key="products.hotspot.house.air_conditioning"><![CDATA[Cool More for Less]]></item>
+                <item key="products.hotspot.house.flexible_working"><![CDATA[Work Where You Want]]></item>
+                <item key="products.hotspot.house.air_quality"><![CDATA[Breathe Easier]]></item>
+                <item key="products.hotspot.house.homelink"><![CDATA[Connecting Car and Home]]></item>
+                <item key="products.headline.house.heating"><![CDATA[Cut Heating Costs]]></item>
+                <item key="products.body.house.heating"><![CDATA[Efficient comfort is an idea anyone can warm up to. Take our YORK® Affinity® variable-speed air handler. It’s 24 times quieter than conventional single-speed air handlers and uses one-fifth the energy. Plus, you can get more consistent air temperatures and lower noise from our new YORK® Affinity® gas furnace, which modulates airflow to closely match the amount of heat you need, all with an industry leading 98% energy-efficiency rating. Is your home ready for an innovation update?]]></item>
+                <item key="products.linkcopy.house.heating"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.house.heating"><![CDATA[]]></item>
+                <item key="products.headline.house.air_conditioning"><![CDATA[Cool More for Less]]></item>
+                <item key="products.body.house.air_conditioning"><![CDATA[Lower the cost of lowering the temperature in your home. Our innovative MicroChannel™ air conditioning technology is 30% smaller than competing systems, uses up to 50% less refrigerant, and reduces installation costs. And, if you think that sounds cool, consider the annual savings you’ll see with our energy-efficient, multi-stage heat pump that will keep your home comfortable year-round.]]></item>
+                <item key="products.linkcopy.house.air_conditioning"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.house.air_conditioning"><![CDATA[]]></item>
+                <item key="products.headline.house.flexible_working"><![CDATA[Work Where You Want]]></item>
+                <item key="products.body.house.flexible_working"><![CDATA[Add flexibility to your professional strengths. We’re helping people like you make the most of new technologies that support flexible working from remote locations, including the home, hotels, Internet cafés, and more.<br><br>And we can help you and your employer stay informed of the ever-changing work landscape. Our annual Flexible Working Survey examines the way people work and provides businesses with fresh insights on how to align HR, IT, and workplace strategies to working practices.<br><br>Armed with the latest survey findings, our team of workplace consultants can analyze, recommend, and implement flexible working solutions for any business, operating in any sector, in any type of environment. Can we get to work on your work solution?]]></item>
+                <item key="products.linkcopy.house.flexible_working"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.house.flexible_working"><![CDATA[]]></item>
+                <item key="products.headline.house.air_quality"><![CDATA[Breathe Easier]]></item>
+                <item key="products.body.house.air_quality"><![CDATA[Your whole family can breathe pure air because our YORK® Affinity® air cleaners lead all competitors in particle removal, and they require little maintenance. Now, that’s a breath or two of fresh air.]]></item>
+                <item key="products.linkcopy.house.air_quality"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.house.air_quality"><![CDATA[]]></item>
+                <item key="products.headline.house.homelink"><![CDATA[Connecting Car and Home]]></item>
+                <item key="products.body.house.homelink"><![CDATA[Come home to the convenience of HomeLink®. With radio frequency technology, our HomeLink system lets your car communicate with your home, opening garage doors, and estate gates, unlocking doors and turning on home and garden lighting. Most importantly, it puts a convenient and safe arrival at your fingertips.]]></item>
+                <item key="products.linkcopy.house.homelink"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.house.homelink"><![CDATA[]]></item>
+                <item key="products.headline.building.landing"><![CDATA[Smart Buildings.<br>A No-brainer for Any Business.]]></item>
+                <item key="products.body.building.landing"><![CDATA[Finding ingenious ways to optimize a building’s energy efficiency and operational performance can help save money. Plus building occupants who are more comfortable and secure are happier and more productive. The industry knows them as heating, ventilation and air conditioning (HVAC) systems; refrigeration; fire and security systems; and portfolio and facilities management. You know them as smart solutions. The kind that make buildings more comfortable, safe, and sustainable. So, why rack your brain? We can help you develop a smart building. Your smartest business decision ever.]]></item>
+                <item key="products.hotspot.building.central_heating_and_cooling"><![CDATA[Operating Comfortably]]></item>
+                <item key="products.hotspot.building.renewable_energy_resources"><![CDATA[Renewable Energy]]></item>
+                <item key="products.hotspot.building.future_workplace_consulting_and_research"><![CDATA[Attracting Talent]]></item>
+                <item key="products.hotspot.building.energy_management_systems"><![CDATA[Intelligent Information]]></item>
+                <item key="products.hotspot.building.building_services"><![CDATA[Ingenious Integration]]></item>
+                <item key="products.hotspot.building.advisory_and_consulting_services"><![CDATA[Sustainable Solutions]]></item>
+                <item key="products.hotspot.building.portfolio_and_facilities_management"><![CDATA[Optimized Performance]]></item>
+                <item key="products.hotspot.building.fire_safety_and_security_systems"><![CDATA[Better Protection]]></item>
+                <item key="products.hotspot.building.service"><![CDATA[Maximum Uptime]]></item>
+                <item key="products.headline.building.central_heating_and_cooling"><![CDATA[Operating Comfortably]]></item>
+                <item key="products.body.building.central_heating_and_cooling"><![CDATA[You’ll find comfort in efficiency. Did you know buildings consume 40% of total available energy on the grid, with chillers and boilers in large buildings demanding a significant portion? Let us help you solve your challenges and turn them into better performance.<br><br>From efficient and environmentally friendly chillers to software programs that optimize cold and hot water delivery building-wide, you’ll be making a difference that everyone in your company can feel.<br><br>Our HVAC systems are efficiently at work in thousands of buildings around the world. And our full-time on-site staff is there, too. Because when your business is running more comfortably, it can run more profitably.]]></item>
+                <item key="products.linkcopy.building.central_heating_and_cooling"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.building.central_heating_and_cooling"><![CDATA[]]></item>
+                <item key="products.headline.building.renewable_energy_resources"><![CDATA[Renewable Energy]]></item>
+                <item key="products.body.building.renewable_energy_resources"><![CDATA[Convert our tireless energy into your renewable energy. You’ll find long-term, sustainable solutions when renewable technologies are innovatively mixed with new energy efficiency strategies.<br><br>For you, this is energy production, no sweat. We roll up our sleeves and design, engineer, install, commission, operate, and maintain the renewable energy solutions.<br><br>Fossil fuels may increase in price. Concerns about their economic and environmental impact may grow. But you can rest assured that we’ll continue to apply our ingenuity to the global demand for on-site, renewable energy solutions.]]></item>
+                <item key="products.linkcopy.building.renewable_energy_resources"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.building.renewable_energy_resources"><![CDATA[]]></item>
+                <item key="products.headline.building.future_workplace_consulting_and_research"><![CDATA[Attracting Talent]]></item>
+                <item key="products.body.building.future_workplace_consulting_and_research"><![CDATA[Your building can be a bridge to the future. With the right planning, your workplace will have the attributes essential to the future recruitment and retention of the talent you need to meet your business objectives.<br><br>Did you know that, despite a world population of 1.174 billion people between the ages of 15 and 24, there are insufficient Generation-Y workers to meet the future needs of business? This got us thinking.<br><br>Our OXYGENZ research is a global survey of Generation-Y (18-25 year-olds) that sheds light on their preferences for a future workplace. Providing vital information for businesses looking to secure the best talent in the future.<br><br>Will workplaces evolve and adapt to changing global conditions? We’re here to help you prepare.]]></item>
+                <item key="products.linkcopy.building.future_workplace_consulting_and_research"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.building.future_workplace_consulting_and_research"><![CDATA[<font color="#333333">More at</font> <font color="#656565">OXYGENZ.com</font>]]></item>
+                <item key="products.headline.building.energy_management_systems"><![CDATA[Intelligent Information]]></item>
+                <item key="products.body.building.energy_management_systems"><![CDATA[To help you manage today’s high-tech systems, we’ve rethought how buildings think. Our energy management systems integrate hundreds of components in buildings worldwide, using the minimum amount of energy possible to keep employees like yours comfortable and focused on their core activities.<br><br>One example is Metasys®, a building management system that works as a central brain to monitor and automate your HVAC systems simultaneously with the lighting, access and fire/safety systems. Besides the confidence of knowing Metasys® is busy at work, you also have comprehensive performance reports that make informed management decisions feel like second nature.]]></item>
+                <item key="products.linkcopy.building.energy_management_systems"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.building.energy_management_systems"><![CDATA[]]></item>
+                <item key="products.headline.building.building_services"><![CDATA[Ingenious Integration]]></item>
+                <item key="products.body.building.building_services"><![CDATA[The smartest buildings are built that way. Your people work more effectively when our experts keep them in mind during the design, construction, commissioning, management, and maintenance of their workplaces.<br><br>And your employees can achieve local organizational efficiency on a global scale when our technology integrates traditional building systems with business and enterprise systems, such as hospital nurse calls, airport flight information, and industrial asset tracking.]]></item>
+                <item key="products.linkcopy.building.building_services"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.building.building_services"><![CDATA[]]></item>
+                <item key="products.headline.building.advisory_and_consulting_services"><![CDATA[Sustainable Solutions]]></item>
+                <item key="products.body.building.advisory_and_consulting_services"><![CDATA[Discover workplace solutions that are as unique as your business. Achieve sustainability goals. Drive down costs. Drive up efficiency. Maintain business continuity. Attract and retain talent. Name the challenge your business is facing, and we’ll talk solutions.<br><br>Take our award-winning Sustainability Solutions Navigator™ game-board planning tool, for example. It provides a structured, interactive process for your cross-functional teams to quickly assess sustainability needs and practices, as well as building consensus and accountability within the team.<br><br>We can analyze, recommend, and implement workplace solutions for any business, operating in any sector, in any type of environment around the world. Can we help you?]]></item>
+                <item key="products.linkcopy.building.advisory_and_consulting_services"><![CDATA[<font color="#333333">More about</font> <font color="#656565">Innovation Services</font>]]></item>
+                <item key="products.link2copy.building.advisory_and_consulting_services"><![CDATA[<font color="#333333">More about</font> <font color="#656565">WorkPlace Solutions</font>]]></item>
+                <item key="products.headline.building.portfolio_and_facilities_management"><![CDATA[Optimized Performance]]></item>
+                <item key="products.body.building.portfolio_and_facilities_management"><![CDATA[Optimizing every square foot of your facilities requires an understanding of, well, foot traffic. Once we understand your property portfolio, we'll help you understand what works, what doesn’t, and what ingenious solutions can be used to drive change.<br><br>Our VISIBLE Living Lab is a revolutionary award-winning tool that can help you do just that.  By observing workspace occupancy in real time, you can improve space utilization, increase staff productivity, and cut costs. Ultimately, you make better decisions to achieve optimal integration of people, space, processes, and technology.<br><br>Currently, we’re trusted to manage over one billion square feet of facilities globally for some of the world’s largest companies.]]></item>
+                <item key="products.linkcopy.building.portfolio_and_facilities_management"><![CDATA[<font color="#333333">More about</font> <font color="#656565">the Real Estate Lifecycle</font> ]]></item>
+                <item key="products.link2copy.building.portfolio_and_facilities_management"><![CDATA[<font color="#333333">More about <font color="#656565">WorkPlace Innovation</font>]]></item>
+                <item key="products.headline.building.fire_safety_and_security_systems"><![CDATA[Better Protection]]></item>
+                <item key="products.body.building.fire_safety_and_security_systems"><![CDATA[Let’s talk about ingenuity you can depend on around the clock. When your security professionals can monitor all building functions from a single location or device, you’re protecting both your people and your bottom line.<br><br>Innovation is key. Our video technology continuously analyzes a building’s interior, pixel by pixel, looking for characteristics of smoke or flame. It can identify fire much sooner than traditional smoke detectors, allowing for corrective action before your sprinkler system activates.  We also integrate our security card access systems with video surveillance, intruder alarms, perimeter protection, fire detection systems, and building management systems. All so you can work safer during the day and sleep better at night.]]></item>
+                <item key="products.linkcopy.building.fire_safety_and_security_systems"><![CDATA[<font color="#333333">More about</font> <font color="#656565">Fire Life Safety</font>]]></item>
+                <item key="products.link2copy.building.fire_safety_and_security_systems"><![CDATA[<font color="#333333">More about</font> <font color="#656565">Security</font>]]></item>
+                <item key="products.headline.building.service"><![CDATA[Maximum Uptime]]></item>
+                <item key="products.body.building.service"><![CDATA[Say hello to your very own ingenuity envoy. With over 15,000  technicians and more than 500 service locations around the world, we help your facilities stay running at full potential.<br><br>From routine coil cleaning and filter replacement to complex chiller overhauls and HVAC system retrofits, each service job adds up to the big picture. You’ll increase asset life, maximize energy efficiency, and, most importantly, create a more comfortable, safe, and sustainable building environment.<br><br>Think of it as the attention to detail of a local service provider, brought to you by the expertise, resources, professionalism, and results of a global industry leader.]]></item>
+                <item key="products.linkcopy.building.service"><![CDATA[<font color="#333333">More at</font> <font color="#656565">johnsoncontrols.com</font>]]></item>
+                <item key="products.link2copy.building.service"><![CDATA[]]></item>
+                <item key="join.nav.about_us"><![CDATA[About Us]]></item>
+                <item key="join.headline.about_us"><![CDATA[Ingenious Careers]]></item>
+                <item key="join.body.about_us"><![CDATA[To us, ingenuity means being creative, resourceful, skilled, and a good problem solver. We seek people who are motivated to continuously improve how things work and make the world a better place.<br><br>Sound like a place for you? Please tell us more about yourself.]]></item>
+                <item key="join.nav.ingenuity_welcome"><![CDATA[Ingenuity Welcome]]></item>
+                <item key="join.headline.ingenuity_welcome"><![CDATA[Ingenious Careers]]></item>
+                <item key="join.body.ingenuity_welcome"><![CDATA[We go beyond smart to deliver truly ingenious products and services that help our customers be more successful. But ingenuity doesn’t just happen. It has to be nurtured and protected in an environment that champions new ideas and respects diverse viewpoints, hard work, and honesty. The result is an innovative atmosphere that fosters personal growth and teamwork.<br><br>We look forward to seeing what you think.]]></item>
+                <item key="join.nav.history"><![CDATA[History]]></item>
+                <item key="join.headline.history"><![CDATA[Ingenious Careers]]></item>
+                <item key="join.body.history"><![CDATA[Innovation has been our motivation since 1885. Maybe that’s why we’re accustomed to saying “ingenuity welcome” in every aspect of our company, from our products and services to our people and the way we run our business.<br><br>As you learn more about the pioneering spirit of our past, we hope you’ll feel compelled to be a part of our future.]]></item>
+                <item key="join.button.join_in"><![CDATA[Join In]]></item>
+                <item key="games.headline.landing"><![CDATA[Test Your Ingenuity]]></item>
+                <item key="games.body.landing"><![CDATA[Every day, we use ingenuity to challenge the status quo and find game-changing solutions. It’s all about solving problems, and not stopping until we’ve found the smartest, most efficient way to do it.  Now, it’s your turn. Can you find a creative, efficient solution to our challenge?]]></item>
+                <item key="games.title.landing.game_1"><![CDATA[Coconut Run]]></item>
+                <item key="games.body.landing.game_1"><![CDATA[Let’s turn a sustainable raw material into comfortable car seats. Your job is to engineer a cart that can traverse rough terrain and deliver coconuts to the shredder. Ready when you are.]]></item>
+                <item key="games.button.landing.game_1"><![CDATA[Play]]></item>
+                <item key="games.title.landing.game_2"><![CDATA[Particle Pro]]></item>
+                <item key="games.body.landing.game_2"><![CDATA[]]></item>
+                <item key="games.button.landing.game_2"><![CDATA[Play]]></item>
+                <item key="games.title.landing.game_3"><![CDATA[Piggy Power]]></item>
+                <item key="games.body.landing.game_3"><![CDATA[]]></item>
+                <item key="games.button.landing.game_3"><![CDATA[Play]]></item>
+                <item key="games.title.landing.coming_soon"><![CDATA[Coming Soon]]></item>
+                <item key="games.headline.tutorial.game_1"><![CDATA[Coconut Run Tutorial Video]]></item>
+                <item key="games.button.game_1.back"><![CDATA[Back to Games]]></item>
+                <item key="games.headline.game_1.title"><![CDATA[Coconut Run]]></item>
+                <item key="games.body.game_1.title"><![CDATA[]]></item>
+                <item key="games.button.game_1.start"><![CDATA[Start]]></item>
+                <item key="games.button.game_1.back"><![CDATA[Back to Introduction]]></item>
+                <item key="games.headline.game_1.build"><![CDATA[Build Your Cart]]></item>
+                <item key="games.label.game_1.create"><![CDATA[Build Tools]]></item>
+                <item key="games.label.game_1.delete"><![CDATA[Delete Tools]]></item>
+                <item key="games.checkbox.game_1.build"><![CDATA[Show Tips]]></item>
+                <item key="games.button.game_1.example"><![CDATA[Example Cart]]></item>
+                <item key="games.button.game_1.start"><![CDATA[Start]]></item>
+                <item key="games.body.game_1.get_started"><![CDATA[Any successful Coconut Run begins with an ingenious design. Use the toolkit to build a cart that can safely transport the coconuts to the finish. Efficiency is key: Your cart design will be judged not only on how many of the coconuts you carry across, but also on how quickly you complete the run. It's time to test your ingenuity!]]></item>
+                <item key="games.body.game_1.no_wheels"><![CDATA[Your cart is missing wheels! Without wheels, your cart won't be able to accelerate. Try adding a wheel or two to your design before continuing.]]></item>
+                <item key="games.body.game_1.delete_all"><![CDATA[The Clear Tool deletes your entire cart. All work will be permanently discarded. Are you sure that you want to clear your cart?]]></item>
+                <item key="games.body.game_1.example"><![CDATA[Need some inspiration? There are countless ways to build your cart, but it will take a little ingenuity to make it efficient. Would you like to see an example of an efficient cart design? This will delete your current cart.]]></item>
+                <item key="games.button.game_1.yes"><![CDATA[Yes]]></item>
+                <item key="games.button.game_1.no"><![CDATA[No]]></item>
+                <item key="games.body.game_1.circle"><![CDATA[Use the Circle Tool to create circle parts. Click on the stage to begin drawing a circle, and drag to set its size. Drawing a circle over another part of your cart will attach the circle to that part. Circles can be useful for creating unpowered wheels and complex joints.]]></item>
+                <item key="games.body.game_1.line"><![CDATA[Use the Line Tool to create line parts. Click on the stage to begin drawing a line, and drag to set the position of its other end. Drawing a line over another part of your cart will attach the line to that part. Lines can be useful for creating structural and support parts.]]></item>
+                <item key="games.body.game_1.box"><![CDATA[Use the Box Tool to create box parts. Click on the stage to begin drawing a box, and drag to set its size and orientation. Drawing a box over another part of your cart will attach the box to that part. Boxes can be useful for creating structural parts and adding mass to your cart.]]></item>
+                <item key="games.body.game_1.shock"><![CDATA[Use the Shock Tool to create flexible connections between cart parts. Click on the stage to begin drawing a shock, and drag to set the position of its other end. Shocks connect parts together, so each endpoint should attach to a different part of the cart. Shocks can be useful as springs or elastic connectors.]]></item>
+                <item key="games.body.game_1.wheel"><![CDATA[Use the Wheel Tool to create wheel parts. Click on the stage to begin drawing a wheel, and drag to set its size. When the center of a wheel is drawn over another part of your cart, the wheel will attach to that part. Wheel parts will rotate when the arrow keys are pressed. They can propel your cart or even power gear systems.]]></item>
+                <item key="games.body.game_1.delete"><![CDATA[Use the Delete Tool to delete any part from your cart. Simply click on the part of your cart that you wish to remove. Use care when clicking — deleted parts cannot be restored.]]></item>
+                <item key="games.checkbox.game_1.tip"><![CDATA[Turn Off Tips]]></item>
+                <item key="games.headline.game_1.drive"><![CDATA[Transport the Coconuts]]></item>
+                <item key="games.button.game_1.quit"><![CDATA[Give Up]]></item>
+                <item key="games.headline.game_1.start_driving"><![CDATA[Release the Coconuts]]></item>
+                <item key="games.body.game_1.start_driving"><![CDATA[You've built your cart—now test its efficiency in the Coconut Run! Click here to release the coconuts, then use the arrow keys to quickly carry as many coconuts as you can to the finish.]]></item>
+                <item key="games.body.game_1.congrats"><![CDATA[Nice Work!]]></item>
+                <item key="games.headline.game_1.title"><![CDATA[]]></item>
+                <item key="games.headline.game_1.other_challenges"><![CDATA[Your Top Scores]]></item>
+                <item key="games.label.game_1.game_1"><![CDATA[Coconut Run]]></item>
+                <item key="games.label.game_1.game_2"><![CDATA[]]></item>
+                <item key="games.label.game_1.game_3"><![CDATA[]]></item>
+                <item key="games.headline.game_1.efficiency_rating"><![CDATA[Your Efficiency Rating]]></item>
+                <item key="games.headline.game_1.try_again"><![CDATA[Try Again?]]></item>
+                <item key="games.button.game_1.edit_car"><![CDATA[Edit Your Cart]]></item>
+                <item key="games.button.game_1.example"><![CDATA[Use Example Cart]]></item>
+                <item key="games.headline.game_1.product"><![CDATA[Sustainable Comfort]]></item>
+                <item key="games.body.game_1.product"><![CDATA[Shredding coconut fiber to make comfortable car seats. Not just a game, but one of the ingenious solutions we use to make vehicle interiors more sustainable and the driving experience more enjoyable. ]]></item>
+                <item key="games.button.game_1.product"><![CDATA[More at johnsoncontrols.com]]></item>
+                <item key="games.link.game_1.product"><![CDATA[]]></item>
+                <item key="games.button.game_1.ok"><![CDATA[OK]]></item>
+                <item key="games.body.game_1.product"><![CDATA[Shredding coconut fiber to make comfortable car seats. Not just a game, but one of the ingenious solutions we use to make vehicle interiors more sustainable and the driving experience more enjoyable. ]]></item>
+                <item key="games.button.game_1.product"><![CDATA[More at johnsoncontrols.com]]></item>
+                <item key="games.link.game_1.product"><![CDATA[]]></item>
+        
+        
+        <!-- Begin Game 2 Copy Keys-->
+    
+    
+                <item key="games.title.landing.game_2"><![CDATA[Particle Pro]]></item>
+                <item key="games.title2.landing.game_2"><![CDATA[Particle Pro]]></item>
+                <item key="games.body.landing.game_2"><![CDATA[Make yourself comfortable with energy-efficient systems. Your challenge is to carefully route this home’s air, water, and electricity particles to the corresponding receptors. Welcome home.]]></item>
+                <item key="games.button.game_2.view_tutorial"><![CDATA[View Tutorial]]></item>
+                <item key="games.button.game_2.play_game"><![CDATA[Play Game]]></item>
+                <item key="games.headline.tutorial.game_2"><![CDATA[Particle Pro Tutorial Video]]></item>
+                <item key="games.body.game_2.begin"><![CDATA[To become a true Particle Pro, you’ll need to connect this home’s utilities efficiently. Build an ingenious system that routes the air, water, and electricity particles to every receptor of the same color. Your system will be judged on how many particles make it to every receptor and how much it costs to run. It’s time to test your ingenuity!]]></item>
+                <item key="games.body.game_2.clear"><![CDATA[The Clear All Tool deletes all of your system's tools. All work will be permanently discarded. Are you sure you want to clear your system?]]></item>
+                <item key="games.body.game_2.example"><![CDATA[Need some inspiration? There are countless ways to route the particles, but it will take a little ingenuity to do it efficiently. Would you like to see an example of an efficient system? (This will delete your current system.)]]></item>
+                <item key="games.body.game_2.zoom"><![CDATA[Use the Zoom Tool to magnify the floor plan. Click and drag the slider handle to zoom in and out for precise tool adjustments. When zoomed in, click and drag the floor plan to move about the home.]]></item>
+                <item key="games.body.game_2.reflector"><![CDATA[Use the Reflector Tool to deflect particles in another direction. Reflectors are a cheap way to get particles around the home.<br><br>Cost: 1 credit.]]></item>
+                <item key="games.body.game_2.splitter"><![CDATA[Use the Splitter Tool to split one particle stream into two. Splitters are helpful when particles need to go in different directions.<br><br>Cost: 3 credits.]]></item>
+                <item key="games.body.game_2.accelerator"><![CDATA[Use the Accelerator Tool to speed up a particle stream. Because particles only exist for a short time after emission, Accelerators are necessary for routing particles across large distances and keeping receptors full.<br><br>Cost: 5 credits.]]></item>
+                <item key="games.body.game_2.funnel"><![CDATA[Use the Funnel Tool to channel particles into a focused stream. Funnels are useful when particles need to go in a precise direction, but they remove some velocity.<br><br>Cost: 3 credits.]]></item>
+                <item key="games.body.game_2.cost"><![CDATA[This is the total cost of all Tools in your system. Lower cost systems result in higher efficiency scores.]]></item>
+                <item key="games.body.game_2.cleartip"><![CDATA[Click to delete your system.]]></item>
+                <item key="games.body.game_2.exampletip"><![CDATA[Click to see an example of an efficient system.]]></item>
+                <item key="games.body.game_2.finish"><![CDATA[Click to finish the game and see your efficiency score.]]></item>
+                <item key="games.headline.game_2.tool_panel"><![CDATA[Tools]]></item>
+                <item key="games.button.game_2.clear"><![CDATA[Clear All]]></item>
+                <item key="games.button.game_2.example"><![CDATA[See Example]]></item>
+                <item key="games.button.game_2.finish"><![CDATA[Finished]]></item>
+                <item key="games.headline.game_2.product"><![CDATA[Efficient Energy]]></item>
+                <item key="games.body.game_2.product"><![CDATA[Designing energy-efficient systems for home environments is the key to comfort, safety and sustainability. We're up for the challenge every day, because we know our work helps millions of people and our planet.]]></item>
+                <item key="games.button.game_2.edit"><![CDATA[Edit Your System]]></item>
+                <item key="games.button.game_2.example"><![CDATA[See Example System]]></item>
+        
+        
+        
+    <!-- Begin Game 3 Copy Keys-->
+    
+                <item key="games.label.game_3.game_3"><![CDATA[Piggy Power]]></item>
+                <item key="games.headline.tutorial.game_3"><![CDATA[Piggy Power Tutorial Video]]></item>
+                <item key="games.body.landing.game_3"><![CDATA[Plug in to cost-effective solutions. Your mission is to build a pathway for your piggy bank so it can quickly find and upgrade the inefficient security, fire, lighting, heating/cooling, and refrigeration systems. Let’s start saving.]]></item>
+                <item key="games.body.game_3.begin"><![CDATA[Finding cost-effective solutions for inefficient buildings requires ingenuity. Use yours to construct a pathway that leads to each of the building’s five inefficient systems, so the piggy bank can upgrade them and save money. Your pathway will be judged on speed, safety, and money saved. It’s time to test your ingenuity!]]></item>
+                <item key="games.body.game_3.clear"><![CDATA[The Clear All Tool deletes all of your pathway’s pieces. All work will be permanently discarded. Are you sure that you want to clear your path?]]></item>
+                <item key="games.body.game_3.example"><![CDATA[Need some inspiration? There are countless ways to construct your path, but it takes a little ingenuity to earn big savings. Would you like to see an example of a cost-effective pathway? (This will delete your current path.)]]></item>
+                <item key="games.body.game_3.scroller"><![CDATA[Use this Scroll Slider to pan up and down the building. Click and drag the slider handle to view higher or lower building levels that may be offscreen.]]></item>
+                <item key="games.body.game_3.fire_safety"><![CDATA[Fire Safety]]></item>
+                <item key="games.body.game_3.security"><![CDATA[Security]]></item>
+                <item key="games.body.game_3.lighting"><![CDATA[Lighting]]></item>
+                <item key="games.body.game_3.HVAC"><![CDATA[Heating, Ventilating, and Air Conditioning]]></item>
+                <item key="games.body.game_3.Refrigeration"><![CDATA[Refrigeration]]></item>
+                <item key="games.body.game_3.fire_controls"><![CDATA[Fire Control Panels]]></item>
+                <item key="games.body.game_3.security_systems"><![CDATA[Security Systems]]></item>
+                <item key="games.body.game_3.lighting_systems"><![CDATA[Lighting Systems]]></item>
+                <item key="games.body.game_3.thermostats"><![CDATA[Thermostats]]></item>
+                <item key="games.body.game_3.chillers"><![CDATA[Chillers]]></item>
+                <item key="games.body.game_3.platform"><![CDATA[Use this Platform Tool to create basic platforms and ramps upon which the pig can walk up the building. To make a platform, click on the stage to begin drawing and drag to set the platform’s length and slope.]]></item>
+                <item key="games.body.game_3.launch_pad"><![CDATA[Use this Launch Pad Tool to create launch pads that fling the pig into the air. To make a launch pad, click on the stage to begin drawing and drag to set the pad’s length and direction. Upon contact, the pig will be propelled in the direction of the launch pad’s arrows.]]></item>
+                <item key="games.body.game_3.elastic_body"><![CDATA[Use this Elastic Band Tool to create elastic bands that bounce the pig in another direction. To make an elastic band, click on the stage to begin drawing and drag to set the band’s length and slope. Upon contact, the pig will deflect off of the band according to its speed and trajectory.]]></item>
+                <item key="games.body.game_3.conveyor_belt"><![CDATA[Use this Conveyor Belt Tool to create conveyor belts that accelerate the pig. To make a con-veyor belt, click on the stage to begin drawing and drag to set the belt’s length, slope, and rotation direction. Upon contact, the pig will be accelerated in the direction of the belt’s rotation.]]></item>
+                <item key="games.body.game_3.cushion"><![CDATA[Use this Cushion Tool to create cloud cushions that dampen the pig’s movement. To make a cloud cushion, click on the stage to begin draw-ing and drag to set the cushion’s length and slope. Upon contact, the pig’s momentum will be stopped, and it will fall straight downwards.]]></item>
+                <item key="games.body.game_3.delete"><![CDATA[Use this Delete Tool to remove any pathway pieces that have been drawn on the stage. Simply click on a piece to delete it.]]></item>
+                <item key="games.body.game_3.delete_path"><![CDATA[Click to delete your pathway.]]></item>
+                <item key="games.body.game_3.exampletip"><![CDATA[Click to see an example of a cost-effective pathway.]]></item>
+                <item key="games.body.game_3.start"><![CDATA[Click to start the pig and test your pathway’s ingenuity!]]></item>
+                <item key="games.body.game_3.stop"><![CDATA[Click to stop the pig and make changes to your pathway.]]></item>
+                <item key="games.body.game_3.give_up"><![CDATA[Click to quit the game and see your savings score.]]></item>
+                <item key="games_button.game_3.stop"><![CDATA[Stop]]></item>
+                <item key="games.button.game_3.example_path"><![CDATA[Example Path]]></item>
+                <item key="games.headline.game_3.savings"><![CDATA[Total Savings]]></item>
+                <item key="games.headline.game_3.product"><![CDATA[Optimized Performance]]></item>
+                <item key="games.body.game_3.product"><![CDATA[Upgrading to energy-efficient and cost-effective building systems without breaking the bank is a real-world challenge. In fact, it’s a challenge we accept every day as we help companies big and small improve their bottom line.]]></item>
+                <item key="games_button_game_3.edit"><![CDATA[Edit Your Path]]></item>
+                <item key="games_button_game_3.see_example"><![CDATA[See Example Path]]></item>
+                <item key="games.headline.game_3.system_savings"><![CDATA[System Savings]]></item>
+                <item key="games.headline.game_3.savings_rating"><![CDATA[Your Savings Rating]]></item>
+                <item key="games.body.game_3.breakalert"><![CDATA[Oops! You broke the bank! While speed is key to bigger savings, if the pig collides with anything too forcefully, it’ll cost you. Try adjusting your pathway to avoid long falls and hard impacts.]]></item>
+                <item key="games.label.game_3.breakcheckbox"><![CDATA[Show Again]]></item>
+                <item key="games.body.game_3.bonus"><![CDATA[Earn bonus money when the pig consecutively touches five different types of pathway pieces.]]></item>
+                <item key="games.label.game_3.bonus"><![CDATA[Path Bonus]]></item>
+
+                
+    </items>
+</lang-data>
