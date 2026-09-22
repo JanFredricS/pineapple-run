@@ -283,6 +283,7 @@ export class AssetLibrary {
   private readonly sources: TextureSource[] = [];
   private baked: BakedAssets | null = null;
   private loaded = false;
+  private destroyed = false;
 
   constructor(
     defs: readonly SvgAssetDef[],
@@ -290,7 +291,12 @@ export class AssetLibrary {
   ) {
     const resolution = opts.resolution ?? rasterResolution(globalThis.devicePixelRatio);
     const backend = opts.backend ?? createBrowserBackend();
+    // Destroy-while-loading: rasterisation can't be aborted mid-decode, but a
+    // destroyed library never uploads (no GPU sources are created), never
+    // becomes ready, and `ready` still settles (resolves) so awaiting callers
+    // don't hang; `texture()` then reports the destroyed state.
     this.ready = bakeAssets(defs, backend, resolution).then((baked) => {
+      if (this.destroyed) return;
       this.baked = baked;
       this.upload(baked);
       this.loaded = true;
@@ -298,7 +304,11 @@ export class AssetLibrary {
   }
 
   get isReady(): boolean {
-    return this.loaded;
+    return this.loaded && !this.destroyed;
+  }
+
+  get isDestroyed(): boolean {
+    return this.destroyed;
   }
 
   get resolution(): number {
@@ -315,7 +325,10 @@ export class AssetLibrary {
 
   texture(id: string): Texture {
     const t = this.textures.get(id);
-    if (!t) throw new Error(this.loaded ? `unknown asset "${id}"` : `asset "${id}" requested before AssetLibrary.ready`);
+    if (!t) {
+      if (this.destroyed) throw new Error(`asset "${id}" requested from a destroyed AssetLibrary`);
+      throw new Error(this.loaded ? `unknown asset "${id}"` : `asset "${id}" requested before AssetLibrary.ready`);
+    }
     return t;
   }
 
@@ -360,6 +373,9 @@ export class AssetLibrary {
   }
 
   destroy(): void {
+    this.destroyed = true;
+    this.loaded = false;
+    this.baked = null;
     for (const t of this.textures.values()) t.destroy(false);
     for (const s of this.sources) s.destroy();
     this.textures.clear();

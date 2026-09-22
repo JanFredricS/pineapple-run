@@ -10,10 +10,23 @@
  * -> wheels -> shocks -> pineapples.
  *
  * Each body gets a Container built once in BODY-LOCAL metres from its
- * manifest shapes; per frame only its position/rotation change. Visuals are
- * diffed by body id when the manifest revision changes, so streamed terrain
- * chunks or spawned pineapples never rebuild the rest. Terrain meshes are
- * rebuilt only when the set of terrain bodies changes.
+ * manifest shapes; per frame only its position/rotation change.
+ *
+ * Invalidation: manifest revisions are SOURCE-LOCAL (a new physics world can
+ * restart at the same number and reuse body ids), so the revision alone is
+ * never trusted. Every frame the renderer does an O(n) reference check of each
+ * body's role / shapes / partIds arrays against what it last drew (the physics
+ * wrapper keeps those arrays stable for a body's lifetime); any difference —
+ * or a revision change, or `resetSource()` — triggers a full diff by content
+ * signature. Only bodies whose content actually changed are rebuilt, so
+ * streamed terrain chunks or spawned pineapples never rebuild the rest.
+ * Terrain meshes are keyed by theme + every terrain body's content signature
+ * + pose; shocks are rebound whenever any body visual changes.
+ *
+ * Ownership: prop ART belongs to `LevelDef.props` (drawn in the decor layer
+ * together with the blender goal). Manifest `prop` bodies are the solid
+ * colliders of those props and are deliberately not drawn (as are `debug`
+ * bodies), so a solid prop renders exactly once.
  */
 
 import { Container, MeshSimple, NineSliceSprite, Sprite, Texture, TilingSprite, Graphics } from 'pixi.js';
@@ -22,7 +35,7 @@ import type { CartDesign, PartKind } from '../model/cart';
 import { cameraTransform, type Camera } from '../model/coords';
 import type { Vec2 } from '../model/geometry';
 import type { LevelDef, ThemeId } from '../model/level';
-import type { BodyTransform, RenderBodyInfo, RenderSnapshot, SceneManifest } from '../model/snapshot';
+import type { BodyTransform, RenderBodyInfo, RenderShape, RenderSnapshot, SceneManifest } from '../model/snapshot';
 import { ART, BLENDER_LAYOUT, PROP_ART } from './artCatalog';
 import { BlenderView } from './blender';
 import { ParallaxBackground } from './parallax';
@@ -36,7 +49,7 @@ import {
   shockPose,
   type ShockBinding,
 } from './pose';
-import { chainPolylines, edgeStrip, fillMesh, maxY, medianY, shadeMesh, type MeshData } from './terrainMesh';
+import { chainPolylines, edgeStrip, fillMesh, horizonReferenceY, maxY, shadeMesh, type MeshData } from './terrainMesh';
 import { getTheme, hexToNumber, themeAssetId, type Theme } from './themes';
 import { SHADE_ID, type TextureProvider } from './textures';
 
@@ -61,6 +74,19 @@ export function bodySignature(info: RenderBodyInfo): string {
   return JSON.stringify([info.role, info.partIds ?? [], info.shapes]);
 }
 
+/** Last-seen identity of a manifest body (drawn or not), for cheap per-frame change detection. */
+interface SeenBody {
+  role: RenderBodyInfo['role'];
+  shapes: readonly RenderShape[];
+  partIds: readonly string[] | undefined;
+  sig: string;
+  /** Compact hash of `sig` (computed once per content change). */
+  hash: string;
+}
+
+/** Roles that get a body visual (terrain is meshed separately; prop/debug are not drawn). */
+const DRAWN_ROLES: ReadonlySet<RenderBodyInfo['role']> = new Set(['cart', 'wheel', 'pineapple']);
+
 interface ShockVisual {
   binding: ShockBinding;
   view: Container;
@@ -83,7 +109,8 @@ export class SceneRenderer {
   private background: ParallaxBackground | null = null;
   private readonly bgHost = new Container();
   private readonly terrainLayer = new Container();
-  private readonly propLayer = new Container();
+  /** LevelDef props + blender goal (owned by setLevel/placeLevelDecor only). */
+  private readonly decorLayer = new Container();
   private readonly cartLayer = new Container();
   private readonly wheelLayer = new Container();
   private readonly shockLayer = new Container();
@@ -97,7 +124,11 @@ export class SceneRenderer {
   private shockKey = '';
 
   private bodies = new Map<number, BodyVisual>();
+  private seen = new Map<number, SeenBody>();
   private manifestRevision = -1;
+  private forceSync = true;
+  /** Bumped whenever any body visual is added, rebuilt or removed (drives shock rebinding). */
+  private bodyGeneration = 0;
   private manifest: SceneManifest | null = null;
   private terrainKey = '';
   private horizonY = 0;
@@ -110,7 +141,7 @@ export class SceneRenderer {
   ) {
     this.theme = getTheme(opts.theme ?? 'beach');
     this.withBackground = opts.background ?? true;
-    this.world.addChild(this.terrainLayer, this.propLayer, this.cartLayer, this.wheelLayer, this.shockLayer, this.pineappleLayer);
+    this.world.addChild(this.terrainLayer, this.decorLayer, this.cartLayer, this.wheelLayer, this.shockLayer, this.pineappleLayer);
     this.view.addChild(this.bgHost, this.world);
     this.rebuildBackground();
   }
@@ -146,6 +177,17 @@ export class SceneRenderer {
         this.bodies.delete(id);
       }
     }
+    this.forceSync = true;
+    this.shockKey = '';
+  }
+
+  /**
+   * Declare that the next manifest comes from a different source (new physics
+   * world / level restart). Optional — content changes are detected anyway —
+   * but makes the switch explicit and forces a full re-diff.
+   */
+  resetSource(): void {
+    this.forceSync = true;
     this.manifestRevision = -1;
     this.shockKey = '';
   }
@@ -192,13 +234,21 @@ export class SceneRenderer {
 
   private sync(manifest: SceneManifest): void {
     this.manifest = manifest;
-    if (manifest.revision === this.manifestRevision) return;
+    if (!this.forceSync && manifest.revision === this.manifestRevision && !this.manifestChanged(manifest)) return;
+    this.forceSync = false;
     this.manifestRevision = manifest.revision;
+
+    const seen = new Map<number, SeenBody>();
     const live = new Set<number>();
+    let changed = false;
     for (const info of manifest.bodies) {
-      if (info.role === 'terrain' || info.role === 'debug') continue;
+      const prev = this.seen.get(info.id);
+      const same = prev && prev.role === info.role && prev.shapes === info.shapes && prev.partIds === info.partIds;
+      const sig = same ? prev.sig : bodySignature(info);
+      const hash = same ? prev.hash : prev && prev.sig === sig ? prev.hash : hashString(sig);
+      seen.set(info.id, { role: info.role, shapes: info.shapes, partIds: info.partIds, sig, hash });
+      if (!DRAWN_ROLES.has(info.role)) continue;
       live.add(info.id);
-      const sig = bodySignature(info);
       const existing = this.bodies.get(info.id);
       if (existing) {
         if (existing.sig === sig) continue;
@@ -207,13 +257,27 @@ export class SceneRenderer {
       const view = this.buildBody(info);
       this.layerFor(info.role).addChild(view);
       this.bodies.set(info.id, { id: info.id, role: info.role, sig, view });
+      changed = true;
     }
     for (const [id, v] of this.bodies) {
       if (!live.has(id)) {
         v.view.destroy({ children: true });
         this.bodies.delete(id);
+        changed = true;
       }
     }
+    this.seen = seen;
+    if (changed) this.bodyGeneration++;
+  }
+
+  /** O(n) identity check: did any body appear/disappear or get new role/shapes/partIds arrays? */
+  private manifestChanged(manifest: SceneManifest): boolean {
+    if (manifest.bodies.length !== this.seen.size) return true;
+    for (const info of manifest.bodies) {
+      const s = this.seen.get(info.id);
+      if (!s || s.role !== info.role || s.shapes !== info.shapes || s.partIds !== info.partIds) return true;
+    }
+    return false;
   }
 
   private layerFor(role: RenderBodyInfo['role']): Container {
@@ -222,8 +286,6 @@ export class SceneRenderer {
         return this.wheelLayer;
       case 'pineapple':
         return this.pineappleLayer;
-      case 'prop':
-        return this.propLayer;
       default:
         return this.cartLayer;
     }
@@ -311,7 +373,7 @@ export class SceneRenderer {
   // ---------------------------------------------------------------- shocks
 
   private updateShocks(manifest: SceneManifest, byId: Map<number, BodyTransform>): void {
-    const key = this.spec ? `${manifest.revision}` : '';
+    const key = this.spec ? `${this.bodyGeneration}` : '';
     if (key !== this.shockKey) {
       this.shockKey = key;
       for (const s of this.shocks) s.view.destroy({ children: true });
@@ -363,10 +425,18 @@ export class SceneRenderer {
 
   private syncTerrain(manifest: SceneManifest, byId: Map<number, BodyTransform>): void {
     const terrain = manifest.bodies.filter((b) => b.role === 'terrain');
-    const key = `${this.theme.id}|${terrain.map((b) => `${b.id}:${b.shapes.length}`).join(',')}`;
-    if (key === this.terrainKey) return;
     // wait until every terrain body has a pose
     if (terrain.some((b) => !byId.has(b.id))) return;
+    // content (signature hash, cached per shapes array by sync) + pose of every terrain body
+    const key =
+      `${this.theme.id}|` +
+      terrain
+        .map((b) => {
+          const t = byId.get(b.id)!;
+          return `${b.id}:${this.seen.get(b.id)?.hash ?? hashString(bodySignature(b))}@${t.x},${t.y},${t.angle}`;
+        })
+        .join(';');
+    if (key === this.terrainKey) return;
     this.terrainKey = key;
 
     const polylines: Vec2[][] = [];
@@ -384,11 +454,11 @@ export class SceneRenderer {
 
   /** Build terrain meshes from world-space polylines (also used directly by the style guide). */
   buildTerrain(polylines: Vec2[][]): void {
-    for (const ch of this.terrainLayer.removeChildren()) ch.destroy();
+    for (const ch of this.terrainLayer.removeChildren()) ch.destroy({ children: true });
     const chains = chainPolylines(polylines);
     if (chains.length === 0) return;
     const bottom = maxY(chains) + TERRAIN_FILL_DEPTH_M;
-    this.horizonY = medianY(chains) - this.theme.horizonLift;
+    this.horizonY = horizonReferenceY(chains) - this.theme.horizonLift;
     const skin = this.theme.terrain;
     const fillTex = this.textures.texture(themeAssetId.fill(this.theme.id));
     const edgeTex = this.textures.texture(themeAssetId.edge(this.theme.id));
@@ -433,7 +503,7 @@ export class SceneRenderer {
   }
 
   private placeLevelDecor(): void {
-    for (const ch of this.propLayer.removeChildren()) ch.destroy({ children: true });
+    for (const ch of this.decorLayer.removeChildren()) ch.destroy({ children: true });
     this.blender = null;
     const level = this.level;
     if (!level) return;
@@ -452,13 +522,13 @@ export class SceneRenderer {
       }
       v.position.set(prop.position.x, prop.position.y);
       v.rotation = prop.angle ?? 0;
-      this.propLayer.addChild(v);
+      this.decorLayer.addChild(v);
     }
     const g = level.goal.sensor;
     this.blender = new BlenderView(this.textures, hexToNumber(this.theme.palette.blenderFill));
     this.blender.view.position.set(g.x + g.width / 2, g.y + g.height);
     this.blender.view.scale.set(BLENDER_HEIGHT_M / BLENDER_LAYOUT.height);
-    this.propLayer.addChild(this.blender.view);
+    this.decorLayer.addChild(this.blender.view);
   }
 
   /** The current manifest (for callers that inspect what was drawn). */
@@ -470,8 +540,36 @@ export class SceneRenderer {
     this.background?.destroy();
     this.view.destroy({ children: true });
     this.bodies.clear();
+    this.seen.clear();
     this.shocks = [];
   }
+
+  /** Diagnostics for tests / the style guide (counts only; no internals exposed). */
+  get stats(): { bodies: number; terrainChains: number; decor: number; shocks: number } {
+    const fills = this.terrainLayer.children[0];
+    return {
+      bodies: this.bodies.size,
+      terrainChains: fills ? fills.children.length : 0,
+      decor: this.decorLayer.children.length,
+      shocks: this.shocks.length,
+    };
+  }
+
+  /** Terrain fill mesh vertex positions per chain (world metres) — for tests. */
+  terrainFillPositions(): Float32Array[] {
+    const fills = this.terrainLayer.children[0];
+    return fills ? fills.children.map((m) => (m as MeshSimple).geometry.getBuffer('aPosition').data as Float32Array) : [];
+  }
+}
+
+/** FNV-1a 32-bit (terrain cache key compaction; collisions only cost a missed re-skin in ~1/2^32). */
+function hashString(str: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36) + ':' + str.length.toString(36);
 }
 
 function mesh(data: MeshData, texture: Texture): MeshSimple {

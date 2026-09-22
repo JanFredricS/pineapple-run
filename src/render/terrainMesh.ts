@@ -32,12 +32,22 @@ export interface MeshData {
 const EPS = 1e-6;
 
 /**
+ * Default join tolerance: float round-off only. Level validation defines no
+ * minimum gap, so any real separation — however small — must stay a gap in
+ * the render exactly as it does in physics. Pieces that genuinely continue
+ * each other (split spans, streamed chunks) share the SAME endpoint value;
+ * the only difference that can creep in is the body-transform arithmetic
+ * (t.x + c·p.x − s·p.y), which is ~1e-15 m for metre-scale coordinates.
+ */
+export const JOIN_TOLERANCE_M = 1e-9;
+
+/**
  * Merge polylines whose end point coincides (within `tol`) with another's
  * start point. Input polylines run left -> right; output chains too, sorted
  * by their first x. Degenerate (< 2 point) polylines are dropped; exactly
  * repeated consecutive points are removed.
  */
-export function chainPolylines(polylines: readonly (readonly Vec2[])[], tol = 1e-4): Vec2[][] {
+export function chainPolylines(polylines: readonly (readonly Vec2[])[], tol = JOIN_TOLERANCE_M): Vec2[][] {
   const lines = polylines
     .map((pl) => dedupe(pl))
     .filter((pl) => pl.length >= 2)
@@ -257,9 +267,40 @@ export function triangleArea2(positions: Float32Array, i0: number, i1: number, i
   return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
 }
 
-/** Median y of all chain points — used as the theme's horizon reference. */
+/** Median y of all chain points (vertex-weighted; sampling-density dependent — see horizonReferenceY). */
 export function medianY(chains: readonly (readonly Vec2[])[]): number {
   const ys = chains.flatMap((c) => c.map((p) => p.y)).sort((a, b) => a - b);
   if (ys.length === 0) return 0;
   return ys[Math.floor(ys.length / 2)]!;
+}
+
+/**
+ * Horizon reference for the parallax layers: the median terrain height over
+ * HORIZONTAL DISTANCE — the weighted median of segment mid-heights, each
+ * segment weighted by its |dx|. Equivalent to sampling the profile uniformly
+ * in x, so how densely a stretch is sampled does not matter (a 2 m pit with
+ * 100 vertices weighs 2 m, not 100 votes). Vertical segments carry no weight.
+ * Falls back to the vertex median when the terrain has no horizontal extent.
+ */
+export function horizonReferenceY(chains: readonly (readonly Vec2[])[]): number {
+  const segs: { y: number; w: number }[] = [];
+  let total = 0;
+  for (const c of chains) {
+    for (let i = 1; i < c.length; i++) {
+      const a = c[i - 1]!;
+      const b = c[i]!;
+      const w = Math.abs(b.x - a.x);
+      if (w <= 0) continue;
+      segs.push({ y: (a.y + b.y) / 2, w });
+      total += w;
+    }
+  }
+  if (total <= 0) return medianY(chains);
+  segs.sort((p, q) => p.y - q.y);
+  let acc = 0;
+  for (const s of segs) {
+    acc += s.w;
+    if (acc >= total / 2) return s.y;
+  }
+  return segs[segs.length - 1]!.y;
 }

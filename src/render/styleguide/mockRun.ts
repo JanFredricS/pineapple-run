@@ -86,7 +86,14 @@ export class MockRunSource implements SnapshotSource {
     return this.spec.bodies.find((b) => b.partIds.includes('s1'))!;
   }
 
+  private cachedManifest: SceneManifest | null = null;
+
+  /** Built once: like the physics wrapper, body shape arrays are stable for a body's lifetime. */
   manifest(): SceneManifest {
+    return (this.cachedManifest ??= this.buildManifest());
+  }
+
+  private buildManifest(): SceneManifest {
     const bodies: RenderBodyInfo[] = [
       { id: this.terrainId, role: 'terrain', shapes: mockTerrainSpans().map((points) => ({ type: 'chain' as const, points })) },
     ];

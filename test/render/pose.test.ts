@@ -19,7 +19,7 @@ import {
   shockPose,
   worldBox,
 } from '../../src/render/pose';
-import { MOCK_CART, MockRunSource, manifestFromSpec } from '../../src/render/styleguide/mockRun';
+import { MOCK_CART, MockRunSource, manifestFromSpec, mockGround } from '../../src/render/styleguide/mockRun';
 import { bodySignature } from '../../src/render/scene';
 
 const close = (a: { x: number; y: number }, b: { x: number; y: number }, digits = 9) => {
@@ -178,13 +178,42 @@ describe('scene body signature', () => {
 });
 
 describe('mock run source (snapshot contract)', () => {
-  it('emits a transform for every manifest body; wheels touch the ground', () => {
+  it('emits a finite transform for every manifest body', () => {
     const src = new MockRunSource();
     src.advance(5);
     const m = src.manifest();
     const s = src.snapshot();
     expect(new Set(s.bodies.map((b) => b.id))).toEqual(new Set(m.bodies.map((b) => b.id)));
     for (const b of s.bodies) expect(Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.angle)).toBe(true);
+  });
+
+  it('wheels rest on the terrain surface (centre = ground - radius) away from the gap', () => {
+    const src = new MockRunSource();
+    const wheels = src.manifest().bodies.filter((b) => b.role === 'wheel');
+    expect(wheels).toHaveLength(2);
+    let checked = 0;
+    for (let t = 0; t < 30; t += 0.37) {
+      src.time = t;
+      const snap = src.snapshot();
+      for (const w of wheels) {
+        const shape = w.shapes[0]!;
+        if (shape.type !== 'circle') throw new Error('wheel shape');
+        const tr = snap.bodies.find((b) => b.id === w.id)!;
+        if (tr.x > 45 && tr.x < 49.5) continue; // bridging the gap
+        expect(tr.y + shape.radius, `t=${t.toFixed(2)} x=${tr.x.toFixed(2)}`).toBeCloseTo(mockGround(tr.x), 6);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(100);
+  });
+
+  it('all rigid cart bodies share the chassis angle', () => {
+    const src = new MockRunSource();
+    src.time = 12.3;
+    const snap = src.snapshot();
+    const cart = src.manifest().bodies.filter((b) => b.role === 'cart');
+    const poses = cart.map((b) => snap.bodies.find((x) => x.id === b.id)!);
+    for (const p of poses) expect(p.angle).toBeCloseTo(poses[0]!.angle);
   });
 });
 

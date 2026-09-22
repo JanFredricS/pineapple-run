@@ -294,16 +294,27 @@ async function mountMotion(lib: AssetLibrary): Promise<void> {
   zoom.oninput = () => (cam.zoom = Number(zoom.value));
   slow.onchange = () => (slowmo = slow.checked);
   const srcSeg = document.getElementById('motion-source')!;
+  // Each switch gets a token; a physics world whose async init finishes after
+  // a later switch is destroyed instead of installed (no stale level/design,
+  // no orphaned world or key listeners).
+  let switchToken = 0;
   srcSeg.querySelectorAll('button').forEach((b) => {
     b.addEventListener('click', async () => {
       const next = b.dataset.src as 'mock' | 'physics';
       if (next === mode) return;
+      const token = ++switchToken;
       srcSeg.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
       mode = next;
       physics?.destroy();
       physics = null;
+      renderer.resetSource();
       if (mode === 'physics') {
-        physics = await startPhysics();
+        const started = await startPhysics();
+        if (token !== switchToken || mode !== 'physics') {
+          started.destroy();
+          return;
+        }
+        physics = started;
         renderer.setLevel(physics.level);
         renderer.setTheme(theme);
         renderer.setCartDesign(physics.design);

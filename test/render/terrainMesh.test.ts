@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { Vec2 } from '../../src/model/geometry';
 import {
+  JOIN_TOLERANCE_M,
   chainPolylines,
   edgeStrip,
+  horizonReferenceY,
   fillMesh,
   maxY,
   medianY,
@@ -55,20 +57,51 @@ describe('chainPolylines', () => {
     expect(chains.map((c) => c[0]!.x)).toEqual([0, 5]);
   });
 
-  it('snaps endpoints within tolerance, drops degenerate lines and duplicate points', () => {
+  it('joins only float-identical endpoints; drops degenerate lines and duplicate points', () => {
     const chains = chainPolylines([
       [{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 1, y: 0 }],
-      [{ x: 1 + 5e-5, y: 0 }, { x: 2, y: 0 }],
+      [{ x: 1, y: 0 }, { x: 2, y: 0 }],
       [{ x: 9, y: 9 }],
     ]);
     expect(chains).toHaveLength(1);
     expect(chains[0]).toHaveLength(3);
+    // transform round-off (as produced by rotating/translating chunk bodies) still joins
+    const t = 0.3;
+    const p = { x: 1, y: 0 };
+    const rt = { x: Math.cos(t) * (Math.cos(-t) * p.x - Math.sin(-t) * p.y) - Math.sin(t) * (Math.sin(-t) * p.x + Math.cos(-t) * p.y), y: 0 };
+    expect(chainPolylines([[{ x: 0, y: 0 }, p], [rt, { x: 2, y: 0 }]])).toHaveLength(1);
+  });
+
+  it('keeps tiny but real gaps (level validation has no minimum gap)', () => {
+    for (const gap of [5e-5, 1e-6]) {
+      const chains = chainPolylines([
+        [{ x: 0, y: 0 }, { x: 1, y: 0 }],
+        [{ x: 1 + gap, y: 0 }, { x: 2, y: 0 }],
+      ]);
+      expect(chains, `gap ${gap}`).toHaveLength(2);
+    }
+    expect(JOIN_TOLERANCE_M).toBeLessThanOrEqual(1e-9);
   });
 
   it('maxY / medianY', () => {
     expect(maxY([hill])).toBe(5.5);
     expect(medianY([hill])).toBe(5);
     expect(medianY([])).toBe(0);
+  });
+
+  it('horizon reference is weighted by horizontal distance, not vertex count', () => {
+    // 100 m of flat ground at y=2 (2 vertices) + a 2 m pit at y=30 sampled with 101 vertices
+    const flat = [{ x: 0, y: 2 }, { x: 100, y: 2 }];
+    const pit = Array.from({ length: 101 }, (_, i) => ({ x: 100 + i * 0.02, y: 30 }));
+    expect(medianY([flat, pit])).toBe(30); // the vertex median follows the dense pit
+    expect(horizonReferenceY([flat, pit])).toBe(2);
+    // resampling the same profile more densely does not move it
+    const dense = Array.from({ length: 1001 }, (_, i) => ({ x: i * 0.1, y: 2 + Math.sin(i * 0.1) }));
+    const sparse = dense.filter((_, i) => i % 10 === 0);
+    expect(horizonReferenceY([dense])).toBeCloseTo(horizonReferenceY([sparse]), 1);
+    // vertical-only / empty input falls back safely
+    expect(horizonReferenceY([[{ x: 1, y: 0 }, { x: 1, y: 4 }]])).toBe(4);
+    expect(horizonReferenceY([])).toBe(0);
   });
 });
 
