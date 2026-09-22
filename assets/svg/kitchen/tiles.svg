@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Kitchen far layer (full screen, tiles both ways): glazed subway tile wall. -->
+  <defs>
+    <linearGradient id="glaze" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="0.4" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#C8BBA6" stop-opacity="0.25"/>
+    </linearGradient>
+    <g id="tile">
+      <rect x="1.5" y="1.5" width="61" height="29" rx="3" fill="#F5EEE3"/>
+      <rect x="1.5" y="1.5" width="61" height="29" rx="3" fill="url(#glaze)"/>
+    </g>
+  </defs>
+  <rect width="256" height="256" fill="#DCCFBC"/>
+  <g id="row">
+    <use href="#tile" x="0"/><use href="#tile" x="64"/><use href="#tile" x="128"/><use href="#tile" x="192"/>
+  </g>
+  <g id="row2" transform="translate(0 32)">
+    <use href="#tile" x="-32"/><use href="#tile" x="32"/><use href="#tile" x="96"/><use href="#tile" x="160"/><use href="#tile" x="224"/>
+  </g>
+  <use href="#row" y="64"/><use href="#row2" y="64"/>
+  <use href="#row" y="128"/><use href="#row2" y="128"/>
+  <use href="#row" y="192"/><use href="#row2" y="192"/>
+</svg>

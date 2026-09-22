@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="150" viewBox="0 0 160 150">
+  <!-- Prop "funnel": cocktail-shaker hopper the pineapples drop from. Spout centre (80,150). -->
+  <defs>
+    <linearGradient id="chrome" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8E98A8"/>
+      <stop offset="0.25" stop-color="#F4F7FB"/>
+      <stop offset="0.5" stop-color="#B9C2CF"/>
+      <stop offset="0.8" stop-color="#E8EDF3"/>
+      <stop offset="1" stop-color="#7D8796"/>
+    </linearGradient>
+  </defs>
+  <path d="M6 20 H154 L100 120 V150 H60 V120 Z" fill="url(#chrome)"/>
+  <path d="M6 20 H154 L100 120 H60 Z" fill="#1B2440" fill-opacity="0.08"/>
+  <rect x="0" y="8" width="160" height="16" rx="6" fill="url(#chrome)"/>
+  <rect x="0" y="8" width="160" height="4" rx="2" fill="#FFFFFF" fill-opacity="0.6"/>
+  <path d="M30 28 L74 112" stroke="#FFFFFF" stroke-opacity="0.6" stroke-width="5" stroke-linecap="round"/>
+  <rect x="56" y="118" width="48" height="8" rx="3" fill="#FF6F91"/>
+</svg>

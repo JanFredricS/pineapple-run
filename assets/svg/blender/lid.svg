@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="136" height="36" viewBox="0 0 136 36">
+  <!-- Blender lid with a pineapple-wedge garnish on the filler cap. -->
+  <defs>
+    <linearGradient id="rubber" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4A5366"/>
+      <stop offset="1" stop-color="#2B3140"/>
+    </linearGradient>
+  </defs>
+  <rect x="58" y="4" width="20" height="14" rx="4" fill="url(#rubber)"/>
+  <rect x="4" y="14" width="128" height="18" rx="7" fill="url(#rubber)"/>
+  <rect x="10" y="16" width="116" height="3" rx="1.5" fill="#FFFFFF" fill-opacity="0.25"/>
+  <!-- garnish wedge -->
+  <path d="M78 10 L100 2 L96 14 Z" fill="#FFD166"/>
+  <path d="M78 10 L100 2 L101 5 Z" fill="#6DBE45"/>
+</svg>

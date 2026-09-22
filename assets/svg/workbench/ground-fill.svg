@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Workbench terrain fill: stacked pine planks, staggered butt joints, nail heads. -->
+  <defs>
+    <linearGradient id="plank" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E4BE85"/>
+      <stop offset="0.85" stop-color="#D6AC70"/>
+      <stop offset="1" stop-color="#B98B52"/>
+    </linearGradient>
+    <g id="row">
+      <rect width="256" height="64" fill="url(#plank)"/>
+      <path d="M0 16 Q64 10 128 18 T256 16" stroke="#C09058" stroke-opacity="0.55" stroke-width="1.2" fill="none"/>
+      <path d="M0 36 Q64 42 128 34 T256 36" stroke="#C09058" stroke-opacity="0.45" stroke-width="1" fill="none"/>
+      <path d="M0 50 Q80 46 160 52 T256 50" stroke="#F2D3A2" stroke-opacity="0.6" stroke-width="1" fill="none"/>
+      <rect y="62" width="256" height="2" fill="#7E5A32" fill-opacity="0.7"/>
+    </g>
+    <g id="nails" fill="#7C8594">
+      <circle cx="6" cy="10" r="1.8"/><circle cx="6" cy="52" r="1.8"/>
+    </g>
+  </defs>
+  <use href="#row"/>
+  <use href="#row" y="64"/>
+  <use href="#row" y="128"/>
+  <use href="#row" y="192"/>
+  <!-- butt joints -->
+  <g fill="#7E5A32" fill-opacity="0.7">
+    <rect x="90" y="0" width="2" height="64"/><rect x="220" y="64" width="2" height="64"/>
+    <rect x="30" y="128" width="2" height="64"/><rect x="160" y="192" width="2" height="64"/>
+  </g>
+  <use href="#nails" x="92"/><use href="#nails" x="222" y="64"/><use href="#nails" x="32" y="128"/><use href="#nails" x="162" y="192"/>
+  <!-- a knot -->
+  <ellipse cx="180" cy="100" rx="7" ry="4" fill="#A77A43"/>
+  <ellipse cx="180" cy="100" rx="3.5" ry="2" fill="#8A6034"/>
+</svg>

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="160" viewBox="0 0 1024 160">
+  <!-- Beach: turquoise sea with a distant island and sail; horizon at y=48. -->
+  <defs>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1FA2B8"/>
+      <stop offset="0.5" stop-color="#34C6CF"/>
+      <stop offset="1" stop-color="#7EE0DA"/>
+    </linearGradient>
+  </defs>
+  <!-- island -->
+  <path d="M600 48 Q630 26 668 30 Q700 22 736 40 L752 48 Z" fill="#5F9E93"/>
+  <path d="M664 32 Q666 16 660 8 M664 32 Q656 14 646 12 M664 32 Q674 14 684 14" stroke="#4E8A7E" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <path d="M660 8 Q650 4 642 10 M660 8 Q668 2 678 8 M660 8 Q660 0 666 -2" stroke="#4E8A7E" stroke-width="2" fill="none"/>
+  <rect x="0" y="48" width="1024" height="112" fill="url(#sea)"/>
+  <rect x="0" y="48" width="1024" height="2" fill="#E6FBFF" fill-opacity="0.8"/>
+  <!-- sailboat -->
+  <path d="M250 45 L262 45 L258 48 L253 48 Z" fill="#FFFFFF"/>
+  <path d="M256 44 L256 26 L266 43 Z" fill="#FFFFFF"/>
+  <path d="M255 44 L255 30 L248 43 Z" fill="#FF8FA3"/>
+  <!-- glints -->
+  <g stroke="#FFFFFF" stroke-linecap="round" stroke-opacity="0.7" stroke-width="2">
+    <path d="M60 66 H90"/><path d="M180 80 H200"/><path d="M340 62 H380"/><path d="M470 92 H490"/>
+    <path d="M560 70 H600"/><path d="M720 84 H742"/><path d="M820 64 H860"/><path d="M930 100 H950"/>
+    <path d="M120 110 H150"/><path d="M400 124 H430"/><path d="M660 116 H690"/><path d="M880 132 H910"/>
+  </g>
+  <g stroke="#FFFFFF" stroke-linecap="round" stroke-opacity="0.35" stroke-width="3">
+    <path d="M0 150 Q32 144 64 150 T128 150 T192 150 T256 150 T320 150 T384 150 T448 150 T512 150 T576 150 T640 150 T704 150 T768 150 T832 150 T896 150 T960 150 T1024 150" fill="none"/>
+  </g>
+</svg>

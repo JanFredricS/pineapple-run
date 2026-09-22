@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Test/blueprint far layer (full screen): white graph paper, 16 px minor / 64 px major grid. -->
+  <defs>
+    <pattern id="minor" width="16" height="16" patternUnits="userSpaceOnUse">
+      <path d="M16 0 H0 V16" stroke="#C9D6E6" stroke-width="0.8" fill="none"/>
+    </pattern>
+    <pattern id="major" width="64" height="64" patternUnits="userSpaceOnUse">
+      <path d="M64 0 H0 V64" stroke="#AFC2D9" stroke-width="1.2" fill="none"/>
+    </pattern>
+  </defs>
+  <rect width="256" height="256" fill="#F9FBFD"/>
+  <rect width="256" height="256" fill="url(#minor)"/>
+  <rect width="256" height="256" fill="url(#major)"/>
+</svg>

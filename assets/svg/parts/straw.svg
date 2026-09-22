@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="16" viewBox="0 0 64 16">
+  <!-- Drinking straw body tile: repeats along the straw's length (u), spans its thickness (v).
+       Stripe period 16 px divides the 64 px tile, so it tiles seamlessly. -->
+  <defs>
+    <pattern id="stripes" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="skewX(-35)">
+      <rect x="0" y="0" width="6.5" height="16" fill="#F0525C"/>
+    </pattern>
+    <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="0.3" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="0.7" stop-color="#1B2440" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#1B2440" stop-opacity="0.35"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="16" fill="#FDFBF7"/>
+  <rect width="64" height="16" fill="url(#stripes)"/>
+  <rect width="64" height="16" fill="url(#shade)"/>
+  <rect x="0" y="3.2" width="64" height="1.6" fill="#FFFFFF" fill-opacity="0.65"/>
+</svg>

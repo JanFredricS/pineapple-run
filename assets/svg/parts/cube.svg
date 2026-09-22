@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Sugar cube, drawn as a nine-slice: 16 px corners stay crisp, the centre stretches.
+       Semi-translucent crystalline white with a bevelled rim. -->
+  <defs>
+    <linearGradient id="face" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.96"/>
+      <stop offset="0.55" stop-color="#F3F5FA" stop-opacity="0.86"/>
+      <stop offset="1" stop-color="#DCE2EE" stop-opacity="0.9"/>
+    </linearGradient>
+    <linearGradient id="rimLight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="1"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="rimDark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0.5" stop-color="#8E9AB5" stop-opacity="0"/>
+      <stop offset="1" stop-color="#8E9AB5" stop-opacity="0.75"/>
+    </linearGradient>
+  </defs>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="9" fill="url(#face)"/>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="9" fill="none" stroke="url(#rimDark)" stroke-width="3"/>
+  <rect x="3" y="3" width="58" height="58" rx="7.5" fill="none" stroke="url(#rimLight)" stroke-width="2.5"/>
+  <!-- sugar crystals in the corners only (nine-slice keeps them undistorted) -->
+  <g fill="#C9D1E3" fill-opacity="0.8">
+    <rect x="8" y="10" width="2.2" height="2.2" transform="rotate(20 9 11)"/>
+    <rect x="12" y="6.5" width="1.6" height="1.6"/>
+    <rect x="52" y="9" width="2" height="2" transform="rotate(35 53 10)"/>
+    <rect x="9" y="52" width="1.8" height="1.8" transform="rotate(10 10 53)"/>
+    <rect x="50" y="51" width="2.4" height="2.4" transform="rotate(40 51 52)"/>
+    <rect x="54.5" y="46" width="1.5" height="1.5"/>
+  </g>
+  <g fill="#FFFFFF">
+    <rect x="6.5" y="6" width="1.8" height="1.8"/>
+    <rect x="47" y="6.5" width="1.4" height="1.4"/>
+    <rect x="12" y="47" width="1.5" height="1.5"/>
+  </g>
+</svg>

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="480" viewBox="0 0 1024 480">
+  <!-- Kitchen: window with morning sun and warm light beams across the tiles. -->
+  <defs>
+    <linearGradient id="outside" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9ED4EE"/>
+      <stop offset="0.7" stop-color="#FCE7C1"/>
+      <stop offset="1" stop-color="#FFD79A"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFFBE6"/>
+      <stop offset="0.3" stop-color="#FFF1C2" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#FFE3A0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFF4D6" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#FFF4D6" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- beams -->
+  <path d="M330 110 L480 110 L880 480 L620 480 Z" fill="url(#beam)"/>
+  <path d="M500 180 L560 180 L960 480 L860 480 Z" fill="url(#beam)" fill-opacity="0.6"/>
+  <!-- window -->
+  <rect x="292" y="52" width="296" height="280" rx="10" fill="#FFFFFF"/>
+  <rect x="306" y="66" width="268" height="252" rx="4" fill="url(#outside)"/>
+  <circle cx="500" cy="200" r="90" fill="url(#sun)"/>
+  <circle cx="500" cy="200" r="24" fill="#FFF8DC"/>
+  <path d="M306 290 Q360 262 420 278 T540 270 T574 276 V318 H306 Z" fill="#A9CFA0" fill-opacity="0.7"/>
+  <rect x="436" y="66" width="8" height="252" fill="#FFFFFF"/>
+  <rect x="306" y="188" width="268" height="8" fill="#FFFFFF"/>
+  <rect x="280" y="326" width="320" height="16" rx="4" fill="#F7F2EA"/>
+  <rect x="280" y="340" width="320" height="4" fill="#D1C3AE"/>
+  <!-- herb pots on the sill -->
+  <g transform="translate(340 326)">
+    <path d="M-16 0 L-12 -22 H12 L16 0 Z" fill="#E07A5F"/>
+    <rect x="-14" y="-26" width="28" height="6" rx="2" fill="#C8674F"/>
+    <path d="M0 -26 Q-14 -48 -20 -52 M0 -26 Q2 -52 8 -60 M0 -26 Q14 -44 24 -46 M0 -26 Q-4 -40 -10 -62" stroke="#5DA05A" stroke-width="3" fill="none" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(540 326)">
+    <path d="M-12 0 L-10 -18 H10 L12 0 Z" fill="#81B29A"/>
+    <circle cx="-6" cy="-26" r="9" fill="#6BAF62"/><circle cx="6" cy="-30" r="10" fill="#5DA05A"/><circle cx="2" cy="-22" r="8" fill="#78BC6E"/>
+  </g>
+</svg>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Builder backdrop: cocktail-napkin paper (repeat). Embossed diamond texture, pencil grid, fold crease. -->
+  <defs>
+    <pattern id="emboss" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="16" height="16" fill="none" stroke="#E7E1D4" stroke-width="1"/>
+      <path d="M1 1 H15" stroke="#FFFFFF" stroke-width="0.8"/>
+    </pattern>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0 H0 V32" stroke="#9FB4CF" stroke-opacity="0.35" stroke-width="0.8" fill="none"/>
+    </pattern>
+    <linearGradient id="crease" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#D9D1C1" stop-opacity="0"/>
+      <stop offset="0.48" stop-color="#D9D1C1" stop-opacity="0.7"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.9"/>
+      <stop offset="0.52" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="#FBF8F1"/>
+  <rect width="512" height="512" fill="url(#emboss)"/>
+  <rect width="512" height="512" fill="url(#grid)"/>
+  <rect x="236" y="0" width="40" height="512" fill="url(#crease)"/>
+  <rect x="236" y="0" width="40" height="512" fill="url(#crease)" transform="rotate(90 256 256)" opacity="0.6"/>
+</svg>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="300" viewBox="0 0 1024 300">
+  <!-- Beach mid layer: pale dunes with palm silhouettes (atmospheric, desaturated). -->
+  <defs>
+    <g id="palm">
+      <path d="M0 0 Q6 -60 22 -120" stroke="#6FA596" stroke-width="7" fill="none" stroke-linecap="round"/>
+      <g fill="#6FA596">
+        <path d="M22 -120 Q-10 -132 -34 -110 Q-6 -122 20 -116 Z"/>
+        <path d="M22 -120 Q0 -150 -24 -150 Q2 -140 20 -118 Z"/>
+        <path d="M22 -120 Q40 -154 66 -150 Q42 -140 24 -118 Z"/>
+        <path d="M22 -120 Q58 -128 76 -104 Q50 -118 24 -116 Z"/>
+        <path d="M22 -120 Q20 -146 28 -160 Q30 -140 25 -118 Z"/>
+      </g>
+      <circle cx="20" cy="-116" r="5" fill="#5D8F80"/>
+    </g>
+  </defs>
+  <use href="#palm" transform="translate(140 230)"/>
+  <use href="#palm" transform="translate(178 236) scale(0.72)"/>
+  <use href="#palm" transform="translate(560 226) scale(0.9)"/>
+  <use href="#palm" transform="translate(880 232) scale(1.1)"/>
+  <path d="M0 230 Q80 212 170 226 T360 232 T560 222 T760 234 T920 224 T1024 230 V300 H0 Z" fill="#E9D2A3"/>
+  <path d="M0 238 Q120 226 260 240 T560 236 T860 242 T1024 238 V300 H0 Z" fill="#E2C791" fill-opacity="0.8"/>
+</svg>

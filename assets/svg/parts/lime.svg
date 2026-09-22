@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="128" height="128" viewBox="0 0 128 128">
+  <!-- Lime wheel (free, unpowered circle). Collision circle: centre (64,64), r 62. -->
+  <defs>
+    <radialGradient id="flesh" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#E4F7A6"/>
+      <stop offset="0.55" stop-color="#B8E25E"/>
+      <stop offset="1" stop-color="#8CC63F"/>
+    </radialGradient>
+    <radialGradient id="rind" cx="0.4" cy="0.35" r="0.7">
+      <stop offset="0" stop-color="#5DB043"/>
+      <stop offset="1" stop-color="#2F7A2A"/>
+    </radialGradient>
+    <!-- one segment wedge (12 per wheel), rounded tip toward the centre -->
+    <path id="seg" d="M64 60 C62.5 55 58.4 26 59.6 17.2 C62.5 15.6 65.5 15.6 68.4 17.2 C69.6 26 65.5 55 64 60 Z"/>
+    <path id="juice" d="M63 42 C62.2 36 62 30 62.6 25" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" fill="none"/>
+  </defs>
+  <circle cx="64" cy="64" r="62" fill="url(#rind)"/>
+  <circle cx="64" cy="64" r="57.5" fill="#CFE88A"/>
+  <circle cx="64" cy="64" r="55" fill="#F4F8DF"/>
+  <g transform="translate(64 64) scale(1.1) translate(-64 -64)">
+    <g fill="#A7D84E">
+      <use xlink:href="#seg"/>
+      <use xlink:href="#seg" transform="rotate(30 64 64)"/>
+      <use xlink:href="#seg" transform="rotate(60 64 64)"/>
+      <use xlink:href="#seg" transform="rotate(90 64 64)"/>
+      <use xlink:href="#seg" transform="rotate(120 64 64)"/>
+      <use xlink:href="#seg" transform="rotate(150 64 64)"/>
+      <use xlink:href="#seg" transform="rotate(180 64 64)"/>
+      <use xlink:href="#seg" transform="rotate(210 64 64)"/>
+      <use xlink:href="#seg" transform="rotate(240 64 64)"/>
+      <use xlink:href="#seg" transform="rotate(270 64 64)"/>
+      <use xlink:href="#seg" transform="rotate(300 64 64)"/>
+      <use xlink:href="#seg" transform="rotate(330 64 64)"/>
+    </g>
+  </g>
+  <!-- soft radial glow over the segments (lighter core) -->
+  <circle cx="64" cy="64" r="52" fill="url(#flesh)" fill-opacity="0.45"/>
+  <g transform="translate(64 64) scale(1.1) translate(-64 -64)" stroke-opacity="0.55">
+    <use xlink:href="#juice"/>
+    <use xlink:href="#juice" transform="rotate(60 64 64)"/>
+    <use xlink:href="#juice" transform="rotate(120 64 64)"/>
+    <use xlink:href="#juice" transform="rotate(180 64 64)"/>
+    <use xlink:href="#juice" transform="rotate(240 64 64)"/>
+    <use xlink:href="#juice" transform="rotate(300 64 64)"/>
+  </g>
+  <circle cx="64" cy="64" r="5.5" fill="#F4F8DF"/>
+  <circle cx="64" cy="64" r="2.2" fill="#DDEBB0"/>
+  <!-- rind rim highlight + seed pips (make rotation readable) -->
+  <path d="M20 40 A52 52 0 0 1 44 14" stroke="#B9E48C" stroke-opacity="0.7" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <ellipse cx="64" cy="44" rx="2.4" ry="4" fill="#F7F4D8"/>
+  <ellipse cx="82" cy="75" rx="2.4" ry="4" fill="#F7F4D8" transform="rotate(120 82 75)"/>
+</svg>

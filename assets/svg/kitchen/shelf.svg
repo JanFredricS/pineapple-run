@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="260" viewBox="0 0 1024 260">
+  <!-- Kitchen mid layer: floating oak shelf with jars (limes, cherries, sugar cubes) and a tiki mug. -->
+  <defs>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="0.3" stop-color="#FFFFFF" stop-opacity="0.15"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.35"/>
+    </linearGradient>
+  </defs>
+  <!-- shelf plank (spans the tile) -->
+  <rect x="0" y="200" width="1024" height="14" fill="#C08A4F"/>
+  <rect x="0" y="200" width="1024" height="3" fill="#DDAE72"/>
+  <rect x="0" y="214" width="1024" height="10" fill="#6B4A2A" fill-opacity="0.18"/>
+  <!-- jar of limes -->
+  <g transform="translate(120 200)">
+    <rect x="-34" y="-96" width="68" height="96" rx="12" fill="#E8F4EF" fill-opacity="0.5"/>
+    <circle cx="-14" cy="-18" r="14" fill="#8CC63F"/><circle cx="14" cy="-16" r="15" fill="#7AB834"/>
+    <circle cx="0" cy="-42" r="14" fill="#9CD24E"/><circle cx="-16" cy="-62" r="13" fill="#86C23C"/><circle cx="14" cy="-64" r="13" fill="#8CC63F"/>
+    <rect x="-34" y="-96" width="68" height="96" rx="12" fill="url(#glass)"/>
+    <rect x="-28" y="-110" width="56" height="16" rx="4" fill="#B5838D"/>
+  </g>
+  <!-- tiki mug -->
+  <g transform="translate(250 200)">
+    <path d="M-26 0 L-30 -80 Q0 -90 30 -80 L26 0 Z" fill="#3FA7A0"/>
+    <path d="M-20 -56 H20 M-20 -30 H20" stroke="#2C7F79" stroke-width="3"/>
+    <ellipse cx="-10" cy="-44" rx="5" ry="4" fill="#2C7F79"/><ellipse cx="10" cy="-44" rx="5" ry="4" fill="#2C7F79"/>
+    <path d="M-8 -18 Q0 -12 8 -18" stroke="#2C7F79" stroke-width="3" fill="none"/>
+    <path d="M30 -64 Q46 -60 42 -40 Q38 -26 28 -28" stroke="#3FA7A0" stroke-width="7" fill="none"/>
+    <rect x="-24" y="-80" width="8" height="70" rx="4" fill="#FFFFFF" fill-opacity="0.2"/>
+  </g>
+  <!-- jar of cherries -->
+  <g transform="translate(470 200)">
+    <rect x="-28" y="-70" width="56" height="70" rx="10" fill="#FBE3E6" fill-opacity="0.5"/>
+    <circle cx="-10" cy="-14" r="10" fill="#D7263D"/><circle cx="10" cy="-12" r="10" fill="#C21E33"/><circle cx="0" cy="-32" r="10" fill="#E0394F"/>
+    <circle cx="-12" cy="-48" r="9" fill="#D7263D"/><circle cx="12" cy="-46" r="9" fill="#C21E33"/>
+    <rect x="-28" y="-70" width="56" height="70" rx="10" fill="url(#glass)"/>
+    <rect x="-22" y="-82" width="44" height="14" rx="4" fill="#6D9DC5"/>
+  </g>
+  <!-- sugar cube jar -->
+  <g transform="translate(640 200)">
+    <rect x="-40" y="-84" width="80" height="84" rx="10" fill="#F1F5FA" fill-opacity="0.6"/>
+    <g fill="#FFFFFF" stroke="#D8DEE8" stroke-width="1.5">
+      <rect x="-32" y="-26" width="22" height="22" rx="3"/><rect x="-8" y="-26" width="22" height="22" rx="3"/><rect x="14" y="-24" width="20" height="20" rx="3"/>
+      <rect x="-24" y="-50" width="22" height="22" rx="3"/><rect x="0" y="-48" width="22" height="22" rx="3"/>
+    </g>
+    <rect x="-40" y="-84" width="80" height="84" rx="10" fill="url(#glass)"/>
+    <rect x="-34" y="-98" width="68" height="16" rx="5" fill="#E9C46A"/>
+  </g>
+  <!-- bottles -->
+  <g transform="translate(820 200)">
+    <path d="M-16 0 V-70 Q-16 -84 -6 -90 V-120 H6 V-90 Q16 -84 16 -70 V0 Z" fill="#E9A23B" fill-opacity="0.85"/>
+    <rect x="-12" y="-60" width="24" height="30" rx="2" fill="#FFF3DC"/>
+    <path d="M28 0 V-60 Q28 -72 36 -78 V-104 H46 V-78 Q54 -72 54 -60 V0 Z" fill="#5E8C61" fill-opacity="0.85"/>
+    <rect x="-12" y="-86" width="5" height="80" rx="2.5" fill="#FFFFFF" fill-opacity="0.3"/>
+  </g>
+  <!-- little plant -->
+  <g transform="translate(950 200)">
+    <path d="M-18 0 L-14 -30 H14 L18 0 Z" fill="#F2F0EB"/>
+    <path d="M0 -30 Q-30 -50 -34 -80 Q-10 -60 0 -30 Z M0 -30 Q24 -60 38 -70 Q20 -44 0 -30 Z M0 -30 Q-2 -70 8 -96 Q10 -60 0 -30 Z" fill="#4F9D69"/>
+  </g>
+</svg>
