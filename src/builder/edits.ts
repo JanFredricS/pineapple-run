@@ -7,7 +7,8 @@
  *
  *  - straw / shock: segment start -> end (optionally angle-snapped);
  *  - sugar cube: axis-aligned box spanning the drag corners;
- *  - lime / wheel: centre at the press point, radius = drag distance.
+ *  - lime / wheel: centre at the press point, radius = drag distance,
+ *    clamped so the whole disc stays inside the area (S6V: see maxRadiusInArea).
  */
 
 import { partShapePx, resolveAttachments } from '../model/attach';
@@ -46,6 +47,18 @@ export function clampToArea(p: Vec2, area: Area = BUILD_AREA): Vec2 {
 
 export function isInArea(p: Vec2, area: Area = BUILD_AREA): boolean {
   return p.x >= area.minX && p.x <= area.maxX && p.y >= area.minY && p.y <= area.maxY;
+}
+
+/**
+ * Largest radius whose disc centred at `c` lies fully inside `area`: the
+ * distance to the nearest edge, rounded DOWN to the stored precision so the
+ * rounded part can never poke out (S6V finding 7 — keeps the start-area
+ * invariant that no drawable part reaches the funnel above the area).
+ */
+export function maxRadiusInArea(c: Vec2, area: Area = BUILD_AREA): number {
+  const d = Math.min(c.x - area.minX, area.maxX - c.x, c.y - area.minY, area.maxY - c.y);
+  const k = 10 ** COORD_DECIMALS;
+  return Math.max(0, Math.floor(d * k + 1e-9) / k);
 }
 
 /** Snap the direction a->b to `stepDeg` increments, keeping the length. */
@@ -90,8 +103,11 @@ export function makeDraft(tool: DrawTool, start: Vec2, end: Vec2, id: string, op
     }
     case 'lime':
     case 'wheel': {
-      const r = round(distance(s, e));
-      part = { id, kind: tool, center: roundV(s), radius: r };
+      // Clamp (not reject): the circle keeps following the pointer and simply
+      // stops growing at the nearest edge, like the drag endpoints themselves.
+      const center = roundV(s);
+      const r = Math.min(round(distance(s, e)), maxRadiusInArea(center, area));
+      part = { id, kind: tool, center, radius: r };
       label = `r ${Math.round(r)} px`;
       break;
     }
