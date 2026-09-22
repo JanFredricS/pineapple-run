@@ -35,10 +35,20 @@ export function isTerminalRunEvent(event: RunEvent): boolean {
 /** What S5 subscribes to. S1's run controller implements it; mocks too. */
 export interface RunEventSource {
   on(listener: RunEventListener): () => void;
+  /**
+   * Simulation seconds since Release (0 before Release; frozen once the run
+   * has ended). Polled by the HUD timer. Additive amendment (INTEGRATION.md
+   * contract amendment 1, applied at S6).
+   */
+  simTime(): number;
 }
 
-/** Tiny synchronous emitter usable by S1's real implementation and mocks. */
-export class RunEventEmitter implements RunEventSource {
+/**
+ * Tiny synchronous emitter usable by S1's real implementation and mocks.
+ * It is only the `on` half of a RunEventSource (it has no clock); owners
+ * pair it with their own `simTime()`.
+ */
+export class RunEventEmitter {
   private listeners = new Set<RunEventListener>();
 
   on(listener: RunEventListener): () => void {
@@ -109,7 +119,7 @@ export class MockRunEventStream implements RunEventSource {
     return this.emitter.on(listener);
   }
 
-  get simTime(): number {
+  simTime(): number {
     return this.time;
   }
 

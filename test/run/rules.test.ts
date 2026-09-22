@@ -312,7 +312,7 @@ describe('run modes', () => {
     expect(last.remaining).toBe(0);
     expect(events.at(-1)!.simTime).toBe(last.simTime);
     expect(rc.phase).toBe('ended');
-    expect(rc.simTime).toBe(last.simTime);
+    expect(rc.simTime()).toBe(last.simTime);
     const n = events.length;
     steps(rc, 120, 1);
     expect(rc.giveUp()).toBe(false);

@@ -104,9 +104,15 @@ export const slopeLimitsFor = (d: number): { maxUp: number; maxDown: number } =>
  */
 export const ENDLESS_KILL_Y = BASE_Y + 30;
 
-/** Where the cart / funnel go on the start plateau (m). */
-export const START_CART = { x: 3, y: BASE_Y - 1.8 } as const;
-export const START_FUNNEL = { x: 5, y: BASE_Y - 6 } as const;
+/**
+ * Where the cart / funnel go on the start plateau (m). INTEGRATION #3/#6:
+ * cartStart is the GROUND under design (0, 0) and the funnel outlet sits at
+ * cartStart + (115, −225) px — the same offset as src/game/startArea.ts
+ * funnelFor() (kept literal here so terrain does not import game; an S6
+ * integration test asserts the two agree).
+ */
+export const START_CART = { x: 3, y: BASE_Y } as const;
+export const START_FUNNEL = { x: 3 + 115 / 30, y: BASE_Y - 225 / 30 } as const;
 
 /** Generated LevelDefs are capped so they always pass model/validate limits. */
 export const MAX_GENERATED_BLOCKS = 1500;

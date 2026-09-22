@@ -98,7 +98,7 @@ describe('validity', () => {
     const { level } = corpus[0]!.gen;
     for (const p of pointsIn(level, 0.1, START_FLAT_END)) expect(p.y).toBe(BASE_Y);
     expect(level.cartStart.x).toBeLessThan(START_FLAT_END);
-    expect(level.cartStart.y).toBeLessThan(BASE_Y);
+    expect(level.cartStart.y).toBe(BASE_Y); // INTEGRATION #3: cartStart = ground
     expect(START_CART.y).toBe(level.cartStart.y);
     const lastSpan = groundSpans(level).at(-1)!;
     expect(level.goal.lineX).toBeLessThan(lastSpan.points.at(-1)!.x);
