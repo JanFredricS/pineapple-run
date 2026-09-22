@@ -44,7 +44,8 @@
  * cart's world AABB + margin and not touching the terrain, re-checked each
  * second. A pineapple outside is lost ≥ 3 s after it was first seen
  * SUPPORTED (touching terrain, or slow and resting on a funnel wall, a solid
- * prop or another spilled pineapple — never merely slow in mid-air), or at
+ * prop, a cart wheel, or a chain of spilled pineapples that itself rests on
+ * one of those — never merely slow in mid-air, alone or in a cluster), or at
  * once when it leaves the kept-terrain window. In level runs pineapples past
  * the goal line have ARRIVED and are never marked lost. Lost is permanent:
  * `remaining` only goes down.
@@ -171,6 +172,7 @@ export class RunController implements RunEventSource {
   private _aboard = 0;
   private _lastAboardBox: AABB | null = null;
   private _events: RunEvent[] = [];
+  private supportCache: { step: number; set: Set<PineappleState> } | null = null;
 
   constructor(
     readonly world: PhysicsWorld,
@@ -515,23 +517,63 @@ export class RunController implements RunEventSource {
   }
 
   /**
-   * Touching terrain, or slow AND in contact with something that holds it up
-   * (a funnel wall / plug, a solid prop, or another pineapple that is not in
-   * the cart). A slow pineapple in mid-air (apex of a throw) is not supported.
+   * Supported = in real contact with the world, directly or through a chain
+   * of pineapples. Seeds: touching terrain, or slow AND touching a funnel
+   * wall / plug, a solid prop or a cart wheel. Then, transitively: slow AND
+   * touching a supported pineapple that sits at or below it. Pineapples in
+   * the cart (aboard) neither seed nor extend a chain. A cluster of slow
+   * pineapples in mid-air (apex of a throw) touches nothing real, so none of
+   * it is supported. Computed once per step (cached).
    */
-  private isSupported(p: PineappleState): boolean {
-    const c = this.world.getTransform(p.handle);
+  private supportedSet(): Set<PineappleState> {
+    if (this.supportCache && this.supportCache.step === this._steps) return this.supportCache.set;
     const r = PINEAPPLE_RADIUS;
-    if (this.terrain.circleTouches(c, r)) return true;
-    const v = this.world.getLinearVelocity(p.handle);
-    if (Math.hypot(v.x, v.y) >= RESTING_SPEED) return false;
     const polys = [...this.funnel.geometry.walls, ...(this.funnel.plug !== null ? [this.funnel.geometry.plug] : []), ...this.props.map((q) => q.polygon)];
-    if (polys.some((poly) => circleTouchesPolygon(c, r, poly, SUPPORT_SLOP))) return true;
-    return this.pineapples.some((o) => {
-      if (o === p || !o.alive || o.aboard) return false;
-      const t = this.world.getTransform(o.handle);
-      return Math.hypot(t.x - c.x, t.y - c.y) <= 2 * r + SUPPORT_SLOP;
-    });
+    const wheels = this.cartBodies
+      .filter((b) => b.spec.kind === 'wheel' && this.attached.has(b.id))
+      .flatMap((b) => {
+        const t = this.world.getTransform(b.handle);
+        return b.spec.shapes.flatMap((sh) =>
+          sh.type === 'circle' ? [{ x: t.x + Math.cos(t.angle) * sh.center.x - Math.sin(t.angle) * sh.center.y, y: t.y + Math.sin(t.angle) * sh.center.x + Math.cos(t.angle) * sh.center.y, radius: sh.radius }] : [],
+        );
+      });
+    const cands = this.pineapples
+      .filter((p) => p.alive && !p.aboard)
+      .map((p) => {
+        const c = this.world.getTransform(p.handle);
+        const v = this.world.getLinearVelocity(p.handle);
+        return { p, c, slow: Math.hypot(v.x, v.y) < RESTING_SPEED };
+      });
+    const set = new Set<PineappleState>();
+    const frontier: typeof cands = [];
+    for (const k of cands) {
+      const seeded =
+        this.terrain.circleTouches(k.c, r) ||
+        (k.slow &&
+          (polys.some((poly) => circleTouchesPolygon(k.c, r, poly, SUPPORT_SLOP)) ||
+            wheels.some((wh) => Math.hypot(wh.x - k.c.x, wh.y - k.c.y) <= wh.radius + r + SUPPORT_SLOP)));
+      if (seeded) {
+        set.add(k.p);
+        frontier.push(k);
+      }
+    }
+    while (frontier.length) {
+      const m = frontier.pop()!;
+      for (const k of cands) {
+        if (set.has(k.p) || !k.slow) continue;
+        // resting on m: touching it, and m at or below (y-down: larger y)
+        if (m.c.y >= k.c.y - SUPPORT_SLOP && Math.hypot(m.c.x - k.c.x, m.c.y - k.c.y) <= 2 * r + SUPPORT_SLOP) {
+          set.add(k.p);
+          frontier.push(k);
+        }
+      }
+    }
+    this.supportCache = { step: this._steps, set };
+    return set;
+  }
+
+  private isSupported(p: PineappleState): boolean {
+    return this.supportedSet().has(p);
   }
 
   private aboardCheck(): void {
@@ -553,6 +595,7 @@ export class RunController implements RunEventSource {
       p.aboard = box !== null && pointInBox(pos, box) && !this.terrain.circleTouches(pos, PINEAPPLE_RADIUS);
     }
     this._aboard = this.pineapples.filter((p) => p.aboard).length;
+    this.supportCache = null; // aboard flags changed: recompute support this step
     for (const p of this.pineapples) {
       if (!this.isOpen()) return; // a listener ended the run
       if (!p.alive || p.lost) continue;

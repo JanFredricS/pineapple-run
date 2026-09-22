@@ -468,3 +468,51 @@ describe('kill-plane respects the goal line (level mode)', () => {
     expect(goal.delivered).toBe(2);
   });
 });
+
+describe('support is transitive from real contact (no mutual mid-air support)', () => {
+  it('a packed cluster launched upward is slow at its apex exactly at an aboard check, yet no grounded timer starts', async () => {
+    const w = await world();
+    const base = loadFlatGoalLevel();
+    const main = base.terrain.spans.find((s) => s.id === 'main')!;
+    // a hole under the funnel (x 1..9) and a deep kill plane: nothing can land
+    const level: LevelDef = {
+      ...base,
+      cartStart: { x: 12, y: 8.2 },
+      killY: 400,
+      terrain: {
+        ...base.terrain,
+        spans: [
+          ...base.terrain.spans.filter((s) => s.id !== 'main'),
+          { id: 'before-gap', points: [{ x: -9.9, y: 10 }, { x: 1, y: 10 }] },
+          { id: 'after-gap', points: [{ x: 9, y: 10 }, ...main.points.slice(1)] },
+        ],
+      },
+    };
+    const rc = new RunController(w, loadFixtureCart(), level);
+    const events = record(rc);
+    startAndRelease(rc);
+    // gravity is 10 m/s²: launched at 10 m/s the whole (touching) cluster
+    // reaches its apex after 1 s — on the first 1 Hz aboard check
+    for (const p of rc.pineappleStates()) w.setLinearVelocity(p.handle, { x: 0, y: -10 });
+    let slowPairsAtCheck = 0;
+    for (let n = 0; n < 60; n++) rc.step();
+    const ps = rc.pineappleStates().map((p) => ({ t: w.getTransform(p.handle), v: w.getLinearVelocity(p.handle) }));
+    for (let i = 0; i < ps.length; i++) {
+      for (let j = i + 1; j < ps.length; j++) {
+        const a = ps[i]!;
+        const b = ps[j]!;
+        const slow = Math.hypot(a.v.x, a.v.y) < 0.5 && Math.hypot(b.v.x, b.v.y) < 0.5;
+        if (slow && Math.hypot(a.t.x - b.t.x, a.t.y - b.t.y) <= 2 * PINEAPPLE_RADIUS + 0.05) slowPairsAtCheck++;
+      }
+    }
+    // precondition: slow, touching pairs in mid-air at the check (the old rule's false positive)
+    expect(slowPairsAtCheck).toBeGreaterThan(5);
+    expect(ps.every((p) => p.t.y < 0)).toBe(true); // all well above the funnel outlet
+    // 3 s later (a grounded timer from the apex would have fired at 4 s) nothing is lost:
+    // they are still falling through the hole, never having touched anything
+    for (let n = 0; n < 3.5 * 60; n++) rc.step();
+    expect(events.filter((e) => e.type === 'pineappleLost')).toHaveLength(0);
+    expect(rc.pineappleStates().every((p) => p.alive)).toBe(true);
+  });
+});
+

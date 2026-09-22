@@ -121,8 +121,7 @@ describe('S1 run scenarios', () => {
     const goal = events.at(-1) as Extract<RunEvent, { type: 'goalReached' }>;
     expect(goal.type).toBe('goalReached');
     // measured: 11 lost (first at 6 s), goal at 11.917 s with 4 delivered, 4 remaining
-    expect(lost.length).toBeGreaterThanOrEqual(9);
-    expect(lost.length).toBeLessThanOrEqual(13);
+    expect(lost.length).toBe(11);
     expect(new Set(lost.map((e) => e.pineappleId)).size).toBe(lost.length);
     lost.forEach((e, i) => {
       expect(e.remaining).toBe(15 - (i + 1));
