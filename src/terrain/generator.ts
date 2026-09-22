@@ -614,6 +614,11 @@ export function blocksForLength(length: number): number {
   return Math.max(2, 1 + Math.ceil((L - FINISH_GOAL_OFFSET) / BLOCK_WIDTH));
 }
 
+/** Goal line x (m) of a generated level with `blocks` blocks (including the finish block). */
+export function courseLength(blocks: number): number {
+  return (blocks - 1) * BLOCK_WIDTH + FINISH_GOAL_OFFSET;
+}
+
 /**
  * A finite, valid LevelDef whose goal line is at x >= max(length,
  * MIN_GENERATED_LENGTH) and less than one block (BLOCK_WIDTH) beyond it (see
@@ -661,10 +666,17 @@ export function generateLevel(seedIn: TerrainSeed, length: number, opts: Generat
   if (spans.length > MAX_TERRAIN_SPANS || total > MAX_TERRAIN_POINTS_TOTAL) {
     throw new Error('generateLevel: exceeded LevelDef limits (MAX_BLOCK_POINTS / MAX_GENERATED_BLOCKS mis-tuned)');
   }
+  // Identity follows the course actually built (audit S3-3 #3), not the
+  // request: the geometry is a pure function of (seed, blocks), and the goal
+  // line x = courseLength(blocks) is strictly increasing in blocks, so its
+  // ceiling names exactly one course — requests clamped to the same block
+  // count (1 and 61.3) share an id, requests on either side of a block
+  // boundary (61.3 and 61.31) never do.
+  const effective = Math.ceil(courseLength(blocks));
   const level: LevelDef = {
     version: LEVEL_DEF_VERSION,
-    id: opts.id ?? `gen-${seed}-${Math.ceil(length)}`,
-    name: opts.name ?? `Generated ${seed} (${Math.ceil(length)} m)`,
+    id: opts.id ?? `gen-${seed}-${effective}`,
+    name: opts.name ?? `Generated ${seed} (${effective} m)`,
     theme: opts.theme ?? 'beach',
     terrain: { spans, friction: DEFAULT_TERRAIN_FRICTION, restitution: DEFAULT_TERRAIN_RESTITUTION },
     cartStart: { ...START_CART },

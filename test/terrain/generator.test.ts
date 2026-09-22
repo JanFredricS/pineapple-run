@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Vec2 } from '../../src/model/geometry';
 import type { LevelDef } from '../../src/model/level';
 import { MAX_TERRAIN_POINTS_TOTAL, MAX_TERRAIN_SPANS, validateLevelDef } from '../../src/model/validate';
-import { LevelChunkSource } from '../../src/terrain/chunks';
+import { LevelChunkSource, sanitizePiece } from '../../src/terrain/chunks';
 import {
   BASE_Y,
   BLOCK_WIDTH,
@@ -17,6 +17,7 @@ import {
   MAX_GENERATED_BLOCKS,
   MAX_GENERATED_LENGTH,
   blocksForLength,
+  courseLength,
   MIN_GENERATED_LENGTH,
   ProceduralChunkSource,
   slopeLimitsFor,
@@ -114,7 +115,30 @@ describe('validity', () => {
       expect(g.blocks).toBe(blocksForLength(len));
       const end = g.level.terrain.spans.at(-1)!.points.at(-1)!.x;
       expect(end).toBeGreaterThan(g.level.goal.lineX);
+      // the id names the course actually built (its goal distance), not the request
+      expect(g.level.id, `len ${len}`).toMatch(new RegExp(`^gen-\\d+-${Math.ceil(courseLength(g.blocks))}$`));
     }
+  });
+
+  it('audit S3-3 #3: the level id identifies the generated course — same course <=> same id', () => {
+    const id = (len: number) => generateLevel(7, len).level.id;
+    const course = (len: number) => JSON.stringify(generateLevel(7, len).level.terrain);
+    // clamped up to the same 2-block course: one id
+    for (const len of [0.001, 1, 21.3, 40, 61.29]) {
+      expect(course(len)).toBe(course(MIN_GENERATED_LENGTH));
+      expect(id(len), `len ${len}`).toBe(id(MIN_GENERATED_LENGTH));
+    }
+    expect(id(1)).toBe('gen-7-62');
+    // either side of a block boundary: different courses, different ids (both ceil to 62 as requests)
+    expect(course(61.31)).not.toBe(course(MIN_GENERATED_LENGTH));
+    expect(id(61.31)).not.toBe(id(MIN_GENERATED_LENGTH));
+    expect(id(61.31)).toBe('gen-7-102');
+    expect(id(61.31)).toBe(id(101.3)); // same 3-block course
+    expect(id(101.31)).not.toBe(id(101.3));
+    // ids are injective over block counts
+    const ids = new Set<string>();
+    for (let b = 2; b <= 60; b++) ids.add(`gen-7-${Math.ceil(courseLength(b))}`);
+    expect(ids.size).toBe(59);
   });
 });
 
@@ -234,6 +258,10 @@ describe('endless source == generated LevelDef', () => {
       const finite = new LevelChunkSource(gen.level.terrain);
       for (let k = 0; k < gen.blocks - 1; k++) expect(endless.chunk(k)).toEqual(finite.chunk(k));
     }
+  });
+
+  it('generated spans are already sanitized (cutSpan\'s whole-span sanitize is the identity on them)', () => {
+    for (const { gen } of corpus) for (const s of gen.level.terrain.spans) expect(sanitizePiece(s.points)).toEqual(s.points);
   });
 
   it('adjacent endless chunks share their seam vertex exactly', () => {
