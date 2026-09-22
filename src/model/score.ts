@@ -78,6 +78,32 @@ export interface ScoreBook {
   };
 }
 
+/** Largest seconds / metres a ScoreBook stores (validator limit). */
+export const MAX_SCORE_VALUE = 1e6;
+/** Max length of a level id or endless seed (validator limit). */
+export const MAX_SCORE_ID_LENGTH = 64;
+
+/** Thrown by the record helpers for inputs that cannot be stored. */
+export class ScoreInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ScoreInputError';
+  }
+}
+
+function scoreId(v: unknown, what: string): string {
+  if (typeof v !== 'string' || v.length === 0 || v.length > MAX_SCORE_ID_LENGTH) {
+    throw new ScoreInputError(`${what} must be a non-empty string of at most ${MAX_SCORE_ID_LENGTH} characters`);
+  }
+  return v;
+}
+
+/** Non-finite -> ScoreInputError; finite values are clamped into [0, MAX]. */
+function scoreNumber(v: number, what: string): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) throw new ScoreInputError(`${what} must be a finite number`);
+  return Math.min(MAX_SCORE_VALUE, Math.max(0, v));
+}
+
 export function emptyScoreBook(): ScoreBook {
   return { version: SCORE_BOOK_VERSION, levels: [], endless: { overallBestDistance: 0, seeds: [] } };
 }
@@ -86,18 +112,31 @@ export function levelBest(book: ScoreBook, levelId: string): LevelBest | undefin
   return book.levels.find((l) => l.levelId === levelId);
 }
 
-/** Returns a new book with the level result recorded if it beats the best. */
+/**
+ * Returns a new book with the level result recorded if it beats the best.
+ * Total: every returned book passes validateScoreBook. Non-finite inputs or a
+ * bad level id throw ScoreInputError; finite out-of-range numbers are clamped
+ * (seconds to [0, 1e6], delivered to an integer in [0, 15]).
+ */
 export function recordLevelResult(book: ScoreBook, levelId: string, seconds: number, delivered: number): ScoreBook {
-  const rating = efficiencyRating(seconds, delivered);
-  const prev = levelBest(book, levelId);
+  const id = scoreId(levelId, 'levelId');
+  const secs = scoreNumber(seconds, 'seconds');
+  const del = Math.min(TOTAL_PINEAPPLES, Math.floor(scoreNumber(delivered, 'delivered')));
+  const rating = efficiencyRating(secs, del);
+  const prev = levelBest(book, id);
   if (prev && prev.bestRating >= rating) return book;
-  const entry: LevelBest = { levelId, bestRating: rating, seconds, delivered: Math.min(TOTAL_PINEAPPLES, Math.max(0, Math.floor(delivered))) };
-  return { ...book, levels: [...book.levels.filter((l) => l.levelId !== levelId), entry] };
+  const entry: LevelBest = { levelId: id, bestRating: rating, seconds: secs, delivered: del };
+  return { ...book, levels: [...book.levels.filter((l) => l.levelId !== id), entry] };
 }
 
-/** Returns a new book with the endless distance recorded per seed and overall. */
+/**
+ * Returns a new book with the endless distance recorded per seed and overall.
+ * Total like recordLevelResult: bad seed / non-finite distance throw
+ * ScoreInputError; finite distances are clamped to [0, 1e6].
+ */
 export function recordEndlessResult(book: ScoreBook, seed: string, distance: number): ScoreBook {
-  const d = Math.max(0, Number.isFinite(distance) ? distance : 0);
+  seed = scoreId(seed, 'seed');
+  const d = scoreNumber(distance, 'distance');
   const prev = book.endless.seeds.find((s) => s.seed === seed);
   const seeds = prev && prev.bestDistance >= d ? book.endless.seeds : [...book.endless.seeds.filter((s) => s.seed !== seed), { seed, bestDistance: d }];
   const overallBestDistance = Math.max(book.endless.overallBestDistance, d);

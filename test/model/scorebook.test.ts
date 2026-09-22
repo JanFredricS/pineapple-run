@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyScoreBook, levelBest, recordEndlessResult, recordLevelResult, type ScoreBook } from '../../src/model/score';
+import { ScoreInputError, emptyScoreBook, levelBest, recordEndlessResult, recordLevelResult, type ScoreBook } from '../../src/model/score';
 import { parseScoreBook, validateScoreBook } from '../../src/model/validate';
 
 const book = (): ScoreBook => ({
@@ -75,5 +75,66 @@ describe('ScoreBook updates', () => {
     expect(b.endless).toEqual({ overallBestDistance: 250, seeds: [{ seed: 'a', bestDistance: 100 }, { seed: 'b', bestDistance: 250 }] });
     expect(recordEndlessResult(b, 'b', 10)).toBe(b);
     expect(validateScoreBook(b).ok).toBe(true);
+  });
+});
+
+describe('ScoreBook helpers are total (property-style)', () => {
+  const numbers = [NaN, Infinity, -Infinity, -1, -0, 0, 0.4, 14.99, 15, 16, 45.5, 115, 999_999.9, 1e6, 1e6 + 1, 1e12, Number.MAX_VALUE];
+  const ids = ['', 'a', 'beach-1', '__proto__', 'constructor', 'x'.repeat(64), 'x'.repeat(65)];
+
+  /** Deterministic PRNG so failures reproduce. */
+  function rng(seed: number) {
+    let a = seed >>> 0;
+    return () => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(a ^ (a >>> 15), a | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const pick = <T,>(r: () => number, xs: T[]): T => xs[Math.floor(r() * xs.length)]!;
+
+  it('every returned book survives a JSON round-trip and validates, or the helper throws ScoreInputError', () => {
+    const r = rng(2026);
+    let book = emptyScoreBook();
+    let thrown = 0;
+    let recorded = 0;
+    for (let i = 0; i < 5000; i++) {
+      try {
+        const next =
+          r() < 0.5
+            ? recordLevelResult(book, pick(r, ids), pick(r, numbers), pick(r, numbers))
+            : recordEndlessResult(book, pick(r, ids), pick(r, numbers));
+        const v = validateScoreBook(JSON.parse(JSON.stringify(next)));
+        if (!v.ok) throw new Error(`invalid book after step ${i}: ${v.error.message}`);
+        expect(v.value).toEqual(JSON.parse(JSON.stringify(next)));
+        if (next !== book) recorded++;
+        book = next;
+      } catch (e) {
+        if (!(e instanceof ScoreInputError)) throw e;
+        thrown++;
+      }
+    }
+    expect(thrown).toBeGreaterThan(0);
+    expect(recorded).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ['NaN seconds', () => recordLevelResult(emptyScoreBook(), 'x', NaN, 5)],
+    ['Infinity delivered', () => recordLevelResult(emptyScoreBook(), 'x', 20, Infinity)],
+    ['empty level id', () => recordLevelResult(emptyScoreBook(), '', 20, 5)],
+    ['NaN distance', () => recordEndlessResult(emptyScoreBook(), 's', NaN)],
+    ['empty seed', () => recordEndlessResult(emptyScoreBook(), '', 10)],
+    ['65-char seed', () => recordEndlessResult(emptyScoreBook(), 'x'.repeat(65), 10)],
+  ])('throws ScoreInputError for %s', (_n, f) => {
+    expect(f).toThrow(ScoreInputError);
+  });
+
+  it('clamps finite out-of-range numbers', () => {
+    const b = recordEndlessResult(emptyScoreBook(), 's', 5e6);
+    expect(b.endless).toEqual({ overallBestDistance: 1e6, seeds: [{ seed: 's', bestDistance: 1e6 }] });
+    expect(recordEndlessResult(emptyScoreBook(), 's', -3).endless.seeds).toEqual([{ seed: 's', bestDistance: 0 }]);
+    const l = recordLevelResult(emptyScoreBook(), 'l', 5, 99.7);
+    expect(levelBest(l, 'l')).toEqual({ levelId: 'l', bestRating: 100, seconds: 5, delivered: 15 });
   });
 });
