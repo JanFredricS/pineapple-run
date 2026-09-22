@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="96" viewBox="0 0 64 96">
+  <!-- Cocktail-umbrella shock canopy, folded (spring extended). Shaft runs along +x through (x, 48);
+       apex at x=4. The renderer picks closed/half/open from the spring's compression. -->
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.35"/>
+      <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#3A1F4A" stop-opacity="0.3"/>
+    </linearGradient>
+    <linearGradient id="depth" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3A1F4A" stop-opacity="0.25"/>
+      <stop offset="0.6" stop-color="#3A1F4A" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <g>
+    <path d="M4 48 L54 37.00 Q56.00 38.83 54 40.67 Z" fill="#FF6F91"/>
+    <path d="M4 48 L54 40.67 Q56.00 42.50 54 44.33 Z" fill="#2EC4B6"/>
+    <path d="M4 48 L54 44.33 Q56.00 46.17 54 48.00 Z" fill="#FFD166"/>
+    <path d="M4 48 L54 48.00 Q56.00 49.83 54 51.67 Z" fill="#FF6F91"/>
+    <path d="M4 48 L54 51.67 Q56.00 53.50 54 55.33 Z" fill="#2EC4B6"/>
+    <path d="M4 48 L54 55.33 Q56.00 57.17 54 59.00 Z" fill="#FFD166"/>
+    
+  </g>
+  <path d="M4 48 L54 37 L56 48 L54 59 Z" fill="url(#paper)"/>
+  <path d="M4 48 L54 37 L56 48 L54 59 Z" fill="url(#depth)"/>
+  <g stroke="#7A3B52" stroke-opacity="0.45" stroke-width="0.9" fill="none"><path d="M4 48 L54 37.00"/><path d="M4 48 L54 40.67"/><path d="M4 48 L54 44.33"/><path d="M4 48 L54 48.00"/><path d="M4 48 L54 51.67"/><path d="M4 48 L54 55.33"/><path d="M4 48 L54 59.00"/></g>
+  <circle cx="4" cy="48" r="2.6" fill="#F5E6C8" stroke="#9B6B3A" stroke-width="1"/>
+</svg>

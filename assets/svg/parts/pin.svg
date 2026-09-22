@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <!-- Joint pin (wheel axle on a straw, shock anchors). -->
+  <defs>
+    <radialGradient id="g" cx="0.35" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.45" stop-color="#D5DAE3"/>
+      <stop offset="1" stop-color="#6E7787"/>
+    </radialGradient>
+  </defs>
+  <circle cx="12" cy="12" r="11" fill="#2B3140" fill-opacity="0.3"/>
+  <circle cx="12" cy="12" r="9.5" fill="url(#g)"/>
+  <circle cx="12" cy="12" r="3" fill="#6E7787" fill-opacity="0.8"/>
+</svg>

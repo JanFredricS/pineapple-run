@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Kitchen terrain fill: honey-oak butcher block (vertical staves, 32 px period). -->
+  <defs>
+    <pattern id="staves" width="64" height="256" patternUnits="userSpaceOnUse">
+      <rect width="32" height="256" fill="#D9A566"/>
+      <rect x="32" width="32" height="256" fill="#CF9A5A"/>
+      <rect x="31" width="1.5" height="256" fill="#9C6A34" fill-opacity="0.45"/>
+      <rect x="63" width="1.5" height="256" fill="#9C6A34" fill-opacity="0.45"/>
+      <path d="M9 0 Q12 64 8 128 T10 256" stroke="#B98446" stroke-opacity="0.5" stroke-width="1.2" fill="none"/>
+      <path d="M20 0 Q17 70 21 140 T19 256" stroke="#E8BF85" stroke-opacity="0.6" stroke-width="1" fill="none"/>
+      <path d="M44 0 Q47 50 43 120 T45 256" stroke="#B07A3C" stroke-opacity="0.5" stroke-width="1.2" fill="none"/>
+      <path d="M55 0 Q52 90 56 170 T54 256" stroke="#E2B679" stroke-opacity="0.55" stroke-width="1" fill="none"/>
+      <ellipse cx="46" cy="190" rx="2.4" ry="6" fill="#9C6A34" fill-opacity="0.5"/>
+    </pattern>
+  </defs>
+  <rect width="256" height="256" fill="url(#staves)"/>
+  <!-- glue-line joints every 128 px, staggered -->
+  <g fill="#8F5F2C" fill-opacity="0.35">
+    <rect x="0" y="100" width="32" height="1.5"/><rect x="64" y="40" width="32" height="1.5"/>
+    <rect x="128" y="180" width="32" height="1.5"/><rect x="192" y="120" width="32" height="1.5"/>
+    <rect x="32" y="220" width="32" height="1.5"/><rect x="160" y="10" width="32" height="1.5"/>
+  </g>
+</svg>

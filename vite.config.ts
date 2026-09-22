@@ -29,6 +29,7 @@ export default defineConfig({
         builder: fileURLToPath(new URL('./builder-harness.html', import.meta.url)),
         'run-harness': fileURLToPath(new URL('./run-harness.html', import.meta.url)),
         uiHarness: fileURLToPath(new URL('./ui-harness.html', import.meta.url)),
+        styleguide: fileURLToPath(new URL('./styleguide.html', import.meta.url)),
       },
     },
   },

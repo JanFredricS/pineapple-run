@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="64" viewBox="0 0 256 64">
+  <!-- Beach edge strip. v: 0 = 0.06 m above the surface, surface at y=6, 64 = 0.55 m below.
+       Dry sun-bleached crest, a darker damp band, fading into the fill. -->
+  <defs>
+    <linearGradient id="band" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFF0CC"/>
+      <stop offset="0.12" stop-color="#F6DDA7"/>
+      <stop offset="0.45" stop-color="#E7C487" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#E7C487" stop-opacity="0"/>
+    </linearGradient>
+    <g id="shell">
+      <path d="M0 0 Q5 -7 10 0 Z" fill="#FFE3E0"/>
+      <path d="M2 0 L4.2 -4.5 M5 0 L5 -5.4 M8 0 L5.8 -4.5" stroke="#E7A9A0" stroke-width="0.8"/>
+    </g>
+  </defs>
+  <!-- crest bumps (above the surface line) -->
+  <path d="M0 7 Q8 3 16 6 T32 6 T48 5 T64 7 T80 6 T96 5 T112 6 T128 7 T144 6 T160 5 T176 6 T192 7 T208 6 T224 5 T240 6 T256 7 V64 H0 Z" fill="url(#band)"/>
+  <path d="M0 7 Q8 3 16 6 T32 6 T48 5 T64 7 T80 6 T96 5 T112 6 T128 7 T144 6 T160 5 T176 6 T192 7 T208 6 T224 5 T240 6 T256 7" stroke="#FFFBEF" stroke-width="2" fill="none"/>
+  <!-- damp band -->
+  <path d="M0 20 Q64 15 128 20 T256 20 V26 Q192 30 128 26 T0 26 Z" fill="#C99A55" fill-opacity="0.22"/>
+  <use href="#shell" transform="translate(52 16)"/>
+  <use href="#shell" transform="translate(180 14) scale(0.8)"/>
+  <circle cx="118" cy="15" r="1.8" fill="#9C8B7A"/>
+  <circle cx="226" cy="17" r="1.4" fill="#B7A796"/>
+</svg>

@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="128" viewBox="0 0 96 128">
+  <!-- Pineapple cargo. Collision circle: centre (48,78), r 40 (see src/render/artCatalog.ts).
+       Body is a mild oval (rx 39, ry 44) so it still reads as round when rolling;
+       the crown is kept compact so it doesn't visibly sink into the ground. -->
+  <defs>
+    <radialGradient id="body" cx="0.36" cy="0.32" r="0.8">
+      <stop offset="0" stop-color="#FFE27A"/>
+      <stop offset="0.45" stop-color="#F7B82E"/>
+      <stop offset="0.85" stop-color="#DE8616"/>
+      <stop offset="1" stop-color="#C46A10"/>
+    </radialGradient>
+    <linearGradient id="leafA" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#2F8A3E"/>
+      <stop offset="1" stop-color="#7ED36A"/>
+    </linearGradient>
+    <linearGradient id="leafB" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#1F6B31"/>
+      <stop offset="1" stop-color="#4FB35A"/>
+    </linearGradient>
+    <pattern id="lattice" width="15" height="15" patternUnits="userSpaceOnUse" patternTransform="translate(48 78) rotate(45)">
+      <rect width="15" height="15" fill="none" stroke="#B5620E" stroke-opacity="0.55" stroke-width="1.6"/>
+    </pattern>
+    <pattern id="eyes" width="15" height="15" patternUnits="userSpaceOnUse" patternTransform="translate(48 78) rotate(45)">
+      <circle cx="7.5" cy="7.5" r="2.3" fill="#9A4F0B" fill-opacity="0.55"/>
+      <circle cx="6.8" cy="6.6" r="1" fill="#FFF3C4" fill-opacity="0.75"/>
+    </pattern>
+    <clipPath id="clip">
+      <ellipse cx="48" cy="78" rx="39" ry="44"/>
+    </clipPath>
+  </defs>
+
+  <!-- crown -->
+  <g stroke-linejoin="round">
+    <path d="M48 40 C40 30 30 24 20 22 C30 30 36 36 40 42 Z" fill="url(#leafB)"/>
+    <path d="M48 40 C56 30 66 24 76 22 C66 30 60 36 56 42 Z" fill="url(#leafB)"/>
+    <path d="M47 41 C40 30 34 18 30 8 C40 16 46 26 51 38 Z" fill="url(#leafA)"/>
+    <path d="M49 41 C56 30 62 18 66 8 C56 16 50 26 45 38 Z" fill="url(#leafA)"/>
+    <path d="M48 42 C44 30 44 16 48 4 C52 16 52 30 48 42 Z" fill="url(#leafA)"/>
+    <path d="M48 42 C47 30 47.5 18 48 8" stroke="#A8E68F" stroke-opacity="0.6" stroke-width="1.2" fill="none"/>
+  </g>
+
+  <!-- body -->
+  <ellipse cx="48" cy="78" rx="39" ry="44" fill="url(#body)"/>
+  <g clip-path="url(#clip)">
+    <rect x="0" y="30" width="96" height="98" fill="url(#lattice)"/>
+    <rect x="0" y="30" width="96" height="98" fill="url(#eyes)"/>
+    <!-- core shading: warm shadow lower-right, glossy highlight upper-left -->
+    <ellipse cx="66" cy="102" rx="36" ry="30" fill="#8C3F06" fill-opacity="0.22"/>
+    <ellipse cx="34" cy="58" rx="16" ry="11" fill="#FFFBE6" fill-opacity="0.35" transform="rotate(-30 34 58)"/>
+    <ellipse cx="30" cy="54" rx="6" ry="3.5" fill="#FFFFFF" fill-opacity="0.55" transform="rotate(-30 30 54)"/>
+  </g>
+  <ellipse cx="48" cy="78" rx="38.3" ry="43.3" fill="none" stroke="#A9560C" stroke-opacity="0.55" stroke-width="1.4"/>
+</svg>

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300" viewBox="0 0 200 300">
+  <!-- Prop "palm": foreground palm tree. Anchor: bottom-centre of the trunk (90,300). -->
+  <defs>
+    <linearGradient id="trunk" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7A5A36"/>
+      <stop offset="0.5" stop-color="#A57C4E"/>
+      <stop offset="1" stop-color="#6E5030"/>
+    </linearGradient>
+    <linearGradient id="frond" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5CC27E"/>
+      <stop offset="1" stop-color="#2E8A57"/>
+    </linearGradient>
+  </defs>
+  <path d="M80 300 Q76 200 108 92 L120 96 Q94 200 100 300 Z" fill="url(#trunk)"/>
+  <g stroke="#5E4428" stroke-width="2" stroke-linecap="round">
+    <path d="M80 270 L99 268"/><path d="M80 240 L99 238"/><path d="M82 210 L101 208"/><path d="M85 180 L104 178"/>
+    <path d="M89 150 L108 148"/><path d="M95 120 L113 119"/>
+  </g>
+  <g fill="url(#frond)">
+    <path d="M112 94 Q60 70 8 104 Q56 86 108 102 Z"/>
+    <path d="M112 94 Q70 40 22 38 Q70 58 108 98 Z"/>
+    <path d="M112 94 Q130 30 178 22 Q140 50 116 98 Z"/>
+    <path d="M112 94 Q170 76 196 120 Q158 92 116 102 Z"/>
+    <path d="M112 94 Q106 44 126 6 Q124 50 118 96 Z"/>
+    <path d="M112 94 Q84 110 66 150 Q92 116 114 100 Z"/>
+    <path d="M112 94 Q146 110 160 150 Q138 116 112 100 Z"/>
+  </g>
+  <circle cx="104" cy="100" r="8" fill="#6B4E2E"/><circle cx="118" cy="104" r="7" fill="#7A5A36"/><circle cx="110" cy="110" r="7" fill="#5E4428"/>
+</svg>

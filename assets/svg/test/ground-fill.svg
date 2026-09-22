@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Test/blueprint terrain fill: pale faceted rock slabs (homage to Coconut Run's terrain).
+       Seamless: boundary vertices match on opposite edges (top/bottom x = 0,70,180,256; left/right y = 0,44,130,212,256). -->
+  <rect width="256" height="256" fill="#CBD3DF"/>
+  <g stroke="#9FAABB" stroke-width="1.2" stroke-linejoin="round">
+    <path d="M0 0 L70 0 L52 60 L0 44 Z" fill="#D5DCE6"/>
+    <path d="M70 0 L180 0 L150 70 L52 60 Z" fill="#C4CDDA"/>
+    <path d="M180 0 L256 0 L256 44 L210 80 L150 70 Z" fill="#D0D8E3"/>
+    <path d="M0 44 L52 60 L40 140 L0 130 Z" fill="#BCC6D4"/>
+    <path d="M52 60 L150 70 L130 150 L40 140 Z" fill="#D8DFE8"/>
+    <path d="M150 70 L210 80 L256 44 L256 130 L130 150 Z" fill="#C2CBD8"/>
+    <path d="M0 130 L40 140 L60 210 L0 212 Z" fill="#D2D9E4"/>
+    <path d="M40 140 L130 150 L150 230 L60 210 Z" fill="#BFC8D6"/>
+    <path d="M130 150 L256 130 L256 212 L150 230 Z" fill="#D6DDE7"/>
+    <path d="M0 212 L60 210 L70 256 L0 256 Z" fill="#C7D0DC"/>
+    <path d="M60 210 L150 230 L180 256 L70 256 Z" fill="#CDD5E0"/>
+    <path d="M150 230 L256 212 L256 256 L180 256 Z" fill="#C3CCD9"/>
+  </g>
+</svg>

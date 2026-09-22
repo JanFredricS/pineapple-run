@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="152" height="204" viewBox="0 0 152 204">
+  <!-- Blender jar (glass, drawn OVER the piña-colada fill). Interior polygon used as the
+       fill mask (jar px): (20,22) (124,22) (104,190) (40,190). Handle on the right. -->
+  <defs>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#CFEFF7" stop-opacity="0.55"/>
+      <stop offset="0.18" stop-color="#FFFFFF" stop-opacity="0.12"/>
+      <stop offset="0.7" stop-color="#FFFFFF" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#9FD3E2" stop-opacity="0.5"/>
+    </linearGradient>
+    <linearGradient id="handle" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#BFE6F0" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#7FB9CB" stop-opacity="0.9"/>
+    </linearGradient>
+  </defs>
+  <!-- handle -->
+  <path d="M122 40 H138 Q148 40 148 50 V120 Q148 132 136 134 L112 150" fill="none" stroke="url(#handle)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- glass body -->
+  <path d="M14 16 H130 L108 196 H36 Z" fill="url(#glass)" stroke="#A9D8E6" stroke-width="3" stroke-linejoin="round"/>
+  <!-- rim -->
+  <rect x="10" y="10" width="124" height="10" rx="4" fill="#DDF3F9" fill-opacity="0.75" stroke="#A9D8E6" stroke-width="2"/>
+  <!-- measuring marks -->
+  <g stroke="#6FAFC4" stroke-opacity="0.7" stroke-width="2" stroke-linecap="round">
+    <path d="M100 60 H114"/><path d="M104 90 H112"/><path d="M98 120 H109"/><path d="M103 150 H106"/>
+  </g>
+  <!-- glints -->
+  <path d="M28 30 L44 176" stroke="#FFFFFF" stroke-opacity="0.7" stroke-width="6" stroke-linecap="round"/>
+  <path d="M42 30 L50 110" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="3" stroke-linecap="round"/>
+  <!-- blade hub collar at the bottom -->
+  <rect x="36" y="188" width="72" height="14" rx="4" fill="#3A4252"/>
+  <rect x="36" y="188" width="72" height="3" rx="1.5" fill="#FFFFFF" fill-opacity="0.35"/>
+</svg>

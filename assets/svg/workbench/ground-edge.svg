@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="64" viewBox="0 0 256 64">
+  <!-- Workbench edge strip: a wooden ruler laid along the surface. Surface at y=0,
+       ruler to y=46, shadow to 64 (0 m above / 0.45 m below). 8 px minor ticks. -->
+  <defs>
+    <linearGradient id="ruler" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FBE3A1"/>
+      <stop offset="1" stop-color="#EFC86C"/>
+    </linearGradient>
+    <linearGradient id="shadow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4A3218" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#4A3218" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="minor" width="8" height="64" patternUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="1.2" height="9" fill="#3B2F22"/>
+    </pattern>
+    <pattern id="mid" width="32" height="64" patternUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="1.4" height="15" fill="#3B2F22"/>
+    </pattern>
+    <pattern id="major" width="64" height="64" patternUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="1.8" height="21" fill="#3B2F22"/>
+    </pattern>
+  </defs>
+  <rect x="0" y="46" width="256" height="18" fill="url(#shadow)"/>
+  <rect x="0" y="0" width="256" height="46" fill="url(#ruler)"/>
+  <rect x="0" y="0" width="256" height="46" fill="url(#minor)"/>
+  <rect x="0" y="0" width="256" height="46" fill="url(#mid)"/>
+  <rect x="0" y="0" width="256" height="46" fill="url(#major)"/>
+  <g font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#3B2F22">
+    <text x="4" y="33">0</text><text x="68" y="33">1</text><text x="132" y="33">2</text><text x="196" y="33">3</text>
+  </g>
+  <rect x="0" y="0" width="256" height="1.6" fill="#FFF6D8"/>
+  <rect x="0" y="44" width="256" height="2" fill="#B48A3A"/>
+</svg>

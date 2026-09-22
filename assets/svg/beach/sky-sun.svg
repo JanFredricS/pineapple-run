@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="360" viewBox="0 0 1024 360">
+  <!-- Beach far layer: sun with glow and soft clouds. Transparent sky (the gradient is drawn behind). -->
+  <defs>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFF6C9" stop-opacity="0.95"/>
+      <stop offset="0.35" stop-color="#FFE9A0" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#FFE9A0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cloud" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E4F4FA"/>
+    </linearGradient>
+  </defs>
+  <circle cx="770" cy="110" r="110" fill="url(#glow)"/>
+  <circle cx="770" cy="110" r="42" fill="#FFF3BF"/>
+  <g fill="url(#cloud)" fill-opacity="0.92">
+    <path d="M90 170 Q92 138 126 140 Q138 112 172 120 Q196 98 226 118 Q262 116 262 146 Q286 152 280 170 Z"/>
+    <path d="M430 90 Q434 70 456 72 Q468 54 492 62 Q514 50 530 70 Q556 70 556 90 Z" fill-opacity="0.8"/>
+    <path d="M860 230 Q864 206 892 208 Q904 186 932 194 Q958 180 976 204 Q1004 204 1000 230 Z" fill-opacity="0.85"/>
+    <path d="M300 250 Q304 236 322 238 Q330 226 348 232 Q364 226 372 240 Q390 240 388 250 Z" fill-opacity="0.6"/>
+  </g>
+</svg>

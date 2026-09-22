@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Pineapple Run — Style guide</title>
+    <style>
+      :root {
+        --sg-bg: #f4f1ea;
+        --sg-card: #ffffff;
+        --sg-ink: #22262e;
+        --sg-muted: #6b7280;
+        --sg-line: #e5e0d5;
+        color-scheme: light;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; background: var(--sg-bg); color: var(--sg-ink);
+        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; }
+      main { max-width: 1280px; margin: 0 auto; padding: 32px 20px 80px; }
+      header h1 { font-size: 30px; margin: 0 0 4px; letter-spacing: -0.02em; }
+      header p { margin: 0; color: var(--sg-muted); max-width: 70ch; }
+      section { margin-top: 40px; }
+      h2 { font-size: 18px; margin: 0 0 4px; letter-spacing: -0.01em; }
+      .note { color: var(--sg-muted); margin: 0 0 14px; max-width: 80ch; }
+      .card { background: var(--sg-card); border: 1px solid var(--sg-line); border-radius: 14px; overflow: hidden;
+        box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -12px rgb(0 0 0 / 0.12); }
+      .canvas-host { position: relative; width: 100%; }
+      .canvas-host canvas { display: block; width: 100%; height: 100%; }
+      #parts { height: 560px; }
+      #themes { height: 760px; }
+      #motion { height: 520px; }
+      .controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; padding: 12px 16px;
+        border-top: 1px solid var(--sg-line); background: #fbfaf7; }
+      .controls label { display: inline-flex; gap: 8px; align-items: center; color: var(--sg-muted); }
+      .seg { display: inline-flex; border: 1px solid var(--sg-line); border-radius: 999px; overflow: hidden; }
+      .seg button { border: 0; background: transparent; padding: 6px 14px; font: inherit; cursor: pointer; color: var(--sg-ink); }
+      .seg button[aria-pressed='true'] { background: var(--sg-ink); color: #fff; }
+      .stack { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+      .stack .card { padding: 14px; }
+      .stack h3 { margin: 0 0 10px; font-size: 14px; display: flex; justify-content: space-between; align-items: baseline; }
+      .stack h3 small { color: var(--sg-muted); font-weight: 400; }
+      .layers { display: grid; gap: 6px; }
+      .layer { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; font-size: 12px; color: var(--sg-muted); }
+      .layer .img { height: 44px; border-radius: 6px; border: 1px solid var(--sg-line);
+        background: repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0 / 12px 12px; background-size: cover; overflow: hidden; }
+      .layer .img img { height: 100%; width: 100%; object-fit: cover; object-position: left bottom; display: block; }
+      .swatches { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+      .swatch { width: 26px; height: 26px; border-radius: 6px; border: 1px solid rgb(0 0 0 / 0.08); }
+      .hud { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; white-space: nowrap; }
+      .hud .timer { font: 700 18px/1 ui-monospace, 'SF Mono', Menlo, monospace; padding: 8px 12px; border-radius: 10px;
+        background: color-mix(in srgb, var(--pr-ui-panel) 88%, transparent); color: var(--pr-ui-text); }
+      .hud .pill { padding: 7px 14px; border-radius: 999px; background: var(--pr-accent); color: #fff; font-weight: 600; }
+      .hud .pill.alt { background: var(--pr-accent-alt); }
+      .hud .rating { display: flex; gap: 4px; }
+      .hud .rating span { width: 14px; height: 14px; border-radius: 50%; }
+      .atlas { padding: 14px; display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+      .atlas canvas { max-width: 100%; height: auto; border-radius: 8px;
+        background: repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0 / 16px 16px; }
+      .status { color: var(--sg-muted); font-size: 12px; }
+      .err { color: #b91c1c; white-space: pre-wrap; }
+      @media (max-width: 700px) {
+        #parts { height: 760px; }
+        #themes { height: 1100px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Pineapple Run — style guide</h1>
+        <p>Every S4 asset rendered through the production pipeline (SVG → rasterised atlas → Pixi v8), the four
+          terrain/parallax themes, the blender goal loop, and a snapshot-driven motion test. <span id="status" class="status">Loading…</span></p>
+      </header>
+
+      <section>
+        <h2>Parts &amp; goal</h2>
+        <p class="note">Each asset at 0.5×, 1× and 2× (1× = 30 px per metre at zoom 1, i.e. in-game size). Straws and sugar cubes
+          are built at arbitrary lengths/sizes the way the scene builds them (tiling straw body + end caps, nine-slice cube).
+          The umbrella shock cycles through compressed → rest → extended. The blender loops fill + whir.</p>
+        <div class="card"><div id="parts" class="canvas-host"></div></div>
+      </section>
+
+      <section>
+        <h2>Themes</h2>
+        <p class="note">Same terrain sample (slopes, a kicker and a gap) skinned by each theme: tiled fill + depth shade + edge strip,
+          over the 3–4 parallax layers. The camera pans slowly so the parallax is visible.</p>
+        <div class="card"><div id="themes" class="canvas-host"></div></div>
+        <div id="stacks" class="stack" style="margin-top: 16px"></div>
+      </section>
+
+      <section>
+        <h2>Motion test</h2>
+        <p class="note">A kinematic snapshot source (S0 <code>MockSnapshotSource</code> pattern) drives a real <code>CartDesign</code>
+          through <code>resolveAttachments</code> — manifest + per-frame transforms only. “Live physics” runs the S0 spike
+          (box2d, 12-straw cart, 15 pineapples) through the same renderer; drive with ← / →.</p>
+        <div class="card">
+          <div id="motion" class="canvas-host"></div>
+          <div class="controls">
+            <div class="seg" id="motion-theme"></div>
+            <div class="seg" id="motion-source">
+              <button data-src="mock" aria-pressed="true">Mock cart</button>
+              <button data-src="physics" aria-pressed="false">Live physics (S0 spike)</button>
+            </div>
+            <label>Speed <input id="motion-speed" type="range" min="0" max="8" step="0.1" value="3.2" /></label>
+            <label>Zoom <input id="motion-zoom" type="range" min="0.5" max="3" step="0.05" value="1.4" /></label>
+            <label><input id="motion-slowmo" type="checkbox" /> ¼ speed</label>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Atlas</h2>
+        <p class="note">Packed sprite atlas page(s) as baked at this device's raster resolution. Repeating textures (terrain, parallax,
+          straw stripes) are standalone so the GPU can wrap them.</p>
+        <div class="card"><div id="atlas" class="atlas"></div></div>
+      </section>
+    </main>
+    <script type="module" src="/src/render/styleguide/main.ts"></script>
+  </body>
+</html>

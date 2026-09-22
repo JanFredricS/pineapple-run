@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="128" height="128" viewBox="0 0 128 128">
+  <!-- Bottle-cap powered wheel (crown cap, top view). Collision circle: centre (64,64), r 62. -->
+  <defs>
+    <radialGradient id="skirt" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0.8" stop-color="#9E2A24"/>
+      <stop offset="0.93" stop-color="#C9463C"/>
+      <stop offset="1" stop-color="#8A231E"/>
+    </radialGradient>
+    <radialGradient id="top" cx="0.38" cy="0.32" r="0.75">
+      <stop offset="0" stop-color="#FF8A72"/>
+      <stop offset="0.5" stop-color="#EB4D3D"/>
+      <stop offset="1" stop-color="#B8302A"/>
+    </radialGradient>
+    <radialGradient id="bolt" cx="0.35" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.5" stop-color="#C9CFD8"/>
+      <stop offset="1" stop-color="#7C8594"/>
+    </radialGradient>
+    <!-- one crimp flute of the knurled skirt -->
+    <g id="flute">
+      <circle cx="64" cy="7.6" r="5.8" fill="#B5372F"/>
+      <path d="M61.5 5 Q64 3 66.5 5" stroke="#FF9C8A" stroke-opacity="0.8" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+    </g>
+  </defs>
+  <circle cx="64" cy="64" r="57" fill="url(#skirt)"/>
+  <g>
+    <use xlink:href="#flute"/>
+    <use xlink:href="#flute" transform="rotate(17.142857 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(34.285714 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(51.428571 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(68.571429 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(85.714286 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(102.857143 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(120 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(137.142857 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(154.285714 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(171.428571 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(188.571429 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(205.714286 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(222.857143 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(240 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(257.142857 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(274.285714 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(291.428571 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(308.571429 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(325.714286 64 64)"/>
+    <use xlink:href="#flute" transform="rotate(342.857143 64 64)"/>
+  </g>
+  <!-- groove + crown top -->
+  <circle cx="64" cy="64" r="48" fill="#7E1D19"/>
+  <circle cx="64" cy="64" r="46" fill="url(#top)"/>
+  <!-- cream emblem: ring + star; the offset dot makes spin readable at any size -->
+  <circle cx="64" cy="64" r="33" fill="none" stroke="#FFF1D6" stroke-width="3.5" stroke-opacity="0.95"/>
+  <path d="M64 38 L70.5 55.2 L88.7 56 L74.4 67.4 L79.3 85 L64 74.8 L48.7 85 L53.6 67.4 L39.3 56 L57.5 55.2 Z" fill="#FFF1D6" transform="translate(64 64) scale(0.62) translate(-64 -61)"/>
+  <circle cx="64" cy="22" r="4" fill="#FFF1D6"/>
+  <path d="M30 42 A40 40 0 0 1 52 22" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <!-- axle bolt -->
+  <circle cx="64" cy="64" r="9" fill="#5A606B" fill-opacity="0.35"/>
+  <circle cx="64" cy="64" r="7.5" fill="url(#bolt)"/>
+  <path d="M59.5 64 H68.5" stroke="#5A606B" stroke-width="2" stroke-linecap="round"/>
+</svg>

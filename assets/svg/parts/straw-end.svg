@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- Rounded straw end (drawn under each end of the striped body). Same shading as straw.svg. -->
+  <defs>
+    <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="0.3" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="0.7" stop-color="#1B2440" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#1B2440" stop-opacity="0.35"/>
+    </linearGradient>
+  </defs>
+  <circle cx="8" cy="8" r="8" fill="#FDFBF7"/>
+  <circle cx="8" cy="8" r="8" fill="url(#shade)"/>
+</svg>

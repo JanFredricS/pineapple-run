@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="124" viewBox="0 0 160 124">
+  <!-- Blender motor base (goal). Origin for the composite: bottom-centre (80,124). -->
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2AA897"/>
+      <stop offset="0.3" stop-color="#4FD6C1"/>
+      <stop offset="0.55" stop-color="#3CC4AF"/>
+      <stop offset="1" stop-color="#1F8577"/>
+    </linearGradient>
+    <linearGradient id="chrome" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8C96A6"/>
+      <stop offset="0.25" stop-color="#F4F7FB"/>
+      <stop offset="0.5" stop-color="#B9C2CF"/>
+      <stop offset="0.8" stop-color="#E8EDF3"/>
+      <stop offset="1" stop-color="#7D8796"/>
+    </linearGradient>
+    <radialGradient id="dial" cx="0.38" cy="0.32" r="0.75">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.6" stop-color="#E6EAF0"/>
+      <stop offset="1" stop-color="#9AA3B2"/>
+    </radialGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- contact shadow -->
+  <ellipse cx="80" cy="120" rx="76" ry="4" fill="#1B2440" fill-opacity="0.25"/>
+  <!-- feet -->
+  <rect x="14" y="108" width="26" height="12" rx="4" fill="#2B3140"/>
+  <rect x="120" y="108" width="26" height="12" rx="4" fill="#2B3140"/>
+  <!-- body: flared retro base -->
+  <path d="M26 14 H134 Q140 14 141 20 L152 100 Q153 112 140 112 H20 Q7 112 8 100 L19 20 Q20 14 26 14 Z" fill="url(#body)"/>
+  <path d="M28 18 H132 L136 44 H24 Z" fill="url(#shine)"/>
+  <!-- chrome collar the jar sits in -->
+  <rect x="22" y="4" width="116" height="14" rx="5" fill="url(#chrome)"/>
+  <rect x="22" y="4" width="116" height="3" rx="1.5" fill="#FFFFFF" fill-opacity="0.6"/>
+  <!-- control panel -->
+  <rect x="34" y="58" width="92" height="36" rx="12" fill="#1B6F63" fill-opacity="0.55"/>
+  <circle cx="56" cy="76" r="12" fill="url(#dial)"/>
+  <path d="M56 76 L63 68" stroke="#E84855" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="84" cy="76" r="6" fill="#FFD166"/>
+  <circle cx="84" cy="74.5" r="3" fill="#FFFFFF" fill-opacity="0.5"/>
+  <circle cx="104" cy="76" r="6" fill="#FF6F91"/>
+  <circle cx="104" cy="74.5" r="3" fill="#FFFFFF" fill-opacity="0.5"/>
+  <!-- brand plate -->
+  <rect x="62" y="30" width="36" height="8" rx="4" fill="#FFFFFF" fill-opacity="0.8"/>
+  <path d="M68 34 H92" stroke="#1F8577" stroke-width="2" stroke-dasharray="4 2" stroke-linecap="round"/>
+</svg>
