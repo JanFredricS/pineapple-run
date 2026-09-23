@@ -329,7 +329,7 @@ Only a world with at least one field zone is created with `sensorVisitors: true`
 - Bead properties: density 0.35, friction 0.2, restitution 0.05. Beads opt out of sensor events.
 - The layout is a hex lattice filled bottom-up, a pure function of (terrain, rect, count).
 - The radius is derived from the count, so the pile keeps its extent and mass: r = 0.090 / 0.075 / 0.064 m at 300 / 450 / 600.
-- The count is chosen **once at load** by `beadCountFor(detectDeviceInfo())`:
+- The count is fixed **at level load** and **pinned per device** (`resolveBeadCount`, audit-1 #1). The first bead level a browser loads stores its tier count in localStorage (`pineapple-run.beadCount.v1`). Every later load, including retries, page reloads and reloads after the device reports different cores or memory, uses the stored count, so a run and its reload always build the same bead ocean. There is no run/replay save format; saved carts are designs only. Tiers for the first load:
 
   | Tier | Reported device | Beads |
   |---|---|---|
@@ -337,7 +337,8 @@ Only a world with at least one field zone is created with `sensorVisitors: true`
   | mid | ≤ 4 cores, or nothing reported | 450 |
   | high | anything more | 600 |
 
-  There is no frame-time feedback and no URL override (the run screen reads no query string). Tests override the count through `RunSessionOptions.beadCount` / `RunScreenDeps.beadCount`.
+  There is no frame-time feedback and no URL override (the run screen reads no query string). Tests override the count through `RunSessionOptions.beadCount` / `RunScreenDeps.beadCount` (an override is never pinned), and can inject `RunScreenDeps.deviceInfo` / `beadStorage`. Invalid or unreadable storage falls back to the tier; unwritable storage skips pinning.
+- Run worlds are configured from the level in one place, `src/run/runWorld.ts` (`worldOptionsForLevel`, `createRun`). Both RunSession and the run harness page use it, so the harness loads `levels/tikibar.json` (audit-1 #2).
 - Beads are not cargo and are never scored.
 - Beads are not streaming anchors. `RunSession.furnitureXs` pins the zone's two fixed ends, so the basin terrain stays loaded while the cart is away.
 - A bead that falls below killY is swept every 30 steps, so the count only goes down (asserted).
@@ -370,6 +371,11 @@ The pool comes before the beads because a cart that has just ploughed the ocean 
 | Careful (5 m/s from 20 m before the pool) | 450 | 14/15 | 70 |
 
 - Pacing beats flooring it by 37 points.
+- **What the tests pin** (audit-1 #3; runs are deterministic):
+  - pace: ≥ 12/15 and rating ≥ 60 at every tier (measured 12–14, 66–76; the acceptance floor is 10);
+  - flooring it: ≤ 7/15, and pacing wins by ≥ 25 points (measured 5/15 and 37; acceptance ≥ 5);
+  - pool: careful ≥ 2 s slower than the jump (measured 2.77 s);
+  - census: exactly 10 hazards / 8 kinds / 5.11 per 100 m with zones and 7 / 5 / 3.58 without, dull ≤ 4 s (3.83), crest ≤ 0.5 (0.49), 1 shortcut.
 - Pool shortcut, time from pool start to pool end: jump 2.05 s, careful 4.82 s.
   - At 450 beads the careful line scores higher, because the jump costs two pineapples (R23).
 - Both mechanics are load-bearing. With the moon-hop pocket removed, or with the shooter removed, the pace line does not finish (asserted).
@@ -392,7 +398,7 @@ Tikibar passes the premade rules in two ways:
 - **With the zones:** 10 hazards in 8 kinds, 5.11 / 100 m, longest dull stretch 3.83 s, sharpest crest 0.49, 1 shortcut.
 - **Honestly without any zone credit:** zones and zone labels removed, 7 hazards in 5 kinds, 3.58 / 100 m, same dull and crest figures. The zones add variety; they are not what gets the level past the audit.
 
-### Perf (headless, node 22, this laptop; `S9_PERF=1 npx vitest run test/integration/beadPerf.test.ts`; not a gate)
+### Perf (headless, node 22, this laptop; `S9_PERF=1 npx vitest run test/integration/beadPerf.test.ts`, exactly `1`, any other value skips; not a gate)
 
 | Beads | Build (ms) | Settle (steps) | Parked (ms/step) | Ploughing (ms/step) | Ploughing max (ms) | Whole run (ms/step) |
 |---|---|---|---|---|---|---|

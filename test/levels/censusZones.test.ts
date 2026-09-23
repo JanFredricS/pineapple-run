@@ -79,6 +79,13 @@ describe('census: Zero-G Tiki Bar', () => {
     expect(c.hazards.shooter).toBe(1);
     expect(c.hazards.beads).toBe(1);
     expect(auditLevel(c, PREMADE_RULES)).toEqual([]);
+    // audit-1 #3: pinned to the recorded census (TUNING.md S9)
+    expect(c.hazardCount).toBe(10);
+    expect(c.hazardKinds).toBe(8);
+    expect(c.hazardsPer100m).toBeCloseTo(5.11, 2);
+    expect(c.longestDullSeconds).toBeLessThanOrEqual(4); // measured 3.83
+    expect(c.sharpestCrest).toBeLessThanOrEqual(0.5); // measured 0.49
+    expect(c.shortcuts).toHaveLength(1);
   });
 
   it('also passes with NO zone credit: the terrain alone meets every premade rule', () => {
@@ -88,5 +95,9 @@ describe('census: Zero-G Tiki Bar', () => {
     const c = premadeCensus(a, { ...a.level, zones: [] }, terrainLabels);
     expect(c.hazards.lowGravity ?? 0).toBe(0);
     expect(auditLevel(c, PREMADE_RULES)).toEqual([]);
+    expect(c.hazardCount).toBe(7);
+    expect(c.hazardKinds).toBe(5);
+    expect(c.hazardsPer100m).toBeCloseTo(3.58, 2);
+    expect(c.longestDullSeconds).toBeLessThanOrEqual(4);
   });
 });

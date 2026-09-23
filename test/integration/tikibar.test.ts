@@ -16,6 +16,7 @@ import type { RunEvent } from '../../src/model/runEvents';
 import { efficiencyRating } from '../../src/model/score';
 import { BEAD_COUNT_MAX, BEAD_COUNT_MIN } from '../../src/run/beads';
 import { BEADS_BY_TIER } from '../../src/game/deviceTier';
+import { runBeadCount } from '../../src/game/runScreen';
 import { PREMADE } from '../../tools/levels/premade';
 import type { PaceNote } from '../../tools/levels/track';
 import { FLOOR_IT, paceDrive } from './driver';
@@ -95,21 +96,25 @@ async function drive(line: readonly PaceNote[], opts: { beadCount?: number; desi
 }
 
 describe('Zero-G Tiki Bar (S9): the pace-note driver clears it with the example cart', () => {
+  // audit-1 #3: pinned to the measured results (TUNING.md S9: 14/76, 12/66, 13/72),
+  // not just the >= 10 acceptance floor. Runs are deterministic, so the floor
+  // is the worst measured tier (12/15) and the rating keeps a 6-point margin.
   for (const n of [BEAD_COUNT_MIN, BEADS_BY_TIER.mid, BEAD_COUNT_MAX]) {
-    it(`${n} beads: goalReached with >= 10/15 delivered`, async () => {
+    it(`${n} beads: goalReached with >= 12/15 delivered (acceptance: >= 10), rating >= 60`, async () => {
       const r = await drive(PACE, { beadCount: n });
       expect(r.goal).toBe(true);
-      expect(r.delivered).toBeGreaterThanOrEqual(10);
-      expect(r.rating).toBeGreaterThan(0);
+      expect(r.delivered).toBeGreaterThanOrEqual(12);
+      expect(r.rating).toBeGreaterThanOrEqual(60);
       console.info(`[S9] tikibar pace, ${n} beads: ${r.delivered}/15, rating ${r.rating}`);
     }, 60_000);
   }
 
-  it('pacing beats flooring it by >= 5 rating points (and floored delivers fewer)', async () => {
+  it('pacing beats flooring it by >= 25 rating points (measured 37; acceptance: >= 5), floored delivers <= 7', async () => {
     const paced = await drive(PACE);
     const floored = await drive(FLOOR_IT);
+    expect(floored.delivered).toBeLessThanOrEqual(7); // measured 5/15
     expect(floored.delivered).toBeLessThan(paced.delivered);
-    expect(paced.rating - floored.rating, `paced ${paced.rating} vs floored ${floored.rating}`).toBeGreaterThanOrEqual(5);
+    expect(paced.rating - floored.rating, `paced ${paced.rating} vs floored ${floored.rating}`).toBeGreaterThanOrEqual(25);
     console.info(`[S9] tikibar paced ${paced.delivered}/15 rating ${paced.rating}; floored ${floored.delivered}/15 rating ${floored.rating}`);
   }, 60_000);
 
@@ -180,5 +185,27 @@ describe('Zero-G Tiki Bar (S9): retry and save/reload determinism', () => {
     expect(b.events).toEqual(a.events);
     expect(b.trace).toEqual(a.trace);
     expect(b.beads).toEqual(a.beads);
+  }, 60_000);
+
+  it('audit-1 #1: a run on a 600-bead device, reloaded after the device reports the 300-bead tier, replays identically (pinned count)', async () => {
+    const pin = new MemStorage();
+    const store = new CartStore(new MemStorage());
+    expect(store.save('Tiki Cart', exampleCart()).ok).toBe(true);
+    const high = runBeadCount({ deviceInfo: { hardwareConcurrency: 16, deviceMemory: 8 }, beadStorage: pin });
+    expect(high).toBe(BEAD_COUNT_MAX);
+    const a = await drive(PACE, { beadCount: high });
+    // reload: the cart comes back from its save, the device now looks low-tier
+    const loaded = store.load('Tiki Cart');
+    if (!loaded.ok) throw new Error(loaded.error.message);
+    const low = { hardwareConcurrency: 2, deviceMemory: 1 };
+    const again = runBeadCount({ deviceInfo: low, beadStorage: pin });
+    expect(again).toBe(BEAD_COUNT_MAX);
+    const b = await drive(PACE, { beadCount: again, design: loaded.value });
+    expect(b.beads.length).toBeGreaterThan(0);
+    expect(b.events).toEqual(a.events);
+    expect(b.trace).toEqual(a.trace);
+    expect(b.beads).toEqual(a.beads);
+    // control: without the pin the low tier would have re-guessed 300 and built a different ocean
+    expect(runBeadCount({ deviceInfo: low, beadStorage: null })).toBe(BEAD_COUNT_MIN);
   }, 60_000);
 });

@@ -1,6 +1,6 @@
 /**
  * S9 headless perf measurement for the bead ocean (TUNING.md, S9 section).
- * OPT-IN: runs only with S9_PERF=1 (timings are machine-dependent and never
+ * OPT-IN: runs only with S9_PERF=1 exactly (0, false or any other value skips; timings are machine-dependent and never
  * a gate); prints a markdown table.
  *
  *   S9_PERF=1 npx vitest run test/integration/beadPerf.test.ts
@@ -70,7 +70,7 @@ async function measure(n: number): Promise<string> {
   }
 }
 
-describe.skipIf(!process.env.S9_PERF)('S9 bead-ocean perf (opt-in)', () => {
+describe.skipIf(process.env.S9_PERF !== '1')('S9 bead-ocean perf (opt-in)', () => {
   it('prints the table', async () => {
     const rows = ['| beads | build ms | settle steps | parked ms/step | ploughing ms/step | ploughing max ms | whole run ms/step |', '|---|---|---|---|---|---|---|'];
     await measure(300); // warm-up (JIT, wasm)

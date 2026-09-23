@@ -25,10 +25,10 @@ import type { DriveDirection } from '../physics/compound';
 import { FIXED_DT } from '../physics/clock';
 import { PhysicsWorld } from '../physics/engine';
 import { RunController, type RunMode } from '../run/controller';
+import { worldOptionsForLevel } from '../run/runWorld';
 import { StuckDetector } from '../run/stuck';
 import type { TerrainSource } from '../terrain/chunks';
 import { TerrainStreamer } from '../terrain/runtime';
-import { isFieldZone } from '../model/zones';
 import { designBottomPx } from './startArea';
 import { StreamedTerrainQuery } from './streamedTerrain';
 
@@ -103,7 +103,7 @@ export class RunSession implements RunEventSource {
    * screen passes the device bucket, src/game/deviceTier.ts).
    */
   static async create(design: CartDesign, course: Course, options: RunSessionOptions = {}): Promise<RunSession> {
-    const world = await PhysicsWorld.create({ sensorVisitors: course.level.zones.some(isFieldZone) });
+    const world = await PhysicsWorld.create(worldOptionsForLevel(course.level));
     try {
       return new RunSession(world, design, course, options);
     } catch (err) {

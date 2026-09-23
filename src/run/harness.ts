@@ -12,12 +12,13 @@ import { cameraTransform, type Camera } from '../model/coords';
 import type { LevelDef } from '../model/level';
 import { isTerminalRunEvent, type RunEvent } from '../model/runEvents';
 import { FrameLoop } from '../physics/clock';
-import { PhysicsWorld } from '../physics/engine';
+import type { PhysicsWorld } from '../physics/engine';
 import { DebugDraw } from '../render/debugDraw';
-import { RunController, type RunMode } from './controller';
+import type { RunController, RunMode } from './controller';
 import { loadFixtureCart, loadFlatGoalLevel } from './fixtures';
 import { DriveInput, bindTouchButton, type DriveSide } from './input';
 import { checkCartJson, checkLevelJson } from './loadCheck';
+import { createRun } from './runWorld';
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -69,19 +70,20 @@ async function main(): Promise<void> {
     next: { design: CartDesign; level: LevelDef; label: typeof sourceLabel } = { design, level, label: sourceLabel },
   ): Promise<boolean> => {
     const gen = ++generation;
-    const w = await PhysicsWorld.create();
-    if (gen !== generation) {
-      w.destroy();
-      return false;
-    }
-    let r: RunController;
+    // S9: the world is configured from the level (sensor visitors for zone levels), like RunSession
+    let built: Awaited<ReturnType<typeof createRun>>;
     try {
-      r = new RunController(w, next.design, next.level, { mode });
+      built = await createRun(next.design, next.level, { mode });
     } catch (err) {
-      w.destroy();
-      ui.error.textContent = `Cannot build run: ${err instanceof Error ? err.message : String(err)} (kept the current run)`;
+      if (gen === generation) ui.error.textContent = `Cannot build run: ${err instanceof Error ? err.message : String(err)} (kept the current run)`;
       return false;
     }
+    if (gen !== generation) {
+      built.run.destroy();
+      built.world.destroy();
+      return false;
+    }
+    const { world: w, run: r } = built;
     // commit: tear down the old run, adopt the new one
     input.clear();
     run?.destroy();

@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { BLENDER_WHIR_SECONDS, GameAudio, musicThemeForCourse, stageForEndlessDistance } from '../../src/audio';
+import { BLENDER_WHIR_SECONDS, COURSE_MUSIC, FALLBACK_MUSIC, GameAudio, musicThemeForCourse, stageForEndlessDistance } from '../../src/audio';
+import { COURSES } from '../../src/ui/catalog';
 import { audioViolations, scanImports, stripComments } from './importScan';
 import { FakeStorage, FakeTarget, FakeTimers, fakeFactory, flush, quotaError, type FakeOscillator } from './fakeAudio';
 
@@ -83,6 +84,14 @@ describe('GameAudio facade', () => {
     expect(musicThemeForCourse('original')).toBe('workbench');
     expect(musicThemeForCourse('endless:ABC')).toBe('endless');
     expect(musicThemeForCourse('mystery')).toBe('beach');
+  });
+
+  it('S9 audit-1 #5: Zero-G Tiki Bar plays beach by an EXPLICIT mapping, and every catalog course has one', () => {
+    expect(musicThemeForCourse('tikibar')).toBe('beach');
+    expect(COURSE_MUSIC.tikibar).toBe('beach'); // not the fallback: a removed entry fails here
+    expect(Object.hasOwn(COURSE_MUSIC, 'mystery')).toBe(false);
+    for (const c of COURSES) expect(Object.hasOwn(COURSE_MUSIC, c.levelId), c.levelId).toBe(true);
+    expect(musicThemeForCourse('toString')).toBe(FALLBACK_MUSIC); // prototype keys are not courses
   });
 
   it('mute persistence reports honestly through the facade', () => {

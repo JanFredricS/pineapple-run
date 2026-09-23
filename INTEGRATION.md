@@ -68,6 +68,10 @@ work. S6 works through this list; each item is a plan-owner ruling.
 - **Beads are furniture**: not scored, not streaming anchors (the bead
   zone's fixed ends are, via `RunSession.furnitureXs`), swept below killY.
 - Builder untouched; renderer reads only the manifest (zone tag in partIds).
+- **Fix cycle 1**:
+  - The bead count is pinned per browser in localStorage (`pineapple-run.beadCount.v1`) on the first bead-level load, so reloads never re-guess it. There is no run/replay save format to carry it; saved carts are builder designs, left untouched.
+  - Run worlds come from `src/run/runWorld.ts`, which the run harness now uses, so it loads zone levels.
+  - Tiki Bar music is an explicit `COURSE_MUSIC` entry.
 
 ## Conventions to reconcile
 

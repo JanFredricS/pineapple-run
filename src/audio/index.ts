@@ -70,11 +70,20 @@ export const ENDLESS_STAGE_METRES = 150;
  */
 export function musicThemeForCourse(levelId: string): MusicTheme {
   if (levelId === 'endless' || levelId.startsWith('endless:')) return 'endless';
-  if (levelId === 'kitchen') return 'kitchen';
-  if (levelId === 'workbench' || levelId === 'original') return 'workbench';
-  if (levelId === 'tikibar') return 'beach';
-  return 'beach';
+  return Object.hasOwn(COURSE_MUSIC, levelId) ? COURSE_MUSIC[levelId]! : FALLBACK_MUSIC;
 }
+
+/** Every catalog course's song, explicitly (a course missing here would silently get FALLBACK_MUSIC). */
+export const COURSE_MUSIC: Readonly<Record<string, MusicTheme>> = {
+  beach: 'beach',
+  kitchen: 'kitchen',
+  workbench: 'workbench',
+  original: 'workbench',
+  tikibar: 'beach',
+};
+
+/** Unknown course ids. */
+export const FALLBACK_MUSIC: MusicTheme = 'beach';
 
 /** Endless distance (m) → stage. */
 export function stageForEndlessDistance(metres: number): MusicStage {
