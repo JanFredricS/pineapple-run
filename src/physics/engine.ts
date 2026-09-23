@@ -50,6 +50,12 @@ export interface MaterialDef {
    * with each other (used so a cart's own bodies don't fight each other).
    */
   groupIndex?: number;
+  /**
+   * Surface id (S8a): a small non-negative integer naming what this shape is
+   * made of, for pairwise friction overrides (PhysicsWorld.setPairFriction).
+   * 0 (the default) = no special surface. Stored as Box2D's userMaterialId.
+   */
+  surface?: number;
 }
 
 export interface BodyDef {
@@ -88,6 +94,11 @@ export interface DistanceJointDef {
   /** Spring (0 = rigid rod). */
   hertz?: number;
   dampingRatio?: number;
+  /**
+   * Hard travel limits (S8a): Box2D keeps the anchor distance within
+   * [minLength, maxLength] as a rigid constraint, on top of the spring.
+   */
+  limits?: { minLength: number; maxLength: number };
   collideConnected?: boolean;
 }
 
@@ -133,6 +144,9 @@ export class PhysicsWorld implements SnapshotSource {
   private destroyed = false;
   private readonly v1: b2Vec2;
   private readonly v2: b2Vec2;
+  /** Pairwise friction overrides, keyed by pairKey(surfaceA, surfaceB). */
+  private readonly pairFriction = new Map<number, number>();
+  private frictionCallbackInstalled = false;
 
   static async create(options: WorldOptions = {}): Promise<PhysicsWorld> {
     return new PhysicsWorld(await loadPhysics(), options);
@@ -415,6 +429,13 @@ export class PhysicsWorld implements SnapshotSource {
       jd.hertz = def.hertz;
       jd.dampingRatio = def.dampingRatio ?? 0;
     }
+    if (def.limits) {
+      const { minLength, maxLength } = def.limits;
+      if (!(minLength > 0) || !(maxLength >= minLength)) throw new Error('createDistanceJoint: need 0 < minLength <= maxLength');
+      jd.enableLimit = true;
+      jd.minLength = minLength;
+      jd.maxLength = maxLength;
+    }
     const id = b2.b2CreateDistanceJoint(this.worldId, jd);
     jd.delete();
     return this.addJoint({ id, kind: 'distance', bodyA: def.bodyA, bodyB: def.bodyB, localA, localB });
@@ -438,6 +459,54 @@ export class PhysicsWorld implements SnapshotSource {
     b2.b2RevoluteJoint_SetMotorSpeed(j.id, motor.speed);
     b2.b2RevoluteJoint_SetMaxMotorTorque(j.id, motor.maxTorque);
     b2.b2Joint_WakeBodies(j.id);
+  }
+
+  /** Current anchor distance of a distance joint (m), as Box2D sees it. */
+  getDistanceJointLength(handle: JointHandle): number {
+    const j = this.joint(handle);
+    if (j.kind !== 'distance') throw new Error('getDistanceJointLength: not a distance joint');
+    return this.b2.b2DistanceJoint_GetCurrentLength(j.id);
+  }
+
+  /** The [min, max] length range of a distance joint (Box2D's own values; unlimited joints report its huge defaults). */
+  getDistanceJointLimits(handle: JointHandle): { enabled: boolean; minLength: number; maxLength: number } {
+    const j = this.joint(handle);
+    if (j.kind !== 'distance') throw new Error('getDistanceJointLimits: not a distance joint');
+    const b2 = this.b2;
+    return { enabled: b2.b2DistanceJoint_IsLimitEnabled(j.id), minLength: b2.b2DistanceJoint_GetMinLength(j.id), maxLength: b2.b2DistanceJoint_GetMaxLength(j.id) };
+  }
+
+  // ------------------------------------------------------------ friction
+
+  /**
+   * Pairwise friction override (S8a): every contact between a shape of
+   * surface `a` and a shape of surface `b` (in either order) uses `friction`
+   * instead of Box2D's mix sqrt(fA · fB). Surfaces are MaterialDef.surface
+   * ids; 0 means "no surface" and cannot be overridden. Idempotent; call
+   * before the pair first touches (Box2D fixes a contact's friction when the
+   * contact is created).
+   *
+   * Mechanism: b2World_SetFrictionCallback. The JS callback is installed on
+   * the first override and reproduces Box2D's default mix bit-for-bit for
+   * every other pair (float32 product, then sqrt rounded to float32), so
+   * installing it changes nothing but the overridden pairs.
+   */
+  setPairFriction(a: number, b: number, friction: number): void {
+    this.assertAlive();
+    if (!(Number.isInteger(a) && Number.isInteger(b) && a > 0 && b > 0 && a < 1048576 && b < 1048576)) throw new Error('setPairFriction: surfaces must be integers in 1..2^20-1');
+    if (!(friction >= 0)) throw new Error('setPairFriction: friction must be >= 0');
+    this.pairFriction.set(pairKey(a, b), friction);
+    if (this.frictionCallbackInstalled) return;
+    const table = this.pairFriction;
+    this.b2.b2World_SetFrictionCallback(this.worldId, (fA: number, idA: bigint, fB: number, idB: bigint): number => {
+      if (idA !== 0n && idB !== 0n) {
+        const f = table.get(pairKey(Number(idA), Number(idB)));
+        if (f !== undefined) return f;
+      }
+      // Box2D's b2MixFriction: sqrtf(fA * fB), all float32.
+      return Math.sqrt(Math.fround(fA * fB));
+    });
+    this.frictionCallbackInstalled = true;
   }
 
   /** Constraint force (N) on body B, last step. For breakage / telemetry. */
@@ -597,8 +666,17 @@ export class PhysicsWorld implements SnapshotSource {
       const f = sd.filter;
       f.groupIndex = m.groupIndex;
     }
+    if (m.surface) {
+      if (!Number.isInteger(m.surface) || m.surface < 0 || m.surface >= 1048576) throw new Error('MaterialDef.surface must be a non-negative integer');
+      mat.userMaterialId = BigInt(m.surface);
+    }
     return sd;
   }
+}
+
+/** Order-independent key for a surface pair (ids < 2^20). */
+function pairKey(a: number, b: number): number {
+  return a < b ? a * 1048576 + b : b * 1048576 + a;
 }
 
 export function applyTransform(t: { x: number; y: number; angle: number }, p: Vec2): Vec2 {
