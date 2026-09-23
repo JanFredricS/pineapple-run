@@ -312,9 +312,13 @@ Jan: the cart should sit about 30% from the left edge with about 70% of the view
 | Follow x | right-most body − 100 px, screen-centred (`CameraFollow`, src/run/camera.ts) → **cart AABB centre placed at `LOOK_AHEAD_FRACTION` of the view width** (`LookAheadFollow` + `followCamera`) | The old camera put the cart's front about 100 px right of centre, so only 40–45% of the view showed what was coming. |
 | `LOOK_AHEAD_FRACTION` | new: **0.3** | Jan's "[..x.....]": 30% behind, 70% ahead. It holds at every zoom (`followZoom` = clamp(w/720, 0.5, 1.5)). |
 | `LOOK_SMOOTHING` | new: **0.1** per 60 Hz step | Same smoothing as the old follow. |
-| Lag compensation | new: target = anchor + vel·(1 − s)/s | A plain exponential follow trails a moving cart by vel·(1 − s)/s, which is about 1.2 m at 9 m/s, or 5% of the view. The estimated per-step velocity is fed forward, so at constant speed the cart sits exactly at 0.3. On beach, kitchen, workbench, the original and endless, the worst deviation while cruising is 0.007–0.011 of the view width (test/game/framing.test.ts). |
+| Lag compensation | new: target = anchor + vel·(1 − s)/s | A plain exponential follow trails a moving cart by vel·(1 − s)/s, which is about 1.2 m at 9 m/s, or 5% of the view. The estimated per-step velocity is fed forward, so at constant speed the cart sits exactly at 0.3. On beach, kitchen, workbench, the original and endless, the worst deviation while cruising is 0.007–0.011 of the view width. The test (test/game/framing.test.ts) measures the rendered, interpolated path at five alphas per step. It bounds cruising at 0.015 and the mean at 0.005, and checks that interpolation adds under 0.002 of its own, including while accelerating. |
 | Vertical | unchanged | y still comes from the controller's `CameraFollow`, centred. Jan asked for no change there. |
 | Ready framing and blend | unchanged | Before Release the camera still frames the funnel and cart (`readyFrame`). After Release it blends into the new follow camera over `READY_BLEND_SECONDS`. |
+| Finish framing (`withFinish`, `runCamera`) | new (audit-1 #2) | The 9 m blender is taller than half the view on an 844×390 phone (zoom 1.17, about 11 m of view height), so at follow framing its top was off screen with the cart in the pit. As the blender nears the view, the camera now eases into a frame that holds the whole blender and the cart between the HUD pads. It first moves the look point up or down, and zooms out only if blender plus cart cannot fit at the follow zoom (a little on 844×390; not at all on 1280×720). The cart stays at 0.3 throughout. Tested on beach, kitchen, workbench and the original at 844×390 and 1280×720: every step with the cart over the pit has the blender's four corners and the cart on screen, and the zoom never drops below 0.75× follow. Without the finish frame this test fails on all four courses. |
+| `FINISH_PAD` | new: **{top 56, bottom 16} px** | The HUD chips and timer at the top; a small bottom margin. |
+| `FINISH_MARGIN_M` | new: **0.3 m** | World margin above the blender top and below the lowest of blender and cart. |
+| `FINISH_LEAD_M` / `FINISH_RAMP_M` | new: **4 m / 6 m** | The ease starts when the blender's front is 4 m past the follow view's right edge and is complete 6 m of travel later. The blender is therefore framed before it reaches the screen edge, and the view never jumps. |
 
 **Reversing rule:** the look-ahead is always forward (+x). The camera does not mirror to put 70% of the view behind a reversing cart. Reasons:
 - Every course runs left to right. Reversing is a short correction (backing off a lip or rocking out of a hole), and the target is still ahead.
@@ -327,8 +331,8 @@ Jan: the goal blender should be much bigger (2.5–3.5× suggested).
 
 | Constant | Old → new | Why |
 |---|---|---|
-| `BLENDER_SCALE` | new: **2.5** | This is the low end of Jan's range. At 1280×760 the 2.5× blender already fills most of the screen height at the finish and reads as a landmark. At 3× its top clips at follow zoom on short (landscape phone) screens. |
-| `BLENDER_SIZE` | per-level 1.5 × 3.6 m → **3.75 × 9 m**, shared | One constant feeds the Track DSL (beach, kitchen, workbench), the original course and the generator. No per-level edits. Physics and visuals agree: the solid prop's collider is `BLENDER_SIZE`, and the renderer scales the art so it is exactly the collider's height (test/render/solidProps.test.ts). |
+| `BLENDER_SCALE` | new: **2.5** | This is the low end of Jan's range. At 1280×760 the 2.5× blender already fills most of the screen height at the finish and reads as a landmark. At 2.5× the finish frame (above) already has to lift and slightly zoom out on an 844×390 phone. At 3× it would have to zoom out further, and the cart would get small. |
+| `BLENDER_SIZE` | per-level 1.5 × 3.6 m → **3.75 × 9 m**, shared | One constant feeds the Track DSL (beach, kitchen, workbench), the original course and the generator. No per-level edits. Physics and visuals agree: the solid prop's collider is `BLENDER_SIZE`, and the renderer scales the art to exactly the collider's height **and width**. The 160×340 art is drawn non-uniformly at the collider's aspect, about 11% narrower than its own. The jar reads fine at that, and a cart touches the drawn base exactly where it hits the collider (audit-1 #1). test/render/solidProps.test.ts checks both scales and the composed view's drawn bounds against the collider box. |
 | Pit floor, premade (tools/levels/track.ts `PIT.floor`) | 9 → **11.25 m** (`blenderPitFloor(5.75)`) | The bigger blender needs a longer floor. It keeps a 5.75 m clear landing strip before the blender and 1.75 m behind it (`BLENDER_BACK_GAP`). |
 | Pit floor, original (src/terrain/originalCourse.ts) | 7 → **9.25 m** (front gap 3.75 m) | The same rule, keeping the original's tighter landing. |
 | Pit floor, generated (src/terrain/generator.ts `FINISH_PIT_FLOOR`) | 4 → **5.75 m** (`BLENDER_SIZE.x + 2`) | The generated blender is decor (non-solid), sized to fit its pit with 1 m either side. |
@@ -374,7 +378,16 @@ Checks (test/integration/wideBuildArea.test.ts plus the existing acceptance and 
 - The wheel and lime radius clamp (`maxRadiusInArea`) follows the area (test/builder/edits.test.ts).
 - Designs saved with the old area still load, because the new area contains the old one.
 
-**Merge note for slice S9 (tikibar):** levels/tikibar.json is built with `Track`, so it must be regenerated after merging with `UPDATE_FIXTURES=1 npx vitest run test/terrain/original-course.test.ts test/levels/premade.test.ts`. This picks up the new start wall and `PIT` (blender) geometry.
+**Merge note for slice S9 (tikibar).** S9 is now on main. A trial merge of slice-ux1 with main (done in a throwaway worktree; nothing committed) found:
+- **Conflicts:** only two.
+  - `src/game/session.ts`: keep UX1's plateau range and append S9's furniture:
+    `terrain.update([plateau.minX, plateau.maxX, course.level.funnel.x, ...this.furnitureXs])`
+  - `TUNING.md`: both sections are appended; keep both.
+- **Regenerating tikibar.json:** S9's fixture generator (`test/levels/premade.test.ts`) already lists `tikibar` in its generated `ids`, so UPDATE_FIXTURES rewrites `levels/tikibar.json` with UX1's start wall and blender pit (13+ / 9− lines). Run the two commands **separately**, because running them in one vitest call races one fixture write against the other file's read:
+  - `UPDATE_FIXTURES=1 npx vitest run test/terrain/original-course.test.ts`
+  - `UPDATE_FIXTURES=1 npx vitest run test/levels/premade.test.ts`
+- **Results:** after regeneration, the full suite passes (927 passed, 1 skipped file), including S9's tikibar pace and bead tests and UX1's shared-blender test over `SHIPPED_LEVEL_IDS`.
+- **Add tikibar to the UX1 course lists:** adding `tikibar` to the lists in test/integration/wideBuildArea.test.ts and test/game/framing.test.ts (look-ahead and finish-pit) also passed in the trial. Add it there in the merge commit.
 
 ### 5. Builder touch loupe (new: src/builder/loupe.ts, `BuilderLoupe` in src/builder/render.ts)
 
