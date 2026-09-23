@@ -30,6 +30,20 @@ export function groundAt(level: LevelDef, x: number): number | null {
   return best;
 }
 
+/**
+ * S6T audit-1 #4: the risk/reward shortcut shared by the three courses (the
+ * floor differs): a 1.5 m take-off lip, a pool 1.5 m below the approach
+ * with a 6 m washboard floor, a rim 1.5 m below the lip and a 10 m landing
+ * slope. Taken at >= ~12 m/s the
+ * cart flies the pool (seconds faster); at ~5 m/s it rolls down, crosses the
+ * floor and climbs out with every pineapple. In between is the risk: too slow
+ * to clear it, too fast to roll in, the cart lands on the climb face and
+ * sheds cargo.
+ */
+function pool(floor: (t: Track) => void): Parameters<Track['pool']>[0] {
+  return { lipRun: 3, lipRise: 1.5, entryRun: 2.5, depth: 1.5, floor, climbRun: 4, rimBelowLip: 1.5, landRun: 10, landDrop: 2 };
+}
+
 function withDecor(a: AuthoredLevel, art: string, xs: number[], scale = 1): AuthoredLevel {
   xs.forEach((x, i) => {
     const y = groundAt(a.level, x);
@@ -53,11 +67,11 @@ export function beach(): AuthoredLevel {
   t.speed(12).flat(16, 'plateau')
     .ease(12, 1.5, 'valley').ease(12, -1.5)
     .ease(20, -3.5, 'ramp')
-    .speedAt(58, 8).flat(5, 'crest')
+    .speedAt(58, 8).flat(5)
     .ease(9, 4, 'drop')
     .flat(6)
     .speed(12).ease(24, -2.5, 'ramp')
-    .speedAt(98, 8).kicker(3, 0.35, 2.5, 1.4, 'launchLip')
+    .speedAt(98, 8).kicker(3, 0.35, 2.5, 1.4, 'drop')
     .flat(10)
     .speedAt(112, 12).washboard(9, 0.3, 1)
     .flat(6)
@@ -68,11 +82,11 @@ export function beach(): AuthoredLevel {
     .kicker(2.5, 0.9, 1.5, 0.9, 'launchLip')
     .flat(8)
     .line(3.5, -2.8, 'ramp')
-    .speedAt(185, 12).ease(12, -1)
-    .flat(10, 'plateau')
-    .speedAt(200, 8).ease(8, 2.2, 'drop')
-    .ease(10, -1)
-    .speedAt(216, 10).flat(5)
+    .speedAt(185, 13).ease(12, -1)
+    .flat(6)
+    // the shortcut: jump the sand pool (soft washboard floor) or roll through it
+    .pool(pool((t) => t.washboard(6, 0.3, 1)))
+    .flat(4)
     .finish();
   return withDecor(t.build({ id: 'beach', name: 'Beach Run', theme: 'beach' }), 'palm', [-4, 22, 58, 96, 140, 176], 1);
 }
@@ -109,7 +123,9 @@ export function kitchen(): AuthoredLevel {
     .speedAt(120, 12)
     .ease(12, 1.5, 'valley').ease(10, -1.5)
     .kicker(2.5, 0.7, 2, 1.1)
-    .flat(8)
+    .speed(13).flat(8)
+    // the shortcut: jump the sink (a ribbed drainer floor) or rattle through it
+    .pool(pool((t) => t.washboard(6, 0.35, 1)))
     .ease(12, -1.2, 'ramp')
     .flat(5)
     .finish();
@@ -127,7 +143,7 @@ export function workbench(): AuthoredLevel {
   const t = new Track(0, 10);
   t.speed(13).flat(16, 'plateau')
     // plank ramp to a crest, then the trap: a steep drop
-    .line(7, -2.5, 'ramp').flat(4, 'crest')
+    .line(7, -2.5, 'ramp').flat(4)
     .line(4, 3.5, 'drop')
     .flat(6)
     // long washboard (rasp)
@@ -155,6 +171,9 @@ export function workbench(): AuthoredLevel {
     .flat(8)
     .line(3.5, -2.8, 'ramp')
     .speedAt(178, 13).ease(14, -1.2)
+    .flat(4)
+    // the shortcut: jump the tray (a rasp floor) or grind through it
+    .pool(pool((t) => t.washboard(6, 0.4, 1)))
     .flat(6, 'plateau')
     .line(2.5, 2.5, 'drop')
     .ease(10, -1.2)

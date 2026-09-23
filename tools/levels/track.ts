@@ -28,7 +28,7 @@ import {
 import { funnelFor } from '../../src/game/startArea';
 import { roundCrests } from '../../src/terrain/rounding';
 
-export type FeatureKind = 'plateau' | 'valley' | 'crest' | 'drop' | 'ramp' | 'launchLip' | 'washboard' | 'kicker' | 'gap' | 'steps' | 'finish';
+export type FeatureKind = 'plateau' | 'valley' | 'crest' | 'drop' | 'ramp' | 'launchLip' | 'washboard' | 'kicker' | 'gap' | 'steps' | 'shortcut' | 'finish';
 
 export interface Feature {
   kind: FeatureKind;
@@ -191,6 +191,45 @@ export class Track {
     return this.feature(kind, () => {
       this.push(this.x + dx, this.y - h);
       this.push(this.x + dropRun, this.y + drop);
+    });
+  }
+
+  /**
+   * Risk/reward SHORTCUT (S6T audit-1 #4): a take-off lip over a pool with a
+   * slow floor, and a far rim with a landing slope.
+   *
+   *   lip: rise `lipRise` over `lipRun`; entry: down `lipRise + depth` over
+   *   `entryRun` to the pool floor; `floor` (e.g. a washboard or a stair;
+   *   must end at the floor height); climb: up over `climbRun` to the rim,
+   *   `rimBelowLip` below the lip; landing: a cosine ease down `landDrop`
+   *   over `landRun`.
+   *
+   * Fast carts jump from the lip over the pool onto the landing slope (the
+   * shortcut: the slow floor is skipped); slow carts roll down into the pool,
+   * cross the floor and climb out (the safe detour). The ground under the
+   * jump is continuous and every slope is rollable, so the jump is optional.
+   * Tagged 'shortcut' (an annotation; the census finds it from geometry).
+   */
+  pool(o: {
+    lipRun: number;
+    lipRise: number;
+    entryRun: number;
+    depth: number;
+    floor: (t: Track) => void;
+    climbRun: number;
+    rimBelowLip: number;
+    landRun: number;
+    landDrop: number;
+  }): this {
+    return this.feature('shortcut', () => {
+      this.line(o.lipRun, -o.lipRise, 'launchLip');
+      const lipY = this.y;
+      this.line(o.entryRun, o.lipRise + o.depth);
+      const floorY = this.y;
+      o.floor(this);
+      if (Math.abs(this.y - floorY) > 1e-6) throw new Error('Track.pool: the floor must end at the floor height');
+      this.line(o.climbRun, lipY + o.rimBelowLip - this.y);
+      this.ease(o.landRun, o.landDrop);
     });
   }
 
