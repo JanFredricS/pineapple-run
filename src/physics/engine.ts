@@ -1,4 +1,15 @@
 /**
+ * FROZEN. This wrapper was frozen from S1 through S6T and opened ONCE,
+ * deliberately, in S8a (2026-09-23) for exactly two additions (residual R19):
+ *  1. pairwise contact friction — MaterialDef.surface (Box2D userMaterialId)
+ *     + PhysicsWorld.setPairFriction(), via b2World_SetFrictionCallback;
+ *     unlisted pairs keep Box2D's own sqrtf(fA·fB) mix bit-for-bit;
+ *  2. distance-joint limits — DistanceJointDef.limits (b2DistanceJointDef
+ *     enableLimit/minLength/maxLength) + getDistanceJointLength/Limits.
+ * It is frozen again. Any further change to this file needs a plan-owner
+ * decision recorded in RESIDUALS.md / PLAN.md first — do not open it as a
+ * side effect of another slice.
+ *
  * Physics wrapper — the ONLY module that imports box2d3-wasm.
  *
  * Everything outside src/physics talks to plain numbers/objects: body and
