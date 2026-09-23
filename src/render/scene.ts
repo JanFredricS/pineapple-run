@@ -5,9 +5,20 @@
  * part kinds and coil-spring shocks, which are joints and so aren't manifest
  * bodies). It never sees a physics object.
  *
- * Layers (back to front): parallax sky/layers (screen space) | world:
- * terrain (fill, depth shade, edge strip) -> props + blender -> cart bodies
- * -> wheels -> shocks -> pineapples.
+ * Layers (back to front): parallax sky/layers (screen space) | zones (S9,
+ * a world-space layer that shares the world transform) | world: terrain
+ * (fill, depth shade, edge strip) -> props + blender -> cart bodies ->
+ * wheels -> shocks -> pineapples -> beads (S9) -> funnel. The pre-S9 world
+ * child indices are unchanged; beads sit in front of the load so a cart
+ * ploughing the bead ocean reads as wading through it.
+ *
+ * S9 exotic physics, still manifest-only: a 'zone' body (gravity pocket or
+ * force field) is drawn from its sensor polygon and the zone tag in its
+ * partIds (model/zones parseZoneTag) as a translucent region tinted with the
+ * theme palette (accentAlt: low gravity, with floating motes; accent: a
+ * shooter, with chevrons along its force), BEHIND the terrain so the tint
+ * shows only in the air; a 'bead' body is a small circle in one of three
+ * palette colours (by body id).
  *
  * Each body gets a Container built once in BODY-LOCAL metres from its
  * manifest shapes; per frame only its position/rotation change.
@@ -44,12 +55,13 @@
  * bodies), so a solid prop renders exactly once.
  */
 
-import { Container, MeshSimple, NineSliceSprite, Sprite, Texture, TilingSprite, Graphics } from 'pixi.js';
+import { Container, MeshSimple, NineSliceSprite, Sprite, Texture, TilingSprite, Graphics, GraphicsContext } from 'pixi.js';
 import { resolveAttachments, type CompoundSpec, type ShapeSpec } from '../model/attach';
 import type { CartDesign, PartKind } from '../model/cart';
 import { cameraTransform, type Camera } from '../model/coords';
 import type { Vec2 } from '../model/geometry';
 import { hasSolidBody, type LevelDef, type PropDef, type ThemeId } from '../model/level';
+import { parseZoneTag } from '../model/zones';
 import type { BodyTransform, RenderBodyInfo, RenderShape, RenderSnapshot, SceneManifest } from '../model/snapshot';
 import { ART, BLENDER_LAYOUT, PROP_ART } from './artCatalog';
 import { BlenderView } from './blender';
@@ -140,7 +152,11 @@ export function bodyFingerprint(info: RenderBodyInfo): string {
 }
 
 /** Roles that get a body visual (terrain is meshed separately; prop/debug are not drawn). */
-const DRAWN_ROLES: ReadonlySet<RenderBodyInfo['role']> = new Set(['cart', 'wheel', 'pineapple']);
+const DRAWN_ROLES: ReadonlySet<RenderBodyInfo['role']> = new Set(['cart', 'wheel', 'pineapple', 'zone', 'bead']);
+
+/** Zone tint alpha (fill) and outline alpha. */
+export const ZONE_FILL_ALPHA = 0.16;
+export const ZONE_EDGE_ALPHA = 0.45;
 
 interface ShockVisual {
   binding: ShockBinding;
@@ -163,7 +179,13 @@ export class SceneRenderer {
   readonly world = new Container();
   private background: ParallaxBackground | null = null;
   private readonly bgHost = new Container();
+  /** Zones (S9): behind the whole world (so behind the terrain), same transform as `world`. */
+  private readonly zoneLayer = new Container();
   private readonly terrainLayer = new Container();
+  /** Beads (S9): world child 6, after the pre-S9 layers. */
+  private readonly beadLayer = new Container();
+  /** One shared bead circle per radius (Graphics contexts are shareable). */
+  private beadContexts = new Map<number, GraphicsContext>();
   /** LevelDef props + blender goal (owned by setLevel/placeLevelDecor only). */
   private readonly decorLayer = new Container();
   private readonly cartLayer = new Container();
@@ -197,8 +219,8 @@ export class SceneRenderer {
   ) {
     this.theme = getTheme(opts.theme ?? 'beach');
     this.withBackground = opts.background ?? true;
-    this.world.addChild(this.terrainLayer, this.decorLayer, this.cartLayer, this.wheelLayer, this.shockLayer, this.pineappleLayer);
-    this.view.addChild(this.bgHost, this.world);
+    this.world.addChild(this.terrainLayer, this.decorLayer, this.cartLayer, this.wheelLayer, this.shockLayer, this.pineappleLayer, this.beadLayer);
+    this.view.addChild(this.bgHost, this.zoneLayer, this.world);
     this.rebuildBackground();
   }
 
@@ -212,6 +234,14 @@ export class SceneRenderer {
     this.theme = getTheme(id);
     this.rebuildBackground();
     this.terrainState = null; // force re-skin
+    // zone / bead tints come from the palette: rebuild them next sync
+    for (const [bid, v] of this.bodies) {
+      if (v.role === 'zone' || v.role === 'bead') {
+        v.view.destroy({ children: true });
+        this.bodies.delete(bid);
+        this.forceSync = true;
+      }
+    }
     if (this.blender) this.placeLevelDecor();
     else this.drawFunnel();
   }
@@ -284,6 +314,8 @@ export class SceneRenderer {
     const ct = cameraTransform(camera);
     this.world.scale.set(ct.scale);
     this.world.position.set(ct.offsetX, ct.offsetY);
+    this.zoneLayer.scale.set(ct.scale);
+    this.zoneLayer.position.set(ct.offsetX, ct.offsetY);
     this.background?.update(camera, this.horizonY);
   }
 
@@ -362,12 +394,18 @@ export class SceneRenderer {
         return this.wheelLayer;
       case 'pineapple':
         return this.pineappleLayer;
+      case 'zone':
+        return this.zoneLayer;
+      case 'bead':
+        return this.beadLayer;
       default:
         return this.cartLayer;
     }
   }
 
   private buildBody(info: RenderBodyInfo): Container {
+    if (info.role === 'zone') return this.buildZone(info);
+    if (info.role === 'bead') return this.buildBead(info);
     const c = new Container();
     c.label = `body:${info.id}`;
     // straws first so cubes/limes sit on top of the frame
@@ -436,6 +474,81 @@ export class SceneRenderer {
     }
     holder.destroy();
     return this.placeholderPoly(shape.vertices);
+  }
+
+  /** A zone: its sensor polygon, tinted by kind (see the file header). Unknown tags draw nothing. */
+  private buildZone(info: RenderBodyInfo): Container {
+    const c = new Container();
+    c.label = `zone:${info.id}`;
+    const look = parseZoneTag(info.partIds);
+    const poly = info.shapes.find((sh) => sh.type === 'polygon');
+    if (!look || !poly || poly.type !== 'polygon') return c;
+    const pal = this.theme.palette;
+    const color = hexToNumber(look.kind === 'gravity' ? pal.accentAlt : pal.accent);
+    const flat = poly.vertices.flatMap((p) => [p.x, p.y]);
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let y0 = Infinity;
+    let y1 = -Infinity;
+    for (const p of poly.vertices) {
+      x0 = Math.min(x0, p.x);
+      x1 = Math.max(x1, p.x);
+      y0 = Math.min(y0, p.y);
+      y1 = Math.max(y1, p.y);
+    }
+    const g = new Graphics().poly(flat).fill({ color, alpha: ZONE_FILL_ALPHA }).poly(flat).stroke({ color, alpha: ZONE_EDGE_ALPHA, width: 0.08 });
+    const w = x1 - x0;
+    const h = y1 - y0;
+    if (look.kind === 'gravity') {
+      // floating motes on a fixed lattice (pure function of the rect: no randomness)
+      for (let i = 0, n = Math.max(3, Math.round((w * h) / 6)); i < n; i++) {
+        const fx = ((i * 0.618034) % 1 + 1) % 1;
+        const fy = ((i * 0.414214 + 0.5) % 1 + 1) % 1;
+        g.circle(x0 + fx * w, y0 + fy * h, 0.08 + 0.06 * (i % 3)).fill({ color, alpha: 0.35 });
+      }
+    } else {
+      // chevrons pointing along the force, in rows
+      const len = Math.hypot(look.force.x, look.force.y) || 1;
+      const ux = look.force.x / len;
+      const uy = look.force.y / len;
+      const size = Math.min(0.6, Math.min(w, h) / 4);
+      const step = size * 3;
+      for (let cy = y0 + step / 2; cy < y1; cy += step) {
+        for (let cx = x0 + step / 2; cx < x1; cx += step) {
+          // a "V" whose tip points along (ux, uy)
+          const tip = { x: cx + ux * size * 0.5, y: cy + uy * size * 0.5 };
+          const back = { x: cx - ux * size * 0.5, y: cy - uy * size * 0.5 };
+          const px = -uy * size * 0.6;
+          const py = ux * size * 0.6;
+          g.moveTo(back.x + px, back.y + py).lineTo(tip.x, tip.y).lineTo(back.x - px, back.y - py).stroke({ color, alpha: 0.5, width: 0.1 });
+        }
+      }
+    }
+    c.addChild(g);
+    return c;
+  }
+
+  /** A bead: a shared circle context per radius, tinted from the palette by body id. */
+  private buildBead(info: RenderBodyInfo): Container {
+    const circle = info.shapes.find((sh) => sh.type === 'circle');
+    if (!circle || circle.type !== 'circle') return new Container();
+    let ctx = this.beadContexts.get(circle.radius);
+    if (!ctx) {
+      ctx = new GraphicsContext()
+        .circle(0, 0, circle.radius)
+        .fill({ color: 0xffffff })
+        .circle(-circle.radius * 0.35, -circle.radius * 0.35, circle.radius * 0.3)
+        .fill({ color: 0xffffff, alpha: 0.6 });
+      this.beadContexts.set(circle.radius, ctx);
+    }
+    const g = new Graphics(ctx);
+    g.position.set(circle.center.x, circle.center.y);
+    const pal = this.theme.palette;
+    g.tint = hexToNumber([pal.accent, pal.accentAlt, pal.ok][info.id % 3]!);
+    const c = new Container();
+    c.label = `bead:${info.id}`;
+    c.addChild(g);
+    return c;
   }
 
   private placeholderCircle(center: Vec2, r: number): Graphics {
@@ -726,6 +839,8 @@ export class SceneRenderer {
   destroy(): void {
     this.background?.destroy();
     this.view.destroy({ children: true });
+    for (const ctx of this.beadContexts.values()) ctx.destroy();
+    this.beadContexts.clear();
     this.bodies.clear();
     this.seen.clear();
     this.shocks = [];
