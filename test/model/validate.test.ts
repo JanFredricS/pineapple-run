@@ -104,7 +104,7 @@ describe('validateLevelDef', () => {
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.value.terrain.spans.map((s) => s.id)).toEqual(['left-wall', 'main', 'right-wall']);
-      expect(r.value.theme).toBe('test');
+      expect(r.value.theme).toBe('blueprint');
     }
   });
 

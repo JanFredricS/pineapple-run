@@ -2,7 +2,7 @@
   "version": 1,
   "id": "s1-flat-goal",
   "name": "S1 flat run to the blender pit",
-  "theme": "test",
+  "theme": "blueprint",
   "terrain": {
     "spans": [
       {

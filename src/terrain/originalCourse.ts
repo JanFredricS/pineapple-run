@@ -87,7 +87,7 @@ export function originalCourseLevel(pxVertices: readonly Vec2[]): LevelDef {
     version: LEVEL_DEF_VERSION,
     id: 'original',
     name: 'The Original Course (2008)',
-    theme: 'workbench',
+    theme: 'blueprint',
     terrain: {
       spans: [
         { id: 'start-plateau', points: [{ x: wallX - 0.1, y: first.y - 6 }, { x: wallX, y: first.y }, { ...first }] },

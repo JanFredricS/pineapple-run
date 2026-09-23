@@ -16,8 +16,15 @@ import type { Vec2 } from './geometry';
 
 export const LEVEL_DEF_VERSION = 1 as const;
 
-export type ThemeId = 'beach' | 'kitchen' | 'workbench' | 'tiki' | 'test';
-export const THEME_IDS: readonly ThemeId[] = ['beach', 'kitchen', 'workbench', 'tiki', 'test'];
+export type ThemeId = 'beach' | 'kitchen' | 'workbench' | 'tiki' | 'blueprint';
+export const THEME_IDS: readonly ThemeId[] = ['beach', 'kitchen', 'workbench', 'tiki', 'blueprint'];
+
+/**
+ * Retired theme ids that still validate, mapped to their current id (B1: the
+ * graph-paper theme was 'test' until the Original Course shipped in it).
+ * validateLevelDef rewrites them; nothing new should be written with them.
+ */
+export const LEGACY_THEME_IDS: Readonly<Record<string, ThemeId>> = { test: 'blueprint' };
 
 export interface TerrainSpan {
   id: string;

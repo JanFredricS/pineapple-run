@@ -39,6 +39,31 @@ export function blenderFillPolygon(progress: number, phase: number, vortex: numb
   return [...surface, { x: br.x, y: bottom }, { x: bl.x, y: bottom }];
 }
 
+/**
+ * The jar's glass body and rim in jar.svg px (its `M14 16 H130 L108 196 H36 Z`
+ * path and `rect x=10 y=10 w=124 h=10`); test/render/blueprint.test.ts pins
+ * these against the SVG so the outline cannot drift from the art.
+ */
+export const JAR_GLASS_OUTLINE: readonly Vec2[] = [
+  { x: 14, y: 16 },
+  { x: 130, y: 16 },
+  { x: 108, y: 196 },
+  { x: 36, y: 196 },
+];
+export const JAR_RIM = { x: 10, y: 10, width: 124, height: 10 } as const;
+
+/** Drafting-style linework over the jar (jar-local px, positioned like the jar sprite). */
+function jarOutline(color: number): Graphics {
+  const g = new Graphics();
+  g.label = 'blender-outline';
+  g.position.set(L.jar.x, L.jar.y);
+  g.poly(JAR_GLASS_OUTLINE.flatMap((p) => [p.x, p.y]))
+    .stroke({ color, width: 3, alpha: 0.85, join: 'round' })
+    .roundRect(JAR_RIM.x, JAR_RIM.y, JAR_RIM.width, JAR_RIM.height, 4)
+    .stroke({ color, width: 2, alpha: 0.85 });
+  return g;
+}
+
 export class BlenderView {
   readonly view = new Container();
   /** 0..1 piña-colada level. */
@@ -52,9 +77,13 @@ export class BlenderView {
   private bladePhase = 0;
   private time = 0;
 
+  /** B1: ink outline over the jar's glass edge, or null (theme.goalOutline unset). */
+  readonly outline: Graphics | null;
+
   constructor(
     textures: TextureProvider,
     private readonly fillColor = 0xfff1c9,
+    outlineColor: number | null = null,
   ) {
     const sprite = (id: string, x: number, y: number) => {
       const s = new Sprite(textures.texture(id));
@@ -67,7 +96,9 @@ export class BlenderView {
     this.blades = sprite(ART.blender.blades.id, L.blades.x, L.blades.y);
     this.blades.anchor.set(L.blades.hubX / this.blades.texture.width, L.blades.hubY / this.blades.texture.height);
     this.fill.position.set(L.jar.x, L.jar.y);
-    this.body.addChild(base, this.fill, this.blades, jar, lid);
+    this.outline = outlineColor === null ? null : jarOutline(outlineColor);
+    // the outline sits over the glass, under the lid (the lid covers the rim's top)
+    this.body.addChild(base, this.fill, this.blades, jar, ...(this.outline ? [this.outline] : []), lid);
     this.view.addChild(this.body);
     this.redrawFill();
   }

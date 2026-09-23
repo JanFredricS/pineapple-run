@@ -755,7 +755,8 @@ export class SceneRenderer {
       this.decorLayer.addChild(v);
     }
     const g = level.goal.sensor;
-    this.blender = new BlenderView(this.textures, hexToNumber(this.theme.palette.blenderFill));
+    const outline = this.theme.goalOutline;
+    this.blender = new BlenderView(this.textures, hexToNumber(this.theme.palette.blenderFill), outline ? hexToNumber(outline) : null);
     if (blenderProp) {
       const foot = blenderFoot(blenderProp);
       this.blender.view.position.set(foot.x, foot.y);

@@ -61,8 +61,9 @@ export const ENDLESS_STAGE_METRES = 150;
 
 /**
  * Course id (S5's ids: beach, kitchen, workbench, original, endless:<SEED>;
- * S9: tikibar) → music theme. The original course is the workbench-reskinned
- * bonus level. Zero-G Tiki Bar plays the beach song: marimba plucks, shaker
+ * S9: tikibar) → music theme. Keyed by COURSE id, never by visual theme: the
+ * original course keeps the workbench song although it renders in the
+ * Blueprint theme since B1. Zero-G Tiki Bar plays the beach song: marimba plucks, shaker
  * and a lazy reggae bass are the island-bar sound, and it is the calmest bed
  * for a floaty course that rewards slow driving (endless's steel drum is
  * tropical too, but drives and escalates by stage). Unknown ids fall back

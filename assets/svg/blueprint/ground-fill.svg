@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <!-- Test/blueprint terrain fill: pale faceted rock slabs (homage to Coconut Run's terrain).
+  <!-- Blueprint terrain fill: pale faceted rock slabs (homage to Coconut Run's terrain).
        Seamless: boundary vertices match on opposite edges (top/bottom x = 0,70,180,256; left/right y = 0,44,130,212,256). -->
   <rect width="256" height="256" fill="#CBD3DF"/>
-  <g stroke="#9FAABB" stroke-width="1.2" stroke-linejoin="round">
+  <g stroke="#9DB0C9" stroke-width="1.2" stroke-linejoin="round">
     <path d="M0 0 L70 0 L52 60 L0 44 Z" fill="#D5DCE6"/>
     <path d="M70 0 L180 0 L150 70 L52 60 Z" fill="#C4CDDA"/>
     <path d="M180 0 L256 0 L256 44 L210 80 L150 70 Z" fill="#D0D8E3"/>

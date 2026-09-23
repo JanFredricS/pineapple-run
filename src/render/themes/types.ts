@@ -110,4 +110,11 @@ export interface Theme {
   parallax: ParallaxLayerDef[];
   /** Horizon offset: metres above the level's median terrain height where far layers sit. */
   horizonLift: number;
+  /**
+   * Optional ink colour (#RRGGBB) for an outline traced over the blender
+   * jar's glass edge and rim (B1). The shared jar art is pale cyan glass,
+   * which washes out on a near-white backdrop; light-sky themes set this.
+   * Unset = no outline (the other themes render exactly as before).
+   */
+  goalOutline?: string;
 }

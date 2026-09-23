@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="200" viewBox="0 0 1024 200">
-  <!-- Test/blueprint near layer: pale distant rock slabs and a girder. -->
-  <g fill="#DDE3EC" stroke="#B8C3D2" stroke-width="1.2" stroke-linejoin="round">
+  <!-- Blueprint near layer: pale distant rock slabs and a girder. -->
+  <g fill="#DDE3EC" stroke="#A9BCD6" stroke-width="1.2" stroke-linejoin="round">
     <path d="M0 200 L0 150 L80 110 L150 140 L230 96 L320 150 L320 200 Z"/>
     <path d="M420 200 L460 130 L540 120 L600 160 L640 200 Z"/>
     <path d="M700 200 L760 100 L840 90 L900 140 L980 130 L1024 150 L1024 200 Z"/>
   </g>
-  <g fill="#E6EBF2" stroke="#B8C3D2" stroke-width="1.2">
+  <g fill="#E6EBF2" stroke="#A9BCD6" stroke-width="1.2">
     <rect x="300" y="150" width="200" height="12"/>
     <path d="M310 162 L330 150 L350 162 L370 150 L390 162 L410 150 L430 162 L450 150 L470 162 L490 150" fill="none"/>
   </g>

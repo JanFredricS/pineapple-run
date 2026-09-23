@@ -2,7 +2,7 @@
  "version": 1,
  "id": "original",
  "name": "The Original Course (2008)",
- "theme": "workbench",
+ "theme": "blueprint",
  "terrain": {
   "spans": [
    {
