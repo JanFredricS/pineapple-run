@@ -212,7 +212,9 @@ describe('pineapple–wheel pair friction (S8a, backlog #9)', () => {
       const MAX = frictionTagsForTests.MAX_FRICTION_TAG;
       expect(MAX).toBe(2 ** 44 - 1);
       frictionTagsForTests.set({ next: MAX });
-      const top = await pinchRig(0.9, 3); // tag 2^44 − 1: (tag << 20) | surface uses all 64 bits
+      // NON-DEFAULT override (0.3, not the 0.9 default mix): a spin here can only
+      // come from dispatch finding the table through the fully packed max tag.
+      const top = await pinchRig(0.3, 3); // tag 2^44 − 1: (tag << 20) | surface uses all 64 bits
       expect(frictionTagsForTests.tagOf(top.w)).toBe(MAX);
       const lowestFree = (): number => {
         const live = new Set(frictionTagsForTests.live());
@@ -221,21 +223,22 @@ describe('pineapple–wheel pair friction (S8a, backlog #9)', () => {
         return t;
       };
       const expectReuse = lowestFree();
-      const reused = await pinchRig(0.3, 3); // counter is past the bound: reuse
+      const reused = await pinchRig(0.9, 3); // counter is past the bound: reuse
       expect(frictionTagsForTests.tagOf(reused.w)).toBe(expectReuse);
       for (let i = 0; i < 300; i++) {
         top.step();
         reused.step();
       }
-      expect(Math.abs(top.mean()), 'top tag keeps its 0.9').toBeLessThan(0.5);
-      expect(reused.mean(), 'reused tag gets its own 0.3').toBeGreaterThan(0.9 * DRIVE_MAX_SPEED);
-      // a destroyed world's tag goes back to the pool, and the next world gets it with a fresh table
+      expect(top.mean(), 'top tag dispatches its non-default 0.3').toBeGreaterThan(0.9 * DRIVE_MAX_SPEED);
+      expect(Math.abs(reused.mean()), 'reused tag keeps its 0.9').toBeLessThan(0.5);
+      // a destroyed world's tag goes back to the pool, and the next world gets it
+      // with a fresh table; its non-default 0.3 proves dispatch through the reused tag
       const t = frictionTagsForTests.tagOf(reused.w);
       reused.w.destroy();
-      const again = await pinchRig(0.9, 3);
+      const again = await pinchRig(0.3, 3);
       expect(frictionTagsForTests.tagOf(again.w)).toBe(t);
       for (let i = 0; i < 300; i++) again.step();
-      expect(Math.abs(again.mean()), 'no stale 0.3 from the destroyed world').toBeLessThan(0.5);
+      expect(again.mean(), 'fresh table on the reused tag, no stale 0.9').toBeGreaterThan(0.9 * DRIVE_MAX_SPEED);
     });
 
     it('throws a clear error, rather than truncating, when every tag is live', async () => {
