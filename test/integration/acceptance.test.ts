@@ -17,7 +17,10 @@ import { buildResults, type LevelResults } from '../../src/ui/resultsModel';
 import { ScoreStore } from '../../src/ui/scoreStore';
 import { PREMADE } from '../../tools/levels/premade';
 import { GAP_WALL_LEAN } from '../../tools/levels/track';
-import { FLOOR_IT, ORIGINAL_EXPERT_LINE, runWithPace } from './driver';
+import { plateauRange } from '../../src/game/startArea';
+import { census } from '../../tools/levels/census';
+import type { PaceNote } from '../../tools/levels/track';
+import { FLOOR_IT, ORIGINAL_EXPERT_LINE, paceDrive, runWithPace, targetSpeed } from './driver';
 
 const LEVELS = ['beach', 'kitchen', 'workbench'] as const;
 const pace = (id: (typeof LEVELS)[number]) => PREMADE[id]().pace;
@@ -138,6 +141,88 @@ describe('S6T: pacing beats flooring it (every premade level)', () => {
         a.destroy();
         b.destroy();
       }
+    }, 60_000);
+  }
+});
+
+describe('S6T audit-1 #4: every premade level has a risk/reward shortcut (PLAN S6)', () => {
+  // The shortcut is the pool (tools/levels/premade.ts `pool`): the census
+  // finds it in the geometry (tools/levels/census.ts SHORTCUT); here the pace
+  // driver proves it. The skilled line (the pace notes) jumps it; the
+  // careful line brakes to SAFE_SPEED 20 m before it and stays careful to
+  // the goal. Measured (example cart), jump vs careful: beach 2.05 s vs
+  // 4.62 s through the pool, rating 89 vs 85; kitchen 2.17 vs 5.13 s, 92 vs
+  // 87; workbench 2.02 vs 4.92 s, 88 vs 82 — all 15/15.
+  const SAFE_SPEED = 5;
+  interface Line {
+    delivered: number;
+    rating: number;
+    /** Chassis time from the pool's start to its end (s). */
+    section: number;
+    /** Lowest wheel centre over the pool floor, relative to the floor (m; 0 = floor level, negative = above). */
+    deepest: number;
+  }
+  const drive = async (id: (typeof LEVELS)[number], line: readonly PaceNote[]): Promise<Line> => {
+    const a = PREMADE[id]();
+    const pool = a.features.find((f) => f.kind === 'shortcut')!;
+    const floor = a.features.find((f) => f.kind === 'washboard' && f.x0 >= pool.x0 && f.x1 <= pool.x1)!;
+    const floorY = Math.max(...a.level.terrain.spans.flatMap((sp) => sp.points.filter((q) => q.x >= floor.x0 && q.x <= floor.x1).map((q) => q.y)));
+    const s = await session(exampleCart(), id);
+    try {
+      s.start();
+      for (let i = 0; i < 60; i++) s.step();
+      s.release();
+      for (let i = 0; i < 180; i++) s.step();
+      const c = s.controller;
+      let tIn = -1;
+      let tOut = -1;
+      let deepest = -Infinity;
+      for (let n = 0; c.phase !== 'ended' && n < 150 * 60; n++) {
+        s.setDrive(paceDrive(s, line));
+        s.step();
+        const h = c.cart.bodies.get(c.chassisId);
+        if (h === undefined || !s.world.hasBody(h)) continue;
+        const x = s.world.getTransform(h).x;
+        if (tIn < 0 && x >= pool.x0) tIn = s.simTime();
+        if (tOut < 0 && x >= pool.x1) tOut = s.simTime();
+        for (const w of c.cart.wheelBodies) {
+          if (!s.world.hasBody(w)) continue;
+          const p = s.world.getTransform(w);
+          if (p.x >= floor.x0 && p.x <= floor.x1) deepest = Math.max(deepest, p.y - floorY);
+        }
+      }
+      const last = s.events.at(-1)!;
+      expect(last.type).toBe('goalReached');
+      if (last.type !== 'goalReached') throw new Error('no goal');
+      return { delivered: last.delivered, rating: efficiencyRating(last.simTime, last.delivered), section: tOut - tIn, deepest };
+    } finally {
+      s.destroy();
+    }
+  };
+
+  for (const id of LEVELS) {
+    it(`${id}: the jump is taken by the skilled line and is faster; the careful detour through the pool is viable`, async () => {
+      const a = PREMADE[id]();
+      const pool = a.features.find((f) => f.kind === 'shortcut')!;
+      // the census finds exactly this shortcut in the geometry
+      const c = census(a.level, { x0: plateauRange(a.level.cartStart).maxX, x1: a.level.goal.lineX }, (x) => targetSpeed(a.pace, x));
+      expect(c.shortcuts).toHaveLength(1);
+      expect(c.shortcuts[0]!.lipX).toBeGreaterThan(pool.x0);
+      expect(c.shortcuts[0]!.landX).toBeLessThan(pool.x1);
+
+      const brake = pool.x0 - 20;
+      const careful: PaceNote[] = [...a.pace.filter((n) => n.x < brake), { x: brake, speed: SAFE_SPEED }];
+      const jump = await drive(id, a.pace);
+      const safe = await drive(id, careful);
+      // the skilled line flies over the floor (its wheels never get within 2 m of it)
+      expect(jump.deepest).toBeLessThan(-2);
+      expect(jump.delivered).toBe(TOTAL_PINEAPPLES);
+      // the careful line rolls down onto the floor (wheel centres ~1 wheel radius above it) and out, keeping every pineapple
+      expect(safe.deepest).toBeGreaterThan(-1.5);
+      expect(safe.delivered).toBe(TOTAL_PINEAPPLES);
+      // and the jump is genuinely faster: >= 2 s through the pool, a better rating
+      expect(safe.section - jump.section, `jump ${jump.section.toFixed(2)} s vs careful ${safe.section.toFixed(2)} s`).toBeGreaterThanOrEqual(2);
+      expect(jump.rating - safe.rating, `jump ${jump.rating} vs careful ${safe.rating}`).toBeGreaterThanOrEqual(3);
     }, 60_000);
   }
 });
