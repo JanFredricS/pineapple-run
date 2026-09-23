@@ -105,10 +105,21 @@ function slabs(t: Track, runs: readonly (readonly [number, number])[]): Track {
  * (5 m wheelbase) cannot cross it: it falls in or stops at the far wall. A
  * long cart with a wheel on each side of the hole at every moment can
  * (test/integration/kitchenBridger.ts), so the pit's landing strip is long
- * enough for a 17.5 m cart (`finish({ frontGap: 20 })`). Pace notes are the
+ * enough for a 17.5 m cart (`KITCHEN_FINISH`). Pace notes are the
  * Kitchen Bridger's line: 6.5 m/s (it clears at a steady 4-9 m/s), then
  * 10 m/s from the kicker through the drainer.
  */
+/**
+ * Kitchen's finish pit: a 20 m landing strip so the 17.5 m Kitchen Bridger
+ * gets its bed down to the goal sensor, and (K1 audit #4) the goal line and
+ * sensor 10.5 m before the blender, so every cart scores where the finish
+ * framing shows the whole blender (the camera shows all of it from ~10.8 m
+ * for a normal cart). The first ~10 m of the pit floor is a sunken landing
+ * counter. The Bridger's load rests 5.5-9.2 m before the blender, past the
+ * line.
+ */
+export const KITCHEN_FINISH = { frontGap: 20, lineGap: 10.5 } as const;
+
 export function kitchen(): AuthoredLevel {
   const t = new Track(0, 10);
   t.speed(6.5).flat(16, 'plateau');
@@ -143,7 +154,7 @@ export function kitchen(): AuthoredLevel {
     .pool(pool((t) => t.washboard(6, 0.35, 1)));
   slabs(t, [[4, -1.3], [3, 0.5], [5, -1.4], [2, 0.5]]);
   t.flat(5)
-    .finish({ frontGap: 20 });
+    .finish(KITCHEN_FINISH);
   return t.build({ id: 'kitchen', name: 'Kitchen Bench', theme: 'kitchen' });
 }
 

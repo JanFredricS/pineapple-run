@@ -16,7 +16,7 @@ import { isUnlocked } from '../../src/ui/catalog';
 import { buildResults, type LevelResults } from '../../src/ui/resultsModel';
 import { ScoreStore } from '../../src/ui/scoreStore';
 import { PREMADE } from '../../tools/levels/premade';
-import { GAP_WALL_LEAN } from '../../tools/levels/track';
+import { GAP_WALL_LEAN, PIT } from '../../tools/levels/track';
 import { plateauRange } from '../../src/game/startArea';
 import { census } from '../../tools/levels/census';
 import type { PaceNote } from '../../tools/levels/track';
@@ -214,7 +214,9 @@ describe('S6T audit-1 #4: every premade level has a risk/reward shortcut (PLAN S
     const a = PREMADE[id]();
     const pool = a.features.find((f) => f.kind === 'shortcut')!;
     // the census finds exactly this shortcut in the geometry
-    const c = census(a.level, { x0: plateauRange(a.level.cartStart).maxX, x1: a.level.goal.lineX }, (x) => targetSpeed(a.pace, x));
+    // to the pit's lip (Kitchen's goal line sits inside its long pit: K1 audit #4)
+    const lip = a.features.find((f) => f.kind === 'finish')!.x0 + PIT.lineAfterLip;
+    const c = census(a.level, { x0: plateauRange(a.level.cartStart).maxX, x1: Math.min(a.level.goal.lineX, lip) }, (x) => targetSpeed(a.pace, x));
     expect(c.shortcuts).toHaveLength(1);
     expect(c.shortcuts[0]!.lipX).toBeGreaterThan(pool.x0);
     expect(c.shortcuts[0]!.landX).toBeLessThan(pool.x1);

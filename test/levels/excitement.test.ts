@@ -15,15 +15,26 @@ import { plateauRange } from '../../src/game/startArea';
 import { blockDifficulty, generateLevel, type FeatureInstance } from '../../src/terrain/generator';
 import { auditLevel, census, ENDLESS_RULES, PREMADE_RULES, type Census, type CensusLabel } from '../../tools/levels/census';
 import { PREMADE } from '../../tools/levels/premade';
-import { Track, type AuthoredLevel } from '../../tools/levels/track';
+import { PIT, Track, type AuthoredLevel } from '../../tools/levels/track';
 import { targetSpeed } from '../integration/driver';
 
 const ids = ['beach', 'kitchen', 'workbench', 'tikibar'] as const;
 
 const washboards = (fs: readonly CensusLabel[]) => fs.filter((f) => f.kind === 'washboard');
 
+/**
+ * The census window runs from the start plateau to the finish pit's lip
+ * (PIT.lineAfterLip past it: the goal line on every course but Kitchen,
+ * whose line sits in its long pit, K1 audit #4), and the pit edges are
+ * finish geometry, kept sharp like the washboards.
+ */
 function premadeCensus(a: AuthoredLevel, labels: readonly CensusLabel[] = a.features): Census {
-  return census(a.level, { x0: plateauRange(a.level.cartStart).maxX, x1: a.level.goal.lineX }, (x) => targetSpeed(a.pace, x), { labels, keepSharp: washboards(a.features) });
+  const fin = a.features.find((f) => f.kind === 'finish');
+  const x1 = fin ? Math.min(a.level.goal.lineX, fin.x0 + PIT.lineAfterLip) : a.level.goal.lineX;
+  return census(a.level, { x0: plateauRange(a.level.cartStart).maxX, x1 }, (x) => targetSpeed(a.pace, x), {
+    labels,
+    keepSharp: [...washboards(a.features), ...(fin ? [fin] : [])],
+  });
 }
 
 describe('excitement audit: the auditor itself', () => {
@@ -217,6 +228,12 @@ describe('excitement audit: premade courses', () => {
     expect(wide).toHaveLength(1);
     expect(wide[0]!.x0).toBeLessThanOrEqual(sink.x0);
     expect(wide[0]!.x1).toBeGreaterThanOrEqual(sink.x1);
+    // K1 audit #6: its detected bounds (measured 82.29-89.79 m: the hole 83.29-88.79 plus the census's edge margins)
+    expect(wide[0]!.x0).toBeCloseTo(82.29, 1);
+    expect(wide[0]!.x1).toBeCloseTo(89.79, 1);
+    // the sharpest crest is at the rounding cap (the rules limit), and the dull stretch pinned (measured 1.08 s)
+    expect(k.sharpestCrest).toBeLessThanOrEqual(PREMADE_RULES.maxCrest + 1e-9);
+    expect(k.longestDullSeconds).toBeLessThanOrEqual(1.2);
     // the slab fields (16-40 m, 117-123 m, 128-163 m, 201-216 m) show up as bumps: 10 crests / lips / kickers (was 4)
     const bumps = k.detected.filter((h) => h.kind === 'crest' || h.kind === 'launchLip' || h.kind === 'kicker');
     expect(bumps).toHaveLength(10);

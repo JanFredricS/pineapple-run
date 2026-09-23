@@ -371,9 +371,19 @@ export class Track {
    * its bed down into the goal sensor once the whole cart is in the pit, so
    * its landing strip is longer. The blender, sensor rule, depth, drop and
    * back gap are the shared ones (blenderPitFloor, as the original course).
+   *
+   * K1 audit #4: `lineGap` (m), when set, moves the goal line and the
+   * sensor's left edge forward to lineGap m before the blender's front face.
+   * The pit floor behind it is a sunken landing counter: a cart has to roll
+   * up to the line to score, so the goal never fires further from the
+   * blender than the finish framing can show the whole of it (a normal cart
+   * sees all of the blender from ~15 m; measured, test/game/framing.test.ts).
+   * Unset (every course but Kitchen): the line is PIT.lineAfterLip past the
+   * lip and the sensor spans the whole floor, as before.
    */
-  finish(o: { frontGap?: number } = {}): this {
+  finish(o: { frontGap?: number; lineGap?: number } = {}): this {
     const frontGap = o.frontGap ?? BLENDER_FRONT_GAP;
+    if (o.lineGap !== undefined && !(o.lineGap > 0 && o.lineGap < frontGap)) throw new Error(`Track.finish: lineGap ${o.lineGap} must be in (0, frontGap)`);
     const floor = blenderPitFloor(frontGap);
     const blenderFromDrop = frontGap + BLENDER_SIZE.x / 2;
     return this.feature('finish', () => {
@@ -385,9 +395,10 @@ export class Track {
       const pitX1 = this.x;
       this.push(this.x + 0.1, this.y - PIT.wall);
       this.push(this.x + PIT.shelf, this.y);
+      const sensorX0 = o.lineGap === undefined ? pitX0 : r3(pitX0 + frontGap - o.lineGap);
       this.goal = {
-        sensor: { x: pitX0, y: r3(floorY - PIT.sensor), width: r3(pitX1 - pitX0), height: PIT.sensor },
-        lineX: r3(lipX + PIT.lineAfterLip),
+        sensor: { x: sensorX0, y: r3(floorY - PIT.sensor), width: r3(pitX1 - sensorX0), height: PIT.sensor },
+        lineX: o.lineGap === undefined ? r3(lipX + PIT.lineAfterLip) : sensorX0,
       };
       this.props.push({
         id: 'blender',

@@ -13,7 +13,7 @@
  *                                           before the middle pair leaves the near one)
  *       M1 - R = 215 px = 7.17 m  > 5.5 m  (rear still on the near counter
  *                                           when the middle pair is over the hole)
- *     with the loaded centre of mass (~97 px) between M1 and M2, so the cart
+ *     with the loaded centre of mass (92.8 px, pinned in kitchen.test.ts) between M1 and M2, so the cart
  *     never rests on one side of the hole alone;
  *   - high chords (y -115, 3.8 m) from the bed rails out to the end legs:
  *     ground clearance for the slabs and pool lip (a straight low beam this
@@ -73,6 +73,6 @@ export function kitchenBridger(): CartDesign {
  * goal with >= 13/15), then 10 m/s from the kicker through the drainer pool.
  * Above ~9 m/s the crossing turns chaotic (the long cart can nose into the
  * sink's far wall: 9.5 m/s stalls there, 12 m/s delivers 9/15); holding
- * right delivers 11/15 at rating 62 against the line's 15/15 at 75.
+ * right delivers 9/15 at rating 50 against the line's 15/15 at 75.
  */
 export const KITCHEN_BRIDGER_LINE: readonly PaceNote[] = PREMADE.kitchen().pace;
