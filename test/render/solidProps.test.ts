@@ -28,6 +28,15 @@ const provider: TextureProvider = {
     return t;
   },
 };
+/** Blender part textures at their real art sizes (assets/svg/blender/*.svg), so view bounds are the drawn extent. */
+const ART_PX: Record<string, [number, number]> = { 'blender/base': [160, 124], 'blender/jar': [152, 204], 'blender/blades': [84, 28], 'blender/lid': [136, 36] };
+const sizedProvider: TextureProvider = {
+  has: () => true,
+  texture(id) {
+    const [width, height] = ART_PX[id] ?? [64, 64];
+    return new Texture({ source: new TextureSource({ width, height, resolution: 1 }), label: id });
+  },
+};
 const decorLayer = (r: SceneRenderer) => r.world.children[1] as Container;
 
 const base = { id: 'p', art: 'crate', position: { x: 3, y: 4 } };
@@ -133,7 +142,7 @@ describe('finding 6: the blender view follows its rotated collider', () => {
   });
 });
 
-describe('UX1: the big goal blender — the drawn blender is exactly its solid collider', () => {
+describe('UX1: the big goal blender — the drawn blender is exactly its solid collider (height and width)', () => {
   it('the shared blender is 2.5x its S6 size; every shipped level uses it, standing clear of the lip with free pit floor before it', () => {
     expect(BLENDER_SIZE.x).toBeCloseTo(1.5 * BLENDER_SCALE, 9);
     expect(BLENDER_SIZE.y).toBeCloseTo(3.6 * BLENDER_SCALE, 9);
@@ -155,20 +164,29 @@ describe('UX1: the big goal blender — the drawn blender is exactly its solid c
     expect(gen.goal.sensor.width + 0.6).toBeCloseTo(BLENDER_SIZE.x + 2, 9);
   });
 
-  it('the view is scaled so it is exactly as tall as the collider (any size), standing on its bottom edge', () => {
+  it('the view is scaled so it is exactly as tall AND as wide as the collider (any size), standing on its bottom edge', () => {
     for (const size of [BLENDER_SIZE, { x: 1.5, y: 3.6 }, { x: 5, y: 12 }]) {
       const p: PropDef = { id: 'blender', art: 'blender', solid: true, position: { x: 50, y: 12.2 }, size };
-      const r = new SceneRenderer(provider, { background: false });
+      const r = new SceneRenderer(sizedProvider, { background: false });
       r.setLevel({ ...mockLevel('beach'), props: [p] });
       const v = r.blenderView!.view;
       expect(v.scale.y * BLENDER_LAYOUT.height).toBeCloseTo(size.y, 9);
+      // audit-1 #1: and exactly as WIDE — the drawn base (the widest art) spans the collider, no overhang
+      expect(v.scale.x * BLENDER_LAYOUT.baseWidth).toBeCloseTo(size.x, 9);
       expect(v.position.y).toBeCloseTo(12.2 + size.y / 2, 9);
+      // measured on the composed view: its drawn bounds are the collider box
+      const b = v.getBounds();
+      expect(b.width).toBeCloseTo(size.x, 6);
+      expect(b.height).toBeCloseTo(size.y, 6);
+      expect(b.x).toBeCloseTo(50 - size.x / 2, 6);
+      expect(b.y).toBeCloseTo(12.2 - size.y / 2, 6);
       r.destroy();
     }
     // a level without a solid blender draws the standard one
     const r = new SceneRenderer(provider, { background: false });
     r.setLevel({ ...mockLevel('beach'), props: [] });
     expect(r.blenderView!.view.scale.y * BLENDER_LAYOUT.height).toBeCloseTo(BLENDER_HEIGHT_M, 9);
+    expect(r.blenderView!.view.scale.x * BLENDER_LAYOUT.baseWidth).toBeCloseTo(BLENDER_SIZE.x, 9);
     expect(BLENDER_HEIGHT_M).toBe(BLENDER_SIZE.y);
     r.destroy();
   });

@@ -650,9 +650,11 @@ export class SceneRenderer {
     } else {
       this.blender.view.position.set(g.x + g.width / 2, g.y + g.height);
     }
-    // drawn exactly as tall as its solid collider (UX1: physics and art agree for any blender size)
-    const blenderHeight = blenderProp && hasSolidBody(blenderProp) ? blenderProp.size.y : BLENDER_HEIGHT_M;
-    this.blender.view.scale.set(blenderHeight / BLENDER_LAYOUT.height);
+    // drawn exactly as wide AND as tall as its solid collider (UX1 audit-1 #1: physics and art agree
+    // for any blender size). The 160x340 art is squeezed non-uniformly to the collider's aspect (the
+    // shared 3.75 x 9 m box is ~11% narrower than the art's own aspect; the jar reads fine at that).
+    const blenderSize = blenderProp && hasSolidBody(blenderProp) ? blenderProp.size : BLENDER_SIZE;
+    this.blender.view.scale.set(blenderSize.x / BLENDER_LAYOUT.baseWidth, blenderSize.y / BLENDER_LAYOUT.height);
     this.decorLayer.addChild(this.blender.view);
     this.drawFunnel();
   }

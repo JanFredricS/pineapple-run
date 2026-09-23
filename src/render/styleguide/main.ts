@@ -15,7 +15,8 @@ import { ART, coreAssetDefs } from '../artCatalog';
 import { AssetLibrary, svgDataUri, rasterResolution } from '../assets';
 
 import { BlenderView } from '../blender';
-import { BLENDER_HEIGHT_M, SceneRenderer } from '../scene';
+import { SceneRenderer } from '../scene';
+import { BLENDER_SIZE } from '../../model/goal';
 import { THEMES, applyThemeCss, themeAssetDefs, PALETTE_KEYS } from '../themes';
 import { manifestFromSpec, MockRunSource, mockLevel } from './mockRun';
 
@@ -163,7 +164,7 @@ async function mountParts(lib: AssetLibrary): Promise<void> {
     } else {
       blender.view.scale.set((H * 0.72) / 340);
       blender.view.position.set(partsW + (W - partsW) * 0.42, H - 24);
-      blenderSmall.view.scale.set((BLENDER_HEIGHT_M / 340) * PX_PER_M); // in-game size at zoom 1
+      blenderSmall.view.scale.set((BLENDER_SIZE.x / 160) * PX_PER_M, (BLENDER_SIZE.y / 340) * PX_PER_M); // in-game size (collider aspect) at zoom 1
       blenderSmall.view.position.set(W - 40, H - 24);
       bLabel.position.set(partsW + 12, 8);
     }
