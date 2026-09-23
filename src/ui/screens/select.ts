@@ -18,7 +18,8 @@ function courseCard(book: ScoreBook, c: CourseInfo, onSelect: (id: string) => vo
   const unlocked = isUnlocked(book, c.levelId);
   const best = book.levels.find((l) => l.levelId === c.levelId);
   const art = el('div', { class: 'pr-card__art', 'data-theme': c.theme });
-  if (c.bonus) art.append(el('span', { class: 'pr-card__tag', text: 'Bonus' }));
+  // S6T #6: the recovered course is kept vertex-exact and is labelled expert content.
+  if (c.bonus) art.append(el('span', { class: 'pr-card__tag', text: 'Bonus · Expert' }));
   if (best) {
     const v = ratingViewOf(best.bestRating);
     art.append(el('span', { class: `pr-badge pr-band-${v.band}`, text: v.text, title: `Best: ${v.text} (${v.bandLabel})` }));

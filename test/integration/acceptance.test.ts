@@ -17,7 +17,7 @@ import { buildResults, type LevelResults } from '../../src/ui/resultsModel';
 import { ScoreStore } from '../../src/ui/scoreStore';
 import { PREMADE } from '../../tools/levels/premade';
 import { GAP_WALL_LEAN } from '../../tools/levels/track';
-import { FLOOR_IT, runWithPace } from './driver';
+import { FLOOR_IT, ORIGINAL_EXPERT_LINE, runWithPace } from './driver';
 
 const LEVELS = ['beach', 'kitchen', 'workbench'] as const;
 const pace = (id: (typeof LEVELS)[number]) => PREMADE[id]().pace;
@@ -140,6 +140,21 @@ describe('S6T: pacing beats flooring it (every premade level)', () => {
       }
     }, 60_000);
   }
+});
+
+describe('S6T #6: the original course (bonus, expert) is clearable', () => {
+  it('the reference expert line reaches the goal with the example cart and pineapples delivered', async () => {
+    const s = await session(exampleCart(), 'original');
+    try {
+      runWithPace(s, ORIGINAL_EXPERT_LINE);
+      const last = s.events.at(-1)!;
+      expect(last.type).toBe('goalReached');
+      if (last.type !== 'goalReached') return;
+      expect(last.delivered).toBeGreaterThanOrEqual(5);
+    } finally {
+      s.destroy();
+    }
+  }, 60_000);
 });
 
 describe('scoring boundaries through the real results model', () => {
