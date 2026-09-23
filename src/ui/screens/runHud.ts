@@ -122,7 +122,8 @@ export function mountRunHud(host: HTMLElement, opts: RunHudOptions): RunHud {
   banner.hidden = true;
 
   const tl = el('div', { class: 'pr-hud__tl' }, [countChip, opts.mode === 'endless' ? distChip : null, hint, stuckBox]);
-  const tc = el('div', { class: 'pr-hud__tc' }, [release]);
+  // S6T #13: Release sits at the bottom centre, clear of the funnel (framed above it)
+  const tc = el('div', { class: 'pr-hud__bc' }, [release]);
   const tr = el('div', { class: 'pr-hud__tr' }, [timer, giveUp, opts.sound ? soundToggle(opts.sound) : null]);
 
   // ------------------------------------------------------ drive buttons

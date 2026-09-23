@@ -34,6 +34,7 @@ import { el } from '../ui/dom';
 import { isPortraitBlocked, onPortraitChange } from '../ui/orientation';
 import type { DriveIntent } from '../ui/screens/runHud';
 import type { SoundControl } from '../ui/sound';
+import { blendCamera, boxOf, frameBox, READY_BLEND_SECONDS, type Box } from './framing';
 import { NO_AUDIO, RunAudioFeed, safeHooks, type AudioHooks } from './audioHooks';
 import { mountMissingCourse } from './buildScreen';
 import { mountScreenError } from './errorScreen';
@@ -229,7 +230,24 @@ async function mountRunOnce(
     renderer.setLevel(level);
     renderer.setCartDesign(design); // INTEGRATION #11: always
     renderer.resetSource(); // RESIDUALS R5: new world
-    renderer.setFunnel(funnelGeometry(level.funnel, TOTAL_PINEAPPLES));
+    const funnel = funnelGeometry(level.funnel, TOTAL_PINEAPPLES);
+    renderer.setFunnel(funnel);
+    // S6T #13: before Release, frame the whole funnel + the waiting cart
+    const funnelBox = boxOf([...funnel.walls[0], ...funnel.walls[1]]);
+    const readyBox = (): Box => {
+      const b = { ...funnelBox };
+      for (const h of s.controller.cartBodyHandles()) {
+        const t = s.world.getTransform(h);
+        // body centres, padded by about a wheel radius
+        b.minX = Math.min(b.minX, t.x - 1);
+        b.maxX = Math.max(b.maxX, t.x + 1);
+        b.minY = Math.min(b.minY, t.y - 1);
+        b.maxY = Math.max(b.maxY, t.y + 1);
+      }
+      return b;
+    };
+    let readyFrame: { center: { x: number; y: number }; zoom: number } | null = null;
+    let sinceRelease: number | null = null;
     app.stage.addChild(renderer.view);
     cleanup.push(() => app.stage.removeChild(renderer.view));
     const camera: Camera = { center: s.controller.camera.position, zoom: 1, viewportWidth: 1, viewportHeight: 1 };
@@ -250,7 +268,10 @@ async function mountRunOnce(
     let goalFill = 0;
     cleanup.push(
       s.on((e: RunEvent) => {
-        if (e.type === 'released') renderer.setFunnelOpen(true);
+        if (e.type === 'released') {
+          renderer.setFunnelOpen(true);
+          sinceRelease = 0;
+        }
         if (e.type === 'goalReached') {
           goalAt = 0;
           goalFill = Math.min(1, e.delivered / TOTAL_PINEAPPLES);
@@ -294,6 +315,7 @@ async function mountRunOnce(
         s.step();
         audioFeed.step(s.controller.rightmostCartBody()?.x ?? null, s.furthestMetres());
         if (goalAt !== null) goalAt += 1 / 60;
+        if (sinceRelease !== null && sinceRelease < READY_BLEND_SECONDS) sinceRelease += 1 / 60;
       },
       render(alpha) {
         const now = performance.now();
@@ -305,8 +327,11 @@ async function mountRunOnce(
         camera.viewportHeight = h;
         camera.zoom = Math.min(1.5, Math.max(0.5, w / (VIEW_WIDTH_M * 30)));
         camera.center = s.controller.camera.interpolated(alpha);
+        // ready phase: frame funnel + cart (tracks a cart driven before Release); then blend to follow
+        if (sinceRelease === null) readyFrame = frameBox(readyBox(), w, h, camera.zoom);
+        const view = blendCamera(camera, readyFrame, sinceRelease);
         if (goalAt !== null) renderer.setGoal(goalFill * Math.min(1, goalAt / GOAL_FILL_SECONDS), goalAt < GOAL_FILL_SECONDS + 1 ? 1 : 0.3);
-        renderer.render(s.world.manifest(), s.world.snapshot(alpha), camera, dt);
+        renderer.render(s.world.manifest(), s.world.snapshot(alpha), view, dt);
         app.render();
       },
       onPauseChange(paused) {

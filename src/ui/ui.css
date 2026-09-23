@@ -436,6 +436,15 @@
   transform: translateX(-50%);
   align-items: center;
 }
+.pr-hud__bc {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--pr-gap) + var(--pr-safe-b) + 28px); /* above the key hint */
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
 .pr-chip {
   background: var(--pr-hud-glass);
   border: 1px solid var(--pr-hud-edge);
