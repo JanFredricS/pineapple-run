@@ -26,7 +26,8 @@ import {
   type ThemeId,
   type ZoneDef,
 } from '../../src/model/level';
-import { funnelFor } from '../../src/game/startArea';
+import { funnelFor, plateauRange } from '../../src/game/startArea';
+import { BLENDER_SIZE, blenderPitFloor } from '../../src/model/goal';
 import { roundCrests } from '../../src/terrain/rounding';
 
 export type FeatureKind =
@@ -66,15 +67,30 @@ export interface AuthoredLevel {
   pace: PaceNote[];
 }
 
-/** Blender goal: solid body size (m); centre sits on the pit floor (S1 props: position = box centre). */
-export const BLENDER_SIZE: Readonly<Vec2> = { x: 1.5, y: 3.6 };
-/** Goal pit: depth below the lip, floor length, drop run, sensor height above the floor (m). */
+/** Blender goal: solid body size (m); centre sits on the pit floor (S1 props: position = box centre). UX1: shared, 2.5× S6 (src/model/goal.ts). */
+export { BLENDER_SIZE };
+/** Free pit floor in front of the blender (m; S6: blenderFromDrop 6.5 − half the 1.5 m S6 blender). */
+const BLENDER_FRONT_GAP = 5.75;
 /**
- * Goal pit. `wall` is the far wall's height; `shelf` (S6T #17) is the flat
+ * Goal pit: depth below the lip, floor length, drop run, sensor height above
+ * the floor (m). `wall` is the far wall's height; `shelf` (S6T #17) is the flat
  * ground that continues from the wall top past the level end, so the far side
  * renders as solid bench/sand instead of a hairline wall into a void.
+ *
+ * UX1: `floor` grows with the shared blender (9 -> 11.25 m) so the free floor
+ * in front of it (5.75 m) and behind it (1.75 m) keep their S6 lengths;
+ * `blenderFromDrop` is the blender's centre (6.5 -> 7.625 m).
  */
-export const PIT = { depth: 2.5, floor: 9, dropRun: 1.5, sensor: 2.2, lineAfterLip: 0.3, blenderFromDrop: 6.5, wall: 8, shelf: 30 } as const;
+export const PIT = {
+  depth: 2.5,
+  floor: blenderPitFloor(BLENDER_FRONT_GAP),
+  dropRun: 1.5,
+  sensor: 2.2,
+  lineAfterLip: 0.3,
+  blenderFromDrop: BLENDER_FRONT_GAP + BLENDER_SIZE.x / 2,
+  wall: 8,
+  shelf: 30,
+} as const;
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
 
@@ -105,18 +121,24 @@ export class Track {
   private wallBefore = new Set<string>();
 
   /**
-   * Start wall at `x0`, ground at `groundY`; the cart starts `cartOffset`
-   * metres right of the wall (design x = 0 there).
+   * Course start at `x0`, ground at `groundY`; the cart starts `cartOffset`
+   * metres right of x0 (design x = 0 there). The start wall sits at x0, or
+   * further left when the shared start plateau (src/game/startArea.ts
+   * plateauRange: the build area + 1 m) reaches past x0 — UX1 grew the build
+   * area to the left, so every Track course gets the longer plateau behind
+   * the cart without moving anything from x0 on.
    */
   constructor(
     x0: number,
     groundY: number,
     cartOffset = 2.5,
   ) {
-    this.pts.push({ x: x0 - 0.1, y: groundY - 8 }, { x: x0, y: groundY });
+    this.cartStart = { x: x0 + cartOffset, y: groundY };
+    const wallX = Math.min(x0, Math.floor(plateauRange(this.cartStart).minX));
+    this.pts.push({ x: wallX - 0.1, y: groundY - 8 }, { x: wallX, y: groundY });
+    if (wallX < x0) this.pts.push({ x: x0, y: groundY });
     this.x = x0;
     this.y = groundY;
-    this.cartStart = { x: x0 + cartOffset, y: groundY };
   }
 
   private push(x: number, y: number): void {

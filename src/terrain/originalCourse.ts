@@ -23,12 +23,16 @@
  * on the plateau (the original build area was x < 366 px), and killY.
  *
  * S6 integration (INTEGRATION.md #3, #4, #6, #7, #12): id is the catalog id
- * 'original'; cartStart is the GROUND under design (0, 0) — the build area
- * (design x −20..340 px) exactly covers the recovered plateau (x −12.8..355.7
- * px), so it starts just right of the start wall, with y at the plateau's
- * highest vertex (the plateau falls 0.5 px over its length, so nothing is
- * spawned inside the ground); the funnel outlet sits at the shared start-area
- * offset (+115, −225) px. The recovered course ends in a 0.8 m-wide chasm
+ * 'original'; cartStart is the GROUND under design (0, 0) — the 2008 build
+ * area (design x −20..340 px) exactly covers the recovered plateau (x
+ * −12.8..355.7 px), so design x −20 sits just right of the first recovered
+ * vertex, with y at the plateau's highest vertex (the plateau falls 0.5 px
+ * over its length, so nothing is spawned inside the ground); the funnel
+ * outlet sits at the shared start-area offset (+115, −225) px. UX1: the
+ * build area now reaches design x −190 px, left of the recovered course, so
+ * a flat START PLATEAU (flagged addition, like the pit floor) runs from the
+ * first recovered vertex back past the build area's left edge + 1 m, and the
+ * start wall moved to its left end. The recovered vertices are unchanged. The recovered course ends in a 0.8 m-wide chasm
  * behind the lip, too narrow for a blender body, so the end wall is replaced
  * by an added pit floor (PIT_FLOOR_M, flagged addition) with the SOLID
  * blender standing on it (position = box centre) and the goal sensor over
@@ -37,6 +41,7 @@
 
 import { pxToM } from '../model/coords';
 import type { Vec2 } from '../model/geometry';
+import { BLENDER_SIZE, blenderPitFloor } from '../model/goal';
 import { DEFAULT_TERRAIN_FRICTION, DEFAULT_TERRAIN_RESTITUTION, LEVEL_DEF_VERSION, type LevelDef } from '../model/level';
 
 /** Parse terrain.txt: one "x y" pair (px) per line. */
@@ -53,13 +58,19 @@ export function parseOriginalTerrain(text: string): Vec2[] {
 }
 
 export const ORIGINAL_GOAL_LINE_PX = 7670;
-/** Added pit floor after the last recovered vertex (m). */
-export const PIT_FLOOR_M = 7;
-/** Solid blender body (m): same as the premade courses (tools/levels/track.ts BLENDER_SIZE). */
-export const ORIGINAL_BLENDER_SIZE = { x: 1.5, y: 3.6 } as const;
+/** Free pit floor in front of the blender (m; S6: centre 4.5 − half the 1.5 m S6 blender). */
+const ORIGINAL_BLENDER_FRONT_GAP = 3.75;
+/** Added pit floor after the last recovered vertex (m). UX1: grows with the shared blender, 7 -> 9.25 m. */
+export const PIT_FLOOR_M = blenderPitFloor(ORIGINAL_BLENDER_FRONT_GAP);
+/** Solid blender body (m): the shared goal blender (src/model/goal.ts), as on the premade courses. */
+export const ORIGINAL_BLENDER_SIZE = BLENDER_SIZE;
+/** The 2008 build area's left edge (design px): design x −20 sits just right of the first recovered vertex. */
+const ORIGINAL_BUILD_MIN_X_PX = -20;
 /** Start-area offsets, design px (must equal src/game/startArea.ts; an integration test checks). */
-const BUILD_MIN_X_PX = -20;
+const BUILD_MIN_X_PX = -190;
 const FUNNEL_OFFSET = { x: 115, y: -225 } as const;
+/** Added flat start plateau (UX1): reaches this far left of the build area's left edge (m). */
+const START_PLATEAU_MARGIN_M = 1.5;
 
 export function originalCourseLevel(pxVertices: readonly Vec2[]): LevelDef {
   const pts = pxVertices.map((p) => ({ x: pxToM(p.x), y: pxToM(p.y) }));
@@ -69,7 +80,8 @@ export function originalCourseLevel(pxVertices: readonly Vec2[]): LevelDef {
   // Plateau = the recovered vertices up to the original build-area edge (366 px).
   const plateau = pts.filter((p) => p.x <= pxToM(366));
   const plateauY = Math.min(...plateau.map((p) => p.y));
-  const startX = first.x - pxToM(BUILD_MIN_X_PX) + 0.05;
+  const startX = first.x - pxToM(ORIGINAL_BUILD_MIN_X_PX) + 0.05;
+  const wallX = Math.min(first.x, startX + pxToM(BUILD_MIN_X_PX) - START_PLATEAU_MARGIN_M);
   const floorEnd = last.x + PIT_FLOOR_M;
   return {
     version: LEVEL_DEF_VERSION,
@@ -78,7 +90,7 @@ export function originalCourseLevel(pxVertices: readonly Vec2[]): LevelDef {
     theme: 'workbench',
     terrain: {
       spans: [
-        { id: 'start-wall', points: [{ x: first.x - 0.1, y: first.y - 6 }, { ...first }] },
+        { id: 'start-plateau', points: [{ x: wallX - 0.1, y: first.y - 6 }, { x: wallX, y: first.y }, { ...first }] },
         { id: 'course', points: pts },
         { id: 'pit-floor', points: [{ ...last }, { x: floorEnd, y: last.y }, { x: floorEnd + 0.1, y: last.y - 8 }] },
       ],
@@ -96,7 +108,7 @@ export function originalCourseLevel(pxVertices: readonly Vec2[]): LevelDef {
         id: 'blender',
         art: 'blender',
         solid: true,
-        position: { x: last.x + 4.5, y: last.y - ORIGINAL_BLENDER_SIZE.y / 2 },
+        position: { x: last.x + ORIGINAL_BLENDER_FRONT_GAP + ORIGINAL_BLENDER_SIZE.x / 2, y: last.y - ORIGINAL_BLENDER_SIZE.y / 2 },
         size: { ...ORIGINAL_BLENDER_SIZE },
       },
     ],

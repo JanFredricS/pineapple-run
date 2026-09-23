@@ -14,9 +14,12 @@ import type { CartPart } from '../model/cart';
 import type { Vec2 } from '../model/geometry';
 import { BUILD_AREA, MOCK_FUNNEL } from './constants';
 import type { PreviewModel } from './preview';
+import type { LoupePlacement } from './loupe';
 import { screenToDesign, type BuilderView } from './view';
 
 export interface BuilderTheme {
+  /** Canvas paper (the touch loupe's opaque backing). */
+  paper: string;
   grid: string;
   gridMajor: string;
   area: string;
@@ -34,6 +37,7 @@ export interface BuilderTheme {
 }
 
 export const DEFAULT_THEME: BuilderTheme = {
+  paper: '#fbfaf5',
   grid: '#dfe7ef',
   gridMajor: '#c7d3df',
   area: '#7a8aa0',
@@ -56,6 +60,7 @@ export function themeFromCss(el: Element): BuilderTheme {
   const t = DEFAULT_THEME;
   const groups = t.groups.map((g, i) => get(`--pr-canvas-group-${i}`, g));
   return {
+    paper: get('--pr-canvas-bg', t.paper),
     grid: get('--pr-canvas-grid', t.grid),
     gridMajor: get('--pr-canvas-grid-major', t.gridMajor),
     area: get('--pr-canvas-area', t.area),
@@ -315,5 +320,79 @@ export class BuilderRenderer {
 
   destroy(): void {
     this.view.destroy({ children: true });
+  }
+}
+
+/**
+ * UX1 #5 touch loupe (Pixi half; placement/tracking rules live in loupe.ts).
+ * A second, small BuilderRenderer draws the SAME model + overlay (so the live
+ * draft, snap rings, pin markers and hover/error outlines all appear) through
+ * a view `zoom`x the builder's, centred on the fingertip's design point, into
+ * a 2r x 2r box behind a circular mask; a crosshair marks the exact contact
+ * point. Drawn only while a touch is active; it is display-only (no events).
+ */
+export class BuilderLoupe {
+  readonly view = new Container();
+  private readonly lens = new BuilderRenderer();
+  private readonly backing = new Graphics();
+  private readonly mask = new Graphics();
+  private readonly frame = new Graphics();
+  private theme: BuilderTheme = DEFAULT_THEME;
+
+  constructor() {
+    this.lens.view.mask = this.mask;
+    this.view.addChild(this.backing, this.lens.view, this.mask, this.frame);
+    this.view.visible = false;
+    this.view.eventMode = 'none';
+  }
+
+  get visible(): boolean {
+    return this.view.visible;
+  }
+
+  setTheme(theme: BuilderTheme): void {
+    this.theme = theme;
+    this.lens.setTheme(theme);
+  }
+
+  setStartArea(area: StartAreaPx | null): void {
+    this.lens.setStartArea(area);
+  }
+
+  /** The loupe's own view: `zoom`x the builder view, the fingertip's design point at the lens centre. */
+  static lensView(v: BuilderView, fingertip: Vec2, zoom: number, radius: number): BuilderView {
+    const d = screenToDesign(fingertip, v);
+    const scale = v.scale * zoom;
+    return { scale, offsetX: radius - d.x * scale, offsetY: radius - d.y * scale };
+  }
+
+  show(model: PreviewModel, overlay: RenderOverlay, v: BuilderView, fingertip: Vec2, at: LoupePlacement, zoom: number, radius: number): void {
+    const t = this.theme;
+    const { x: cx, y: cy } = at.center;
+    this.view.visible = true;
+    this.lens.view.position.set(cx - radius, cy - radius);
+    this.lens.draw(model, overlay, BuilderLoupe.lensView(v, fingertip, zoom, radius), 2 * radius, 2 * radius);
+    this.backing.clear().circle(cx, cy, radius).fill({ color: t.paper });
+    this.mask.clear().circle(cx, cy, radius).fill({ color: 0xffffff });
+    const f = this.frame.clear();
+    // crosshair: a gap at the centre so the contact point itself stays visible
+    const arm = Math.min(12, radius * 0.2);
+    const hole = 3;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      f.moveTo(cx + dx * hole, cy + dy * hole).lineTo(cx + dx * arm, cy + dy * arm);
+    }
+    f.stroke({ width: 1.5, color: t.error, alpha: 0.9 });
+    f.circle(cx, cy, 1).fill({ color: t.error });
+    // subtle border: soft shadow ring + thin ink ring
+    f.circle(cx, cy, radius + 1.5).stroke({ width: 4, color: '#000000', alpha: 0.12 });
+    f.circle(cx, cy, radius).stroke({ width: 1.5, color: t.ink, alpha: 0.55 });
+  }
+
+  hide(): void {
+    this.view.visible = false;
+  }
+
+  destroy(): void {
+    this.view.destroy({ children: true }); // includes the lens renderer's view
   }
 }

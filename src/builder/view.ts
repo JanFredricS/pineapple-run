@@ -4,7 +4,7 @@
  */
 
 import type { Vec2 } from '../model/geometry';
-import { MAX_ZOOM, MIN_ZOOM, type Area } from './constants';
+import { MAX_ZOOM, MIN_ZOOM, MOCK_FUNNEL, type Area } from './constants';
 
 export interface BuilderView {
   scale: number;
@@ -56,7 +56,7 @@ export const FUNNEL_FIT_CLEARANCE = 12;
 export function fitArea(
   build: Area,
   startArea?: { funnel: { walls: readonly (readonly Vec2[])[]; plug: readonly Vec2[] } },
-  mockFunnelY = -250,
+  mockFunnelY = MOCK_FUNNEL.y,
 ): Area {
   if (!startArea) return { ...build, minY: Math.min(build.minY, mockFunnelY - 10) };
   const pts = [...startArea.funnel.walls.flat(), ...startArea.funnel.plug];

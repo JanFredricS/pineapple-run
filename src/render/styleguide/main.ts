@@ -11,11 +11,12 @@ import type { Camera } from '../../model/coords';
 import { PX_PER_M } from '../../model/coords';
 import { THEME_IDS, type ThemeId } from '../../model/level';
 import type { BodyTransform, RenderSnapshot, SceneManifest } from '../../model/snapshot';
-import { ART, coreAssetDefs } from '../artCatalog';
+import { ART, BLENDER_LAYOUT, coreAssetDefs } from '../artCatalog';
 import { AssetLibrary, svgDataUri, rasterResolution } from '../assets';
 
 import { BlenderView } from '../blender';
 import { SceneRenderer } from '../scene';
+import { BLENDER_SIZE } from '../../model/goal';
 import { THEMES, applyThemeCss, themeAssetDefs, PALETTE_KEYS } from '../themes';
 import { manifestFromSpec, MockRunSource, mockLevel } from './mockRun';
 
@@ -117,6 +118,11 @@ async function mountParts(lib: AssetLibrary): Promise<void> {
 
   const blender = new BlenderView(lib, 0xfff1c9);
   const blenderSmall = new BlenderView(lib, 0xfff1c9);
+  /** Every styleguide blender is drawn at the in-game collider aspect (BLENDER_SIZE 3.75 x 9 m), `px` tall. */
+  const drawAtHeight = (b: BlenderView, px: number) => {
+    const sy = px / BLENDER_LAYOUT.height;
+    b.view.scale.set(sy * ((BLENDER_SIZE.x / BLENDER_SIZE.y) * (BLENDER_LAYOUT.height / BLENDER_LAYOUT.baseWidth)), sy);
+  };
   const bLabel = label('Blender goal — fill + whir loop', 13, 0x22262e);
   app.stage.addChild(blender.view, blenderSmall.view, bLabel);
 
@@ -155,15 +161,15 @@ async function mountParts(lib: AssetLibrary): Promise<void> {
     }
     if (narrow) {
       const bh = H - partsH;
-      blender.view.scale.set((bh * 0.8) / 340);
+      drawAtHeight(blender, bh * 0.8);
       blender.view.position.set(W * 0.35, H - 16);
-      blenderSmall.view.scale.set((bh * 0.35) / 340);
+      drawAtHeight(blenderSmall, bh * 0.35);
       blenderSmall.view.position.set(W * 0.75, H - 16);
       bLabel.position.set(12, partsH + 8);
     } else {
-      blender.view.scale.set((H * 0.72) / 340);
+      drawAtHeight(blender, H * 0.72);
       blender.view.position.set(partsW + (W - partsW) * 0.42, H - 24);
-      blenderSmall.view.scale.set(3.6 / 340 * PX_PER_M); // in-game size at zoom 1
+      drawAtHeight(blenderSmall, BLENDER_SIZE.y * PX_PER_M); // in-game size at zoom 1
       blenderSmall.view.position.set(W - 40, H - 24);
       bLabel.position.set(partsW + 12, 8);
     }

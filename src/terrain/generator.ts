@@ -39,6 +39,7 @@
  * bits vary by engine), so terrain is identical on every platform.
  */
 
+import { BLENDER_SIZE } from '../model/goal';
 import type { Vec2 } from '../model/geometry';
 import {
   DEFAULT_TERRAIN_FRICTION,
@@ -137,9 +138,14 @@ export const ENDLESS_KILL_Y = BASE_Y + 30;
  * cartStart + (115, −225) px — the same offset as src/game/startArea.ts
  * funnelFor() (kept literal here so terrain does not import game; an S6
  * integration test asserts the two agree).
+ *
+ * UX1: the build area grew left to design x −190 px, so the cart start moved
+ * from x 3 to 7.5 m: the plateau (build area + 1 m either side) then spans
+ * 0.17–19.83 m, inside the start wall (0.1) and START_FLAT_END (20). The
+ * generated terrain itself is unchanged.
  */
-export const START_CART = { x: 3, y: BASE_Y } as const;
-export const START_FUNNEL = { x: 3 + 115 / 30, y: BASE_Y - 225 / 30 } as const;
+export const START_CART = { x: 7.5, y: BASE_Y } as const;
+export const START_FUNNEL = { x: 7.5 + 115 / 30, y: BASE_Y - 225 / 30 } as const;
 
 /** Generated LevelDefs are capped so they always pass model/validate limits. */
 export const MAX_GENERATED_BLOCKS = 1500;
@@ -632,6 +638,11 @@ export interface FinishGeometry {
   blenderAt: Vec2;
 }
 
+/**
+ * Pit floor of the finish block (m): S6 4 m; UX1 fits the shared (2.5×)
+ * decor blender standing at the pit centre with 1 m either side.
+ */
+const FINISH_PIT_FLOOR = Math.max(4, BLENDER_SIZE.x + 2);
 /** Run-out length from the finish block's left connector pin to the lip (m). */
 const FINISH_RUNOUT = 20;
 /** Goal line offset past the lip (m). */
@@ -651,7 +662,7 @@ function generateFinish(seed: number, k: number): FinishGeometry {
   const pitDepth = 2.5;
   const floorY = lipY + pitDepth;
   const pitX0 = lipX + pitDepth / 1.6; // drop at slope 1.6 (within every maxDown)
-  const pitX1 = pitX0 + 4;
+  const pitX1 = pitX0 + FINISH_PIT_FLOOR;
   const line: Vec2[] = [
     leftPin,
     { x: lipX - 3, y }, // flat run-out

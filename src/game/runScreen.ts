@@ -34,7 +34,7 @@ import { el } from '../ui/dom';
 import { isPortraitBlocked, onPortraitChange } from '../ui/orientation';
 import type { DriveIntent } from '../ui/screens/runHud';
 import type { SoundControl } from '../ui/sound';
-import { blendCamera, bodiesBox, boxOf, READY_BLEND_SECONDS, readyFrame, type Box } from './framing';
+import { bodiesBox, boxOf, cartAnchorX, followZoom, goalBlenderBox, LookAheadFollow, READY_BLEND_SECONDS, readyFrame, runCamera, type Box } from './framing';
 import { NO_AUDIO, RunAudioFeed, safeHooks, type AudioHooks } from './audioHooks';
 import { mountMissingCourse } from './buildScreen';
 import { mountScreenError } from './errorScreen';
@@ -86,8 +86,7 @@ export function runSessionOptions(level: Pick<LevelDef, 'zones'>, deps: Pick<Run
   return level.zones.some((z) => z.kind === 'beads') ? { beadCount: runBeadCount(deps) } : {};
 }
 
-/** Course width shown across the screen (m) on narrow screens; zoom is clamped. */
-const VIEW_WIDTH_M = 24;
+
 /** Blender fill animation duration after the goal (s). */
 const GOAL_FILL_SECONDS = 1.2;
 
@@ -264,10 +263,12 @@ async function mountRunOnce(
     const funnelBox = boxOf([...funnel.walls[0], ...funnel.walls[1]]);
     const cartBox = (): Box | null => bodiesBox(s.world.manifest().bodies, s.controller.cartBodyHandles(), (id) => s.world.getTransform(id));
     let readyView: { center: { x: number; y: number }; zoom: number } | null = null;
+    const blenderBox = goalBlenderBox(level);
     let sinceRelease: number | null = null;
     app.stage.addChild(renderer.view);
     cleanup.push(() => app.stage.removeChild(renderer.view));
-    const camera: Camera = { center: s.controller.camera.position, zoom: 1, viewportWidth: 1, viewportHeight: 1 };
+    // UX1: horizontal look-ahead follow (cart at 30% from the left edge)
+    const look = new LookAheadFollow(cartAnchorX(s.controller.cartBounds()) ?? s.spawn.x);
 
     // --------------------------------------------------------------- input
     const input = new DriveInput();
@@ -330,6 +331,7 @@ async function mountRunOnce(
         }
         s.setDrive(dir);
         s.step();
+        look.step(cartAnchorX(s.controller.cartBounds()));
         audioFeed.step(s.controller.rightmostCartBody()?.x ?? null, s.furthestMetres());
         if (goalAt !== null) goalAt += 1 / 60;
         if (sinceRelease !== null && sinceRelease < READY_BLEND_SECONDS) sinceRelease += 1 / 60;
@@ -340,13 +342,20 @@ async function mountRunOnce(
         lastRenderMs = now;
         const w = app.screen.width;
         const h = app.screen.height;
-        camera.viewportWidth = w;
-        camera.viewportHeight = h;
-        camera.zoom = Math.min(1.5, Math.max(0.5, w / (VIEW_WIDTH_M * 30)));
-        camera.center = s.controller.camera.interpolated(alpha);
+        const cart = cartBox();
         // ready phase: frame funnel + cart (tracks a cart driven before Release); then blend to follow
-        if (sinceRelease === null) readyView = readyFrame(funnelBox, cartBox(), w, h, camera.zoom);
-        const view = blendCamera(camera, readyView, sinceRelease);
+        if (sinceRelease === null) readyView = readyFrame(funnelBox, cart, w, h, followZoom(w));
+        // look-ahead follow, eased into the whole-blender finish frame near the goal (framing.ts)
+        const view: Camera = runCamera({
+          anchorX: look.interpolated(alpha),
+          followY: s.controller.camera.interpolated(alpha).y,
+          viewportWidth: w,
+          viewportHeight: h,
+          blender: blenderBox,
+          cart,
+          ready: readyView,
+          sinceRelease,
+        });
         if (goalAt !== null) renderer.setGoal(goalFill * Math.min(1, goalAt / GOAL_FILL_SECONDS), goalAt < GOAL_FILL_SECONDS + 1 ? 1 : 0.3);
         renderer.render(s.world.manifest(), s.world.snapshot(alpha), view, dt);
         app.render();

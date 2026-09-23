@@ -29,7 +29,7 @@ import { worldOptionsForLevel } from '../run/runWorld';
 import { StuckDetector } from '../run/stuck';
 import type { TerrainSource } from '../terrain/chunks';
 import { TerrainStreamer } from '../terrain/runtime';
-import { designBottomPx } from './startArea';
+import { designBottomPx, plateauRange } from './startArea';
 import { StreamedTerrainQuery } from './streamedTerrain';
 
 /** What a run is played on: a validated LevelDef plus its terrain source. */
@@ -86,7 +86,8 @@ export class RunSession implements RunEventSource {
     const below = Math.max(0, designBottomPx(design)) / 30;
     this.spawn = { x: start.x, y: start.y - below };
     // Terrain first (around the cart and the funnel), then the run.
-    this.terrain.update([start.x - 1, start.x + 12, course.level.funnel.x, ...this.furnitureXs]);
+    const plateau = plateauRange(start); // the whole (UX1: wider) build area
+    this.terrain.update([plateau.minX, plateau.maxX, course.level.funnel.x, ...this.furnitureXs]);
     this.controller = new RunController(world, design, { ...course.level, cartStart: this.spawn }, {
       mode: course.mode,
       terrain: this.query,

@@ -427,7 +427,11 @@ describe('endless streaming', () => {
       expect(s.controller.cartLost).toBe(false);
       expect(recreated).toBeGreaterThan(0); // chunks really were unloaded and rebuilt
       expect(created).toBeGreaterThan(seen.size);
-      expect(s.furthestMetres()).toBeGreaterThan(160);
+      // furthest is measured from the spawn. Pre-UX1 (spawn x 3) this was `furthest > 160`, i.e. the
+      // furthest point reached lies past world x 163; UX1 moved the endless start to x 7.5 (wider build
+      // area), so the same ABSOLUTE bound is kept: furthest > 155.5 m from the new spawn (audit-1 #4).
+      expect(s.spawn.x).toBeCloseTo(7.5, 1);
+      expect(s.spawn.x + s.furthestMetres()).toBeGreaterThan(163);
     } finally {
       s.destroy();
     }

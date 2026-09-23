@@ -63,6 +63,7 @@ import type { Vec2 } from '../model/geometry';
 import { hasSolidBody, type LevelDef, type PropDef, type ThemeId } from '../model/level';
 import { parseZoneTag } from '../model/zones';
 import type { BodyTransform, RenderBodyInfo, RenderShape, RenderSnapshot, SceneManifest } from '../model/snapshot';
+import { BLENDER_SIZE } from '../model/goal';
 import { ART, BLENDER_LAYOUT, PROP_ART } from './artCatalog';
 import { BlenderView } from './blender';
 import { ParallaxBackground } from './parallax';
@@ -82,8 +83,8 @@ import { SHADE_ID, type TextureProvider } from './textures';
 
 /** How far below the deepest terrain point the fill extends (m). */
 export const TERRAIN_FILL_DEPTH_M = 40;
-/** World height of the blender goal (m). */
-export const BLENDER_HEIGHT_M = 3.6;
+/** World height of the standard blender goal (m): the shared solid body's height (UX1: 3.6 -> 9). */
+export const BLENDER_HEIGHT_M = BLENDER_SIZE.y;
 /** Visual thickness of the shock's guide rod (m). */
 const SHOCK_SHAFT_M = 0.09;
 const PIN_DIAMETER_M = 0.16;
@@ -762,7 +763,11 @@ export class SceneRenderer {
     } else {
       this.blender.view.position.set(g.x + g.width / 2, g.y + g.height);
     }
-    this.blender.view.scale.set(BLENDER_HEIGHT_M / BLENDER_LAYOUT.height);
+    // drawn exactly as wide AND as tall as its solid collider (UX1 audit-1 #1: physics and art agree
+    // for any blender size). The 160x340 art is squeezed non-uniformly to the collider's aspect (the
+    // shared 3.75 x 9 m box is ~11% narrower than the art's own aspect; the jar reads fine at that).
+    const blenderSize = blenderProp && hasSolidBody(blenderProp) ? blenderProp.size : BLENDER_SIZE;
+    this.blender.view.scale.set(blenderSize.x / BLENDER_LAYOUT.baseWidth, blenderSize.y / BLENDER_LAYOUT.height);
     this.decorLayer.addChild(this.blender.view);
     this.drawFunnel();
   }

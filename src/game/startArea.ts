@@ -4,7 +4,8 @@
  * tests agree:
  *
  *  - Design frame (S2): design px, y-down, design y = 0 is the ground line,
- *    parts may be drawn in BUILD_AREA (x −20..340, y −210..0 px = 12 × 7 m).
+ *    parts may be drawn in BUILD_AREA (UX1: x −190..340, y −210..0 px =
+ *    17.67 × 7 m; was x −20..340 = 12 × 7 m).
  *  - `LevelDef.cartStart` is the WORLD position of design (0, 0): the ground
  *    at the left of the start plateau. The plateau must be flat (y =
  *    cartStart.y) across the whole build area plus a margin either side.
