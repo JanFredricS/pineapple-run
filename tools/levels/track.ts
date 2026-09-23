@@ -70,7 +70,7 @@ export interface AuthoredLevel {
 /** Blender goal: solid body size (m); centre sits on the pit floor (S1 props: position = box centre). UX1: shared, 2.5× S6 (src/model/goal.ts). */
 export { BLENDER_SIZE };
 /** Free pit floor in front of the blender (m; S6: blenderFromDrop 6.5 − half the 1.5 m S6 blender). */
-const BLENDER_FRONT_GAP = 5.75;
+export const BLENDER_FRONT_GAP = 5.75;
 /**
  * Goal pit: depth below the lip, floor length, drop run, sensor height above
  * the floor (m). `wall` is the far wall's height; `shelf` (S6T #17) is the flat
@@ -364,14 +364,24 @@ export class Track {
    * floor (S1 convention: position = box CENTRE); the base sensor is the
    * bottom PIT.sensor metres of the pit; every pineapple past the lip line
    * counts as delivered.
+   *
+   * K1: `frontGap` (m) overrides the free floor in front of the blender
+   * (default BLENDER_FRONT_GAP, 5.75 m, sized for the 6.7 m example cart).
+   * Kitchen needs a long cart (the sink), and a long rigid cart only gets
+   * its bed down into the goal sensor once the whole cart is in the pit, so
+   * its landing strip is longer. The blender, sensor rule, depth, drop and
+   * back gap are the shared ones (blenderPitFloor, as the original course).
    */
-  finish(): this {
+  finish(o: { frontGap?: number } = {}): this {
+    const frontGap = o.frontGap ?? BLENDER_FRONT_GAP;
+    const floor = blenderPitFloor(frontGap);
+    const blenderFromDrop = frontGap + BLENDER_SIZE.x / 2;
     return this.feature('finish', () => {
       const lipX = this.x;
       this.push(this.x + PIT.dropRun, this.y + PIT.depth);
       const floorY = this.y;
       const pitX0 = this.x;
-      this.push(this.x + PIT.floor, this.y);
+      this.push(this.x + floor, this.y);
       const pitX1 = this.x;
       this.push(this.x + 0.1, this.y - PIT.wall);
       this.push(this.x + PIT.shelf, this.y);
@@ -383,7 +393,7 @@ export class Track {
         id: 'blender',
         art: 'blender',
         solid: true,
-        position: { x: r3(pitX0 + PIT.blenderFromDrop), y: r3(floorY - BLENDER_SIZE.y / 2) },
+        position: { x: r3(pitX0 + blenderFromDrop), y: r3(floorY - BLENDER_SIZE.y / 2) },
         size: { ...BLENDER_SIZE },
       });
     });
