@@ -573,3 +573,47 @@ The loupe is purely visual:
   - the error screen and its retry.
 - test/builder/mountFailure.test.ts: now asserts "detached, never destroyed, never more than one app" instead of "destroyed per mount".
 - Every loss is dispatched as the real DOM event on the canvas. With the listener removed, all 10 loss-dependent tests fail (checked).
+
+## B1: Blueprint original course
+
+**Request (owner).** The bonus course "The Original Course (2008)" (id `original`) rendered in the Workbench theme. It now renders in the graph-paper theme, so the recovered 2008 course reads as the blueprint of the original game.
+
+**Decision: rename, not reuse.** The theme id `test` (name "Blueprint (test)") is now `blueprint` (name "Blueprint"). A shipped course on an id literally called `test` was the smell, and the blast radius is small and fully visible:
+- Every LevelDef is in-repo JSON. There is no level import, and share codes carry carts, not levels. So no saved player data holds a theme id.
+- The consumers are `ThemeId`/`THEME_IDS` (src/model/level.ts), the `THEMES` record (tsc-exhaustive), `src/render/themes/test.ts` → `blueprint.ts`, `assets/svg/test/` → `assets/svg/blueprint/` (texture ids become `blueprint/…`), the S0 spike level and the flat-goal run fixture JSON, one validate test, and the `.pr-card__art[data-theme='test']` CSS rule.
+- The endless seed → theme table (`ENDLESS_THEMES`: beach / kitchen / workbench) never included `test`. Music is keyed by course id (`COURSE_MUSIC.original = 'workbench'`), never by visual theme, so the original keeps its song. The comment in src/audio/index.ts now says so.
+- `test` was a legal LevelDef theme, so it stays accepted as a **legacy alias**: `LEGACY_THEME_IDS = { test: 'blueprint' }` (level.ts). `validateLevelDef` rewrites it to `blueprint` (own-key lookup, so `toString`/`__proto__` are still rejected). Nothing new is written with it.
+- The styleguide iterates `THEME_IDS`, so it shows one "Blueprint" card and picker button (checked live).
+
+**Course change.** `originalCourseLevel` (src/terrain/originalCourse.ts) now emits `theme: 'blueprint'`. The fixture was regenerated alone (`UPDATE_FIXTURES=1 npx vitest run test/terrain/original-course.test.ts`). The JSON diff is exactly one line, `"theme": "workbench"` → `"theme": "blueprint"`. A key-by-key compare shows `theme` is the only changed key, and all 71 `course` vertices are byte-identical (same JSON serialisation). The catalog card (src/ui/catalog.ts) moves to `blueprint` as well, and a new test pins the catalog theme to the level theme for every shipped course.
+
+**Completeness pass (the theme had never rendered a real course).**
+
+| Area | Finding | Action |
+|---|---|---|
+| Parallax structure | Sky gradient + `fill` graph paper (f 0.1) + `sketch` band (f 0.2) + `rocks` band with `fillBelow` (f 0.35). This is the same shape as workbench/kitchen. | Kept |
+| Sky | The graph paper's opaque `#F9FBFD` background covered the whole screen, so the sky gradient never showed. | Background rect removed: the grid now sits on the sky gradient. `skyBottom` `#E8EEF6` → `#E4EBF4` for a touch more depth. |
+| Terrain edge | Surface line was grey `#616A7C`. | Drafting blue `#2A4A78` (contrast 5.9:1 on the rock, 8.6:1 on the paper, pinned ≥ 4.5 / ≥ 7). |
+| Terrain fill | Seamless (boundary vertices match on opposite edges). Tiles cleanly over long spans and the steep crest/drop (x 39–52 m) and into the 2008 pit (checked live). | Slab lines `#9FAABB` → `#9DB0C9` (bluer); depth shade tint `#3A4658` → `#2E4A72`, alpha 0.25 → 0.22. |
+| Rocks band | Grey outlines. | Outlines `#B8C3D2` → `#A9BCD6`; `fillBelow` unchanged (`#DDE3EC`, matches the rock fill). |
+| Sketch band | Construction lines and dimensions only. | A small drawing title block: "PINEAPPLE RUN / COURSE 01 / REV 2008". |
+| Blender (3.75 × 9 m) | **The real gap.** The shared jar art is pale cyan glass (`#A9D8E6` outline, 1.5:1 on the paper), so an empty jar nearly vanished on graph paper. | New optional `Theme.goalOutline` (NOT a palette key, so the other themes' files are untouched). BlenderView draws a 3 px / 2 px drafting-blue (`#2F6DB5`, 5.1:1 on skyTop, 4.4:1 on skyBottom) outline over the glass body and rim, under the lid. Only blueprint sets it, so other themes build no outline object. The outline constants are pinned to jar.svg's path and rect. |
+| Finish pit | Pit floor, walls and blender read well against the pale rock (checked live). Beyond the pit's end wall the flat rock-band `fillBelow` shows. That is the world edge and looks the same in every theme. | None |
+| Funnel | `accentAlt` orange walls, `accent` plug, `ink` outline. | `ink` `#2B3445` → navy `#1F3A60` (11:1 on the paper, ≥ 7:1 pinned); `accent` `#3A7BD5` → `#2F6DB5`. Orange kept as the drafting "marker" contrast colour. |
+| Cart / pineapples / springs | Theme-independent art. Red caps, striped straws, grey coils and pineapples all read on the near-white sky (checked live at the start plateau). | None |
+| HUD | The HUD uses the global white-glass pill vars (ui.css `--pr-hud-glass`), not `palette.uiPanel`. Readable on the pale sky. | `uiPanel` → `#1F3A60` for consistency only (no consumer today). |
+| Card art | The `test` card reused the workbench gradient. | New `--pr-theme-blueprint`: a 16/64 px blueprint grid over the sky gradient, a navy ground line, and pale rock. |
+
+**Tests.** test/render/blueprint.test.ts (10 tests):
+- The course → theme pin: converter, shipped fixture and catalog.
+- The catalog theme equals the level theme for every shipped course.
+- Music unchanged.
+- One Blueprint theme and no `test` id.
+- The legacy alias, including the prototype-key rejection.
+- The sky shows through the graph paper.
+- WCAG contrast floors for the linework.
+- The jar-outline constants match the art.
+- Outline present only where `goalOutline` is set.
+- A **strict headless render** of the real original course. It uses a real RunSession with the example cart: spawn, pour, and the finish with a full whirring blender, plus all spans skinned. The texture provider holds only core + `blueprint` assets and fails on any lookup or `has()` miss. Every theme asset is asserted as actually drawn.
+
+Mutation-checked: removing the alias, or dropping one layer from the strict set, fails the matching test.
