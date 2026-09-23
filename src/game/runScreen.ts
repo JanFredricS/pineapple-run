@@ -41,6 +41,7 @@ import { mountScreenError } from './errorScreen';
 import { testedDesign } from './cartState';
 import { courseFor } from './courses';
 import { acquireRunResources } from './runResources';
+import { beadCountFor, detectDeviceInfo } from './deviceTier';
 import { RunSession } from './session';
 import './game.css';
 
@@ -58,6 +59,8 @@ export interface RunScreenDeps {
     app?: () => Promise<Application>;
     assets?: (theme: ThemeId) => Promise<AssetLibrary>;
   };
+  /** Bead-ocean count override (S9; default: the device tier, see deviceTier.ts). */
+  beadCount?: number;
 }
 
 /** Course width shown across the screen (m) on narrow screens; zoom is clamped. */
@@ -204,7 +207,8 @@ async function mountRunOnce(
     const { app, lib, session: s } = await acquireRunResources({
       app: deps.loaders?.app ?? pixiApp,
       lib: () => (deps.loaders?.assets ?? assetsFor)(level.theme),
-      session: () => RunSession.create(design, course),
+      // S9: the bead count is fixed here, at level load, from a static device bucket
+      session: () => RunSession.create(design, course, { beadCount: beadCountFor(detectDeviceInfo(), deps.beadCount) }),
     });
     let started = false;
     cleanup.push(() => {

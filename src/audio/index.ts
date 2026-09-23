@@ -60,14 +60,19 @@ export const BLENDER_WHIR_SECONDS = 2.5;
 export const ENDLESS_STAGE_METRES = 150;
 
 /**
- * Course id (S5's ids: beach, kitchen, workbench, original, endless:<SEED>)
- * → music theme. The original course is the workbench-reskinned bonus level.
- * Unknown ids fall back to beach.
+ * Course id (S5's ids: beach, kitchen, workbench, original, endless:<SEED>;
+ * S9: tikibar) → music theme. The original course is the workbench-reskinned
+ * bonus level. Zero-G Tiki Bar plays the beach song: marimba plucks, shaker
+ * and a lazy reggae bass are the island-bar sound, and it is the calmest bed
+ * for a floaty course that rewards slow driving (endless's steel drum is
+ * tropical too, but drives and escalates by stage). Unknown ids fall back
+ * to beach.
  */
 export function musicThemeForCourse(levelId: string): MusicTheme {
   if (levelId === 'endless' || levelId.startsWith('endless:')) return 'endless';
   if (levelId === 'kitchen') return 'kitchen';
   if (levelId === 'workbench' || levelId === 'original') return 'workbench';
+  if (levelId === 'tikibar') return 'beach';
   return 'beach';
 }
 

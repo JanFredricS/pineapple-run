@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="240" viewBox="0 0 1024 240">
+  <!-- Tiki near layer: string lights, floating paper lanterns, tiki torches and palm fronds. -->
+  <defs>
+    <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFD37A" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#FFD37A" stop-opacity="0"/>
+    </radialGradient>
+    <g id="lantern">
+      <circle r="26" fill="url(#halo)"/>
+      <ellipse rx="12" ry="15" fill="#FF5E8A"/>
+      <path d="M-12 0 H12 M-10 -8 H10 M-10 8 H10" stroke="#C23C63" stroke-width="1.4"/>
+      <rect x="-5" y="-18" width="10" height="4" fill="#3B2A5E"/>
+    </g>
+    <g id="bulb"><circle r="10" fill="url(#halo)"/><circle r="4" fill="#FFE9A8"/></g>
+    <g id="torch">
+      <rect x="-3" y="-120" width="6" height="120" fill="#5A3818"/>
+      <path d="M-9 -124 H9 L6 -104 H-6 Z" fill="#8F6A2E"/>
+      <circle cx="0" cy="-134" r="22" fill="url(#halo)"/>
+      <path d="M0 -150 Q10 -134 6 -126 Q0 -122 -6 -126 Q-10 -134 0 -150 Z" fill="#FF8A3D"/>
+    </g>
+  </defs>
+  <path d="M0 22 Q128 60 256 22 T512 22 T768 22 T1024 22" stroke="#2A160A" stroke-width="2" fill="none"/>
+  <use href="#bulb" transform="translate(64 38)"/>
+  <use href="#bulb" transform="translate(128 44)"/>
+  <use href="#bulb" transform="translate(192 38)"/>
+  <use href="#bulb" transform="translate(320 38)"/>
+  <use href="#bulb" transform="translate(384 44)"/>
+  <use href="#bulb" transform="translate(448 38)"/>
+  <use href="#bulb" transform="translate(576 38)"/>
+  <use href="#bulb" transform="translate(640 44)"/>
+  <use href="#bulb" transform="translate(704 38)"/>
+  <use href="#bulb" transform="translate(832 38)"/>
+  <use href="#bulb" transform="translate(896 44)"/>
+  <use href="#bulb" transform="translate(960 38)"/>
+  <use href="#lantern" transform="translate(240 110)"/>
+  <use href="#lantern" transform="translate(610 90) rotate(12)"/>
+  <use href="#lantern" transform="translate(890 130) rotate(-10)"/>
+  <use href="#torch" transform="translate(120 240)"/>
+  <use href="#torch" transform="translate(760 240)"/>
+  <path d="M430 240 Q420 200 440 170 M440 170 Q400 160 380 180 M440 170 Q480 150 500 170 M440 170 Q430 140 410 132" stroke="#1E4D3A" stroke-width="7" fill="none" stroke-linecap="round"/>
+</svg>

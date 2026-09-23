@@ -291,16 +291,18 @@ describe('scoring boundaries through the real results model', () => {
     expect(st.levelBest('beach')).toBeUndefined();
   });
 
-  it('a real beach run records a best and unlocks kitchen; clearing all three unlocks the original', async () => {
+  it('a real beach run records a best and unlocks kitchen; clearing all four campaign courses unlocks the original', async () => {
+    // S9: Zero-G Tiki Bar joined the campaign after workbench (was: "clearing all three")
     const st = store();
-    for (const id of LEVELS) {
+    for (const id of [...LEVELS, 'tikibar'] as const) {
+      if (id === 'tikibar') expect(isUnlocked(st.load(), 'original')).toBe(false);
       const s = await session(exampleCart(), id);
-      runWithPace(s, pace(id));
+      runWithPace(s, PREMADE[id]().pace);
       const r = results(st, id, s.events.at(-1)!);
       s.destroy();
       expect(r.rating.rating).toBeGreaterThan(0);
       expect(r.saved).toBe(false); // memory-only store
-      if (id !== 'workbench') expect(r.nextUnlocked).toBe(true);
+      if (id !== 'tikibar') expect(r.nextUnlocked).toBe(true);
     }
     expect(isUnlocked(st.load(), 'original')).toBe(true);
   }, 120_000);

@@ -1,7 +1,7 @@
 /**
  * Course loading: AppState.levelId -> a validated LevelDef + TerrainSource.
  *
- *  - Premade campaign levels (levels/beach|kitchen|workbench.json, authored
+ *  - Premade campaign levels (levels/beach|kitchen|workbench|tikibar.json, authored
  *    with tools/levels) and the original bonus (levels/original-course.json,
  *    id 'original') go through model/validate (S0 contract 5) and are played
  *    on a LevelChunkSource.
@@ -22,12 +22,14 @@ import type { Course } from './session';
 import beachJson from '../../levels/beach.json';
 import kitchenJson from '../../levels/kitchen.json';
 import workbenchJson from '../../levels/workbench.json';
+import tikibarJson from '../../levels/tikibar.json';
 import originalJson from '../../levels/original-course.json';
 
 const RAW: Record<string, { file: string; json: unknown }> = {
   beach: { file: 'levels/beach.json', json: beachJson },
   kitchen: { file: 'levels/kitchen.json', json: kitchenJson },
   workbench: { file: 'levels/workbench.json', json: workbenchJson },
+  tikibar: { file: 'levels/tikibar.json', json: tikibarJson },
   original: { file: 'levels/original-course.json', json: originalJson },
 };
 

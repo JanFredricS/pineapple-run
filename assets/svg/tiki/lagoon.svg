@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="160" viewBox="0 0 1024 160">
+  <!-- Tiki: a violet lagoon with floating (zero-G) islands; horizon at y=60. -->
+  <defs>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8E6BC8"/>
+      <stop offset="1" stop-color="#4E3A8A"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="60" width="1024" height="100" fill="url(#water)"/>
+  <path d="M0 76 Q64 72 128 76 T256 76 T384 76 T512 76 T640 76 T768 76 T896 76 T1024 76" stroke="#C9B3F0" stroke-opacity="0.6" stroke-width="2" fill="none"/>
+  <path d="M0 104 Q64 100 128 104 T256 104 T384 104 T512 104 T640 104 T768 104 T896 104 T1024 104" stroke="#C9B3F0" stroke-opacity="0.35" stroke-width="2" fill="none"/>
+  <!-- floating islet with a palm, hovering over its reflection -->
+  <g transform="translate(220 30)">
+    <path d="M-50 0 Q0 -8 50 0 Q30 22 0 30 Q-30 22 -50 0 Z" fill="#3B2A5E"/>
+    <path d="M0 0 Q-4 -24 6 -44" stroke="#3B2A5E" stroke-width="4" fill="none"/>
+    <path d="M6 -44 Q-14 -50 -26 -38 M6 -44 Q24 -54 36 -40 M6 -44 Q0 -60 -12 -62 M6 -44 Q18 -62 30 -60" stroke="#3B2A5E" stroke-width="4" fill="none"/>
+  </g>
+  <ellipse cx="220" cy="92" rx="42" ry="4" fill="#3B2A5E" fill-opacity="0.35"/>
+  <g transform="translate(700 20) scale(0.7)">
+    <path d="M-50 0 Q0 -8 50 0 Q30 22 0 30 Q-30 22 -50 0 Z" fill="#3B2A5E"/>
+    <path d="M-20 0 L-20 -30 L-2 -30 L-2 0 Z M-26 -30 L4 -30 L-11 -46 Z" fill="#3B2A5E"/>
+  </g>
+  <ellipse cx="700" cy="90" rx="30" ry="3" fill="#3B2A5E" fill-opacity="0.35"/>
+</svg>

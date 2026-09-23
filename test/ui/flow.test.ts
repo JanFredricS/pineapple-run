@@ -57,7 +57,11 @@ describe('unlock rules', () => {
   });
   it('bonus course needs every campaign course', () => {
     expect(isUnlocked(clear(undefined, 'beach', 'kitchen'), 'original')).toBe(false);
-    expect(isUnlocked(clear(undefined, 'beach', 'kitchen', 'workbench'), 'original')).toBe(true);
+    // S9: Zero-G Tiki Bar joined the campaign after workbench; the original stays the final unlock
+    expect(isUnlocked(clear(undefined, 'beach', 'kitchen', 'workbench'), 'original')).toBe(false);
+    expect(isUnlocked(clear(undefined, 'beach', 'kitchen', 'workbench'), 'tikibar')).toBe(true);
+    expect(isUnlocked(clear(undefined, 'beach', 'kitchen'), 'tikibar')).toBe(false);
+    expect(isUnlocked(clear(undefined, 'beach', 'kitchen', 'workbench', 'tikibar'), 'original')).toBe(true);
   });
   it('unknown ids are unlocked; next course follows catalog order', () => {
     expect(isUnlocked(emptyScoreBook(), 'dev-level')).toBe(true);

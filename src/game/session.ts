@@ -28,6 +28,7 @@ import { RunController, type RunMode } from '../run/controller';
 import { StuckDetector } from '../run/stuck';
 import type { TerrainSource } from '../terrain/chunks';
 import { TerrainStreamer } from '../terrain/runtime';
+import { isFieldZone } from '../model/zones';
 import { designBottomPx } from './startArea';
 import { StreamedTerrainQuery } from './streamedTerrain';
 
@@ -47,6 +48,11 @@ export interface Course {
   seed?: string;
 }
 
+export interface RunSessionOptions {
+  /** S9: beads per bead zone (300..600), chosen once at level load; default 450. */
+  beadCount?: number;
+}
+
 /** Terrain is re-planned every this many fixed steps (0.1 s; windows have tens of metres of margin). */
 export const STREAM_EVERY_STEPS = 6;
 
@@ -60,11 +66,16 @@ export class RunSession implements RunEventSource {
   readonly stuckDetector = new StuckDetector();
   private destroyed = false;
 
+  /** S9: fixed x of level furniture whose ground must stay loaded (bead zones' ends); never bodies. */
+  readonly furnitureXs: readonly number[];
+
   private constructor(
     readonly world: PhysicsWorld,
     readonly design: CartDesign,
     readonly course: Course,
+    options: RunSessionOptions,
   ) {
+    this.furnitureXs = course.level.zones.filter((z) => z.kind === 'beads').flatMap((z) => [z.rect.x, z.rect.x + z.rect.width]);
     this.terrain = new TerrainStreamer(world, course.source);
     this.terrain.addListener(this.query);
     const start = course.level.cartStart;
@@ -75,20 +86,26 @@ export class RunSession implements RunEventSource {
     const below = Math.max(0, designBottomPx(design)) / 30;
     this.spawn = { x: start.x, y: start.y - below };
     // Terrain first (around the cart and the funnel), then the run.
-    this.terrain.update([start.x - 1, start.x + 12, course.level.funnel.x]);
+    this.terrain.update([start.x - 1, start.x + 12, course.level.funnel.x, ...this.furnitureXs]);
     this.controller = new RunController(world, design, { ...course.level, cartStart: this.spawn }, {
       mode: course.mode,
       terrain: this.query,
       keptWindow: () => ({ minX: this.query.minX, maxX: this.query.maxX }),
+      ...(options.beadCount !== undefined ? { beadCount: options.beadCount } : {}),
     });
     this.stream();
   }
 
-  /** Build a session in a fresh physics world. Throws (and frees the world) on an invalid cart. */
-  static async create(design: CartDesign, course: Course): Promise<RunSession> {
-    const world = await PhysicsWorld.create();
+  /**
+   * Build a session in a fresh physics world. Throws (and frees the world) on an invalid cart.
+   * S9: a level with gravity/force zones gets a world whose dynamic shapes are
+   * sensor visitors; `beadCount` sizes the bead ocean (default 450; the run
+   * screen passes the device bucket, src/game/deviceTier.ts).
+   */
+  static async create(design: CartDesign, course: Course, options: RunSessionOptions = {}): Promise<RunSession> {
+    const world = await PhysicsWorld.create({ sensorVisitors: course.level.zones.some(isFieldZone) });
     try {
-      return new RunSession(world, design, course);
+      return new RunSession(world, design, course, options);
     } catch (err) {
       world.destroy();
       throw err;
@@ -179,7 +196,9 @@ export class RunSession implements RunEventSource {
   private stream(): void {
     const xs = this.liveXs();
     // Cart gone and everything lost: keep what is loaded (the plan is a no-op anyway).
-    if (xs.length) this.terrain.update(xs);
+    // S9: the bead zones' fixed ends pin their basin (the beads must not fall
+    // through unloaded ground); bead BODIES are never anchors.
+    if (xs.length) this.terrain.update(this.furnitureXs.length ? [...xs, ...this.furnitureXs] : xs);
   }
 
   destroy(): void {
