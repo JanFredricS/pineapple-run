@@ -69,7 +69,7 @@ export interface WheelPart extends PartBase {
   radius: number;
 }
 
-/** Umbrella shock: spring (distance joint) between two attachment points. */
+/** Shock (coil spring, drawn as a Hawthorne-strainer coil): spring (distance joint) between two attachment points. */
 export interface ShockPart extends PartBase {
   kind: 'shock';
   a: Vec2;

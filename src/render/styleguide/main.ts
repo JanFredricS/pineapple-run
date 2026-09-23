@@ -84,7 +84,7 @@ function partsSource(): { manifest: SceneManifest; snapshot(t: number): RenderSn
         const id = ids.get(b.id)!;
         const spin = b.kind === 'wheel' || b.partIds.includes('lm1') ? t * 1.2 : 0;
         if (b.partIds.includes('wh2')) {
-          // shock rig: wheel bobs so the umbrellas compress and extend
+          // shock rig: wheel bobs so the coil springs compress and stretch
           out.push({ id, x: b.origin.x, y: b.origin.y + 0.32 * Math.sin(t * 1.6), angle: t * 0.8 });
         } else out.push({ id, x: b.origin.x, y: b.origin.y, angle: spin });
       }

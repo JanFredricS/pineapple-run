@@ -67,7 +67,7 @@ const TOOL_HINT: Record<Tool, string> = {
   cube: 'Sugar cube: drag corner to corner',
   lime: 'Lime wheel: press at the centre, drag out the radius (free-rolling, welds)',
   wheel: 'Bottle-cap wheel: press at the centre, drag out the radius (powered; pins to the part under its centre)',
-  shock: 'Umbrella shock: drag between two parts (ends snap to wheel/lime centres)',
+  shock: 'Coil spring: drag between two parts (ends snap to wheel/lime centres)',
   delete: 'Delete: tap a part to remove it',
 };
 

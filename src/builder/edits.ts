@@ -142,7 +142,7 @@ const KIND_NAME: Record<CartPart['kind'], string> = {
   cube: 'Sugar cube',
   lime: 'Lime wheel',
   wheel: 'Bottle-cap wheel',
-  shock: 'Umbrella shock',
+  shock: 'Coil spring',
 };
 
 export const kindName = (k: CartPart['kind']): string => KIND_NAME[k];

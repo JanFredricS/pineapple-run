@@ -216,7 +216,7 @@ describe('body visuals across sources', () => {
     r.destroy();
   });
 
-  it('rebinds umbrella shocks when a new world reuses the revision with new body ids', () => {
+  it('rebinds coil-spring shocks when a new world reuses the revision with new body ids', () => {
     const spec = resolveAttachments(MOCK_CART);
     const r = new SceneRenderer(provider, { background: false });
     r.setCartDesign(MOCK_CART);

@@ -279,7 +279,7 @@ export class BuilderRenderer {
     }
   }
 
-  /** Umbrella-shock spring: zig-zag between the ends, straight caps. */
+  /** Coil-spring shock: zig-zag between the ends, straight caps. */
   private spring(g: Graphics, a: Vec2, b: Vec2, color: string, px: number, alpha: number): void {
     const dx = b.x - a.x;
     const dy = b.y - a.y;

@@ -11,10 +11,10 @@ import cap from '../../assets/svg/parts/cap.svg?raw';
 import straw from '../../assets/svg/parts/straw.svg?raw';
 import strawEnd from '../../assets/svg/parts/straw-end.svg?raw';
 import cube from '../../assets/svg/parts/cube.svg?raw';
-import umbrellaOpen from '../../assets/svg/parts/umbrella-open.svg?raw';
-import umbrellaHalf from '../../assets/svg/parts/umbrella-half.svg?raw';
-import umbrellaClosed from '../../assets/svg/parts/umbrella-closed.svg?raw';
-import umbrellaStick from '../../assets/svg/parts/umbrella-stick.svg?raw';
+import springCompressed from '../../assets/svg/parts/spring-compressed.svg?raw';
+import springRest from '../../assets/svg/parts/spring-rest.svg?raw';
+import springStretched from '../../assets/svg/parts/spring-stretched.svg?raw';
+import springRod from '../../assets/svg/parts/spring-rod.svg?raw';
 import pin from '../../assets/svg/parts/pin.svg?raw';
 import blenderBase from '../../assets/svg/blender/base.svg?raw';
 import blenderJar from '../../assets/svg/blender/jar.svg?raw';
@@ -43,15 +43,21 @@ export const ART = {
   strawEnd: { id: 'part/straw-end', svg: strawEnd },
   /** Nine-slice, `border` px corners. */
   cube: { id: 'part/cube', svg: cube, border: 16 },
-  umbrella: {
-    open: { id: 'part/umbrella-open', svg: umbrellaOpen },
-    half: { id: 'part/umbrella-half', svg: umbrellaHalf },
-    closed: { id: 'part/umbrella-closed', svg: umbrellaClosed },
-    /** Shaft passes through (x, 48) of the 64x96 canopy textures; apex near x=4..6. */
+  /**
+   * Shock spring: a Hawthorne-strainer coil (S6T). Frames keyed by pose.ts's
+   * CanopyFrame: open = compressed (tight coil), half = rest, closed =
+   * stretched (open coil).
+   */
+  spring: {
+    open: { id: 'part/spring-compressed', svg: springCompressed },
+    half: { id: 'part/spring-rest', svg: springRest },
+    closed: { id: 'part/spring-stretched', svg: springStretched },
+    /** Coil axis passes through (x, 48) of the 64x96 coil textures; anchor collar at x=5. */
     axisY: 48,
     apexX: 5,
   },
-  umbrellaStick: { id: 'part/umbrella-stick', svg: umbrellaStick },
+  /** Steel guide rod stretched between the shock's anchors (5 px band of the 8 px texture). */
+  springRod: { id: 'part/spring-rod', svg: springRod },
   pin: { id: 'part/pin', svg: pin },
   blender: {
     base: { id: 'blender/base', svg: blenderBase },
@@ -103,7 +109,7 @@ export const PROP_ART: ReadonlyMap<string, PropArt> = new Map<string, PropArt>([
 
 /** Every theme-independent asset. */
 export function coreAssetDefs(): SvgAssetDef[] {
-  const u = ART.umbrella;
+  const u = ART.spring;
   const b = ART.blender;
   return [
     ART.pineapple,
@@ -115,7 +121,7 @@ export function coreAssetDefs(): SvgAssetDef[] {
     u.open,
     u.half,
     u.closed,
-    ART.umbrellaStick,
+    ART.springRod,
     ART.pin,
     b.base,
     b.jar,

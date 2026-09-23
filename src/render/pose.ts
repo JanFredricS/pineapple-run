@@ -2,7 +2,7 @@
  * Snapshot -> sprite pose math (pure; no Pixi). Everything the scene needs to
  * place art from the S0 render contract: body transforms applied to local
  * shapes, rectangle recovery from polygon vertices, circle-fit sprite
- * placement, part-kind classification and shock (umbrella) endpoints from a
+ * placement, part-kind classification and shock (coil spring) endpoints from a
  * resolved CompoundSpec.
  */
 
@@ -140,7 +140,7 @@ export interface ShockBinding {
 }
 
 /**
- * Bind every distance joint (umbrella shock) of a resolved design to manifest
+ * Bind every distance joint (coil-spring shock) of a resolved design to manifest
  * bodies. Spec bodies are created unrotated at `start + origin`
  * (physics/compound.ts), so a design-frame anchor becomes body-local by
  * subtracting the body origin. Manifest bodies are matched by part ids —
@@ -195,8 +195,9 @@ export function shockPose(binding: ShockBinding, ta: BodyTransform, tb: BodyTran
 export type CanopyFrame = 'open' | 'half' | 'closed';
 
 /**
- * Umbrella canopy from spring compression: compressed -> open (spread out),
- * extended -> folded. Also returns a continuous spread factor for smooth
+ * Shock art frame from spring compression: compressed -> 'open' (tight coil;
+ * the frame names date from the old umbrella art), extended -> 'closed'
+ * (open coil). Also returns a continuous spread factor for smooth
  * scaling between the three frames.
  */
 export function canopyFor(ratio: number): { frame: CanopyFrame; spread: number } {
