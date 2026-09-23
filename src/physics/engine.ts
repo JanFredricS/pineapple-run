@@ -8,6 +8,18 @@
  *     userMaterialId, because the binding keeps one callback per module);
  *  2. distance-joint limits — DistanceJointDef.limits (b2DistanceJointDef
  *     enableLimit/minLength/maxLength) + getDistanceJointLength/Limits.
+ * It was re-frozen, then opened a SECOND time, deliberately, in S9
+ * (2026-09-23, PLAN S9 "exotic physics") for exactly three additions:
+ *  3. per-body gravity scale — setGravityScale/getGravityScale
+ *     (b2Body_SetGravityScale / b2Body_GetGravityScale);
+ *  4. continuous forces — applyForceToCenter (b2Body_ApplyForceToCenter,
+ *     wake = true; Box2D clears the accumulated force after every step);
+ *  5. sensors — addSensorPolygon (b2ShapeDef isSensor + enableSensorEvents),
+ *     WorldOptions.sensorVisitors / MaterialDef.sensorVisitor (visitor
+ *     opt-in, b2ShapeDef.enableSensorEvents) and sensorEvents()
+ *     (b2World_GetSensorEvents, mapped to body handles through the shape ids
+ *     this file recorded). A world without sensorVisitors creates every
+ *     shape exactly as before, bit for bit.
  * It is frozen again. Any further change to this file needs a plan-owner
  * decision recorded in RESIDUALS.md / PLAN.md first — do not open it as a
  * side effect of another slice.
@@ -69,6 +81,13 @@ export interface MaterialDef {
    * 0 (the default) = no special surface. Stored in the low 20 bits of Box2D's userMaterialId (the world's tag above).
    */
   surface?: number;
+  /**
+   * Sensor visitor (S9): whether this shape reports entering/leaving sensor
+   * shapes (Box2D enableSensorEvents). Default: the world's
+   * WorldOptions.sensorVisitors, for shapes on non-static bodies. Set false
+   * to keep a shape out of sensor bookkeeping (e.g. decorative beads).
+   */
+  sensorVisitor?: boolean;
 }
 
 export interface BodyDef {
@@ -117,6 +136,18 @@ export interface DistanceJointDef {
 
 export interface WorldOptions {
   gravity?: Vec2;
+  /**
+   * S9: shapes on dynamic/kinematic bodies are sensor visitors by default
+   * (MaterialDef.sensorVisitor overrides per shape). Off (the default): no
+   * shape reports sensor events, exactly as before S9.
+   */
+  sensorVisitors?: boolean;
+}
+
+/** A sensor overlap change between a sensor's body and a visitor's body (one per shape pair). */
+export interface SensorContact {
+  sensor: BodyHandle;
+  visitor: BodyHandle;
 }
 
 interface BodyRecord {
@@ -125,6 +156,8 @@ interface BodyRecord {
   partIds?: string[];
   dynamic: boolean;
   shapes: RenderShape[];
+  /** Keys (shapeKey) of this body's sensor / sensor-visitor shapes, for sensorEvents() (S9). */
+  sensorShapeKeys?: number[];
   prev: BodyTransform;
   curr: BodyTransform;
 }
@@ -162,6 +195,10 @@ export class PhysicsWorld implements SnapshotSource {
   private frictionCallbackInstalled = false;
   /** This world's tag in the high bits of every shape's userMaterialId (see frictionDispatch). */
   private readonly frictionTag: number;
+  /** S9: default for MaterialDef.sensorVisitor on non-static bodies. */
+  readonly sensorVisitors: boolean;
+  /** S9: sensor and sensor-visitor shapes (shapeKey) -> owning body handle. */
+  private readonly sensorShapes = new Map<number, BodyHandle>();
 
   static async create(options: WorldOptions = {}): Promise<PhysicsWorld> {
     return new PhysicsWorld(await loadPhysics(), options);
@@ -172,6 +209,7 @@ export class PhysicsWorld implements SnapshotSource {
     options: WorldOptions,
   ) {
     this.frictionTag = allocateFrictionTag(); // first: it may throw, and nothing is allocated yet
+    this.sensorVisitors = options.sensorVisitors ?? false;
     this.v1 = new b2.b2Vec2(0, 0);
     this.v2 = new b2.b2Vec2(0, 0);
     const def = b2.b2DefaultWorldDef();
@@ -273,6 +311,8 @@ export class PhysicsWorld implements SnapshotSource {
       if (j.bodyA === handle || j.bodyB === handle) this.joints.delete(jh);
     }
     this.b2.b2DestroyBody(rec.id);
+    // its shapes' ids are dead: their pending sensor end events are dropped by sensorEvents()
+    if (rec.sensorShapeKeys) for (const k of rec.sensorShapeKeys) this.sensorShapes.delete(k);
     this.bodies.delete(handle);
     this.revision++;
   }
@@ -299,11 +339,73 @@ export class PhysicsWorld implements SnapshotSource {
     const poly = b2.b2MakePolygon(hull, 0);
     hull.delete();
     const sd = this.shapeDef(material);
-    b2.b2CreatePolygonShape(rec.id, sd, poly);
+    const visitor = this.isVisitor(rec, material);
+    if (visitor) sd.enableSensorEvents = true;
+    const shapeId = b2.b2CreatePolygonShape(rec.id, sd, poly);
     sd.delete();
     poly.delete();
+    if (visitor) this.recordSensorShape(handle, rec, shapeId);
     rec.shapes.push({ type: 'polygon', partId, vertices: vertices.map((v) => ({ ...v })) });
     this.revision++;
+  }
+
+  /**
+   * S9: a convex SENSOR polygon (3..8 vertices, body-local metres): it never
+   * collides; sensor visitors overlapping it are reported by sensorEvents().
+   * Box2D v3 sensors work on static bodies and keep sleeping visitors
+   * inside (no end event on sleep); destroying a visitor ends its overlap.
+   */
+  addSensorPolygon(handle: BodyHandle, vertices: Vec2[], partId = ''): void {
+    const b2 = this.b2;
+    const rec = this.body(handle);
+    const pts = vertices.map((v) => new b2.b2Vec2(v.x, v.y));
+    const hull = b2.b2ComputeHull(pts);
+    pts.forEach((p) => p.delete());
+    if (hull.count < 3) {
+      hull.delete();
+      throw new Error('addSensorPolygon: degenerate polygon');
+    }
+    const poly = b2.b2MakePolygon(hull, 0);
+    hull.delete();
+    const sd = b2.b2DefaultShapeDef();
+    sd.density = 0;
+    sd.isSensor = true;
+    sd.enableSensorEvents = true;
+    const shapeId = b2.b2CreatePolygonShape(rec.id, sd, poly);
+    sd.delete();
+    poly.delete();
+    this.recordSensorShape(handle, rec, shapeId);
+    rec.shapes.push({ type: 'polygon', partId, vertices: vertices.map((v) => ({ ...v })) });
+    this.revision++;
+  }
+
+  /**
+   * S9: sensor overlaps that began / ended during the LAST step(), as body
+   * handles, in Box2D's (deterministic) event order. One entry per
+   * (sensor shape, visitor shape) pair, so a multi-shape body can begin
+   * several times; callers count. Pairs whose visitor body was destroyed are
+   * dropped (its end event carries dead shape ids).
+   */
+  sensorEvents(): { begin: SensorContact[]; end: SensorContact[] } {
+    this.assertAlive();
+    const ev = this.b2.b2World_GetSensorEvents(this.worldId);
+    const begin: SensorContact[] = [];
+    const end: SensorContact[] = [];
+    try {
+      for (let i = 0; i < ev.beginCount; i++) {
+        const e = ev.GetBeginEvent(i);
+        const c = this.sensorContact(e.sensorShapeId, e.visitorShapeId);
+        if (c) begin.push(c);
+      }
+      for (let i = 0; i < ev.endCount; i++) {
+        const e = ev.GetEndEvent(i);
+        const c = this.sensorContact(e.sensorShapeId, e.visitorShapeId);
+        if (c) end.push(c);
+      }
+    } finally {
+      ev.delete();
+    }
+    return { begin, end };
   }
 
   addCircle(handle: BodyHandle, center: Vec2, radius: number, material: MaterialDef = {}, partId = ''): void {
@@ -313,9 +415,12 @@ export class PhysicsWorld implements SnapshotSource {
     c.center = this.vec(this.v1, center.x, center.y);
     c.radius = radius;
     const sd = this.shapeDef(material);
-    b2.b2CreateCircleShape(rec.id, sd, c);
+    const visitor = this.isVisitor(rec, material);
+    if (visitor) sd.enableSensorEvents = true;
+    const shapeId = b2.b2CreateCircleShape(rec.id, sd, c);
     sd.delete();
     c.delete();
+    if (visitor) this.recordSensorShape(handle, rec, shapeId);
     rec.shapes.push({ type: 'circle', partId, center: { ...center }, radius });
     this.revision++;
   }
@@ -395,6 +500,25 @@ export class PhysicsWorld implements SnapshotSource {
 
   applyTorque(handle: BodyHandle, torque: number): void {
     this.b2.b2Body_ApplyTorque(this.body(handle).id, torque, true);
+  }
+
+  /**
+   * S9: a force (N) at the centre of mass for the NEXT step() (Box2D clears
+   * accumulated forces after every step, so a continuous force is applied
+   * before every step). Wakes the body.
+   */
+  applyForceToCenter(handle: BodyHandle, force: Vec2): void {
+    this.b2.b2Body_ApplyForceToCenter(this.body(handle).id, this.vec(this.v1, force.x, force.y), true);
+  }
+
+  /** S9: multiplier on world gravity for this body (1 = normal, 0 = weightless). Does not wake it. */
+  setGravityScale(handle: BodyHandle, scale: number): void {
+    if (!Number.isFinite(scale)) throw new Error('setGravityScale: scale must be finite');
+    this.b2.b2Body_SetGravityScale(this.body(handle).id, scale);
+  }
+
+  getGravityScale(handle: BodyHandle): number {
+    return this.b2.b2Body_GetGravityScale(this.body(handle).id);
   }
 
   isAwake(handle: BodyHandle): boolean {
@@ -614,6 +738,23 @@ export class PhysicsWorld implements SnapshotSource {
     return rec;
   }
 
+  /** S9: does a new solid shape on this body report sensor events? */
+  private isVisitor(rec: BodyRecord, material: MaterialDef): boolean {
+    return material.sensorVisitor ?? (this.sensorVisitors && rec.dynamic);
+  }
+
+  private recordSensorShape(handle: BodyHandle, rec: BodyRecord, shapeId: b2ShapeId): void {
+    const k = shapeKey(shapeId);
+    this.sensorShapes.set(k, handle);
+    (rec.sensorShapeKeys ??= []).push(k);
+  }
+
+  private sensorContact(sensor: b2ShapeId, visitor: b2ShapeId): SensorContact | null {
+    const s = this.sensorShapes.get(shapeKey(sensor));
+    const v = this.sensorShapes.get(shapeKey(visitor));
+    return s === undefined || v === undefined ? null : { sensor: s, visitor: v };
+  }
+
   private addJoint(rec: JointRecord): JointHandle {
     const h = this.nextJoint++;
     this.joints.set(h, rec);
@@ -765,6 +906,11 @@ function frictionDispatch(fA: number, idA: bigint, fB: number, idB: bigint): num
   }
   // Box2D's b2MixFriction: sqrtf(fA * fB), all float32.
   return Math.sqrt(Math.fround(fA * fB));
+}
+
+/** Map key of a live shape id (Box2D reuses an index with a new 16-bit generation). */
+function shapeKey(id: b2ShapeId): number {
+  return id.index1 * 65536 + id.generation;
 }
 
 /** Order-independent key for a surface pair (ids < 2^20). */
