@@ -5,12 +5,14 @@
  */
 
 import type { AppAction, AppState, MountContext, Screen } from '../app';
+import type { CartDesign } from '../model/cart';
 import { mountBuilder, type BuilderHandle } from '../builder/builder';
 import { parseRunTarget } from '../ui/catalog';
 import { button, el } from '../ui/dom';
 import { draftDesign, setDraftDesign, setTestedDesign } from './cartState';
 import { courseFor } from './courses';
 import { mountScreenError } from './errorScreen';
+import { MAX_CONTEXT_RECOVERIES } from '../render/sharedPixi';
 import { startAreaPx } from './startArea';
 import './game.css';
 
@@ -23,7 +25,9 @@ export interface BuildScreenDeps {
 
 /**
  * Mount the builder. Never leaves a blank host: a failed builder mount shows
- * an error screen with "Try again" (re-mounts in place) and "Levels".
+ * an error screen with "Try again" (re-mounts in place) and "Levels". GL1: a
+ * lost WebGL context re-mounts the builder (fresh Pixi app) with the design
+ * as it stood, up to MAX_CONTEXT_RECOVERIES times, then the same error screen.
  */
 export async function mountBuildScreen(
   host: HTMLElement,
@@ -40,18 +44,14 @@ export async function mountBuildScreen(
   // button, is a no-op, and a superseded/destroyed attempt releases its own
   // resources instead of overwriting `current`.
   let generation = 0;
+  // GL1: automatic re-mounts after WebGL context losses (a manual retry resets it).
+  let recoveries = 0;
   const attempt = async (): Promise<void> => {
     const gen = ++generation;
     const live = () => !dead && gen === generation;
     const attemptCtx: MountContext = { isCurrent: () => live() && ctx.isCurrent() };
-    try {
-      const screen = await mountBuildOnce(host, state, dispatch, attemptCtx, deps);
-      if (live()) current = screen;
-      else screen.destroy();
-    } catch (err) {
-      console.error('[build] failed to open the builder', err);
-      if (!attemptCtx.isCurrent()) return;
-      current = mountScreenError(host, 'Could not open the builder', err, [
+    const showError = (title: string, err: unknown) => {
+      current = mountScreenError(host, title, err, [
         {
           label: 'Try again',
           primary: true,
@@ -60,11 +60,36 @@ export async function mountBuildScreen(
             if (!live()) return; // destroyed, or a retry already started
             current?.destroy();
             current = null;
+            recoveries = 0;
             void attempt();
           },
         },
         { label: 'Levels', testId: 'build-error-back', onClick: () => void dispatch({ type: 'backToSelect' }) },
       ]);
+    };
+    // GL1: the builder already tore itself down and handed over its design;
+    // keep it as the draft (what the next mount opens with) and re-mount.
+    const onContextLost = (design: CartDesign) => {
+      if (!attemptCtx.isCurrent()) return;
+      setDraftDesign(design);
+      current?.destroy();
+      current = null;
+      if (recoveries < MAX_CONTEXT_RECOVERIES) {
+        recoveries++;
+        console.warn(`[build] WebGL context lost; re-mounting the builder (${recoveries}/${MAX_CONTEXT_RECOVERIES})`);
+        void attempt();
+      } else {
+        showError('The graphics were interrupted', new Error('The browser reset the WebGL graphics context. Your cart is kept.'));
+      }
+    };
+    try {
+      const screen = await mountBuildOnce(host, state, dispatch, attemptCtx, deps, onContextLost);
+      if (live()) current = screen;
+      else screen.destroy();
+    } catch (err) {
+      console.error('[build] failed to open the builder', err);
+      if (!attemptCtx.isCurrent()) return;
+      showError('Could not open the builder', err);
     }
   };
   await attempt();
@@ -83,6 +108,7 @@ async function mountBuildOnce(
   dispatch: Dispatch,
   ctx: MountContext,
   deps: BuildScreenDeps,
+  onContextLost: (design: CartDesign) => void,
 ): Promise<Screen> {
   const course = courseFor(state.levelId);
   if (!course) return mountMissingCourse(host, state.levelId, 'Back to levels', () => void dispatch({ type: 'backToSelect' }));
@@ -103,6 +129,7 @@ async function mountBuildOnce(
       initialDesign: draftDesign(),
       startArea: startAreaPx(course.level, course.source),
       onChange: (d) => setDraftDesign(d),
+      onContextLost,
       onTestCart: (d) => {
         if (destroyed || !ctx.isCurrent()) return;
         setTestedDesign(d);
