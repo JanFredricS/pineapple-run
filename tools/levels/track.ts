@@ -52,7 +52,12 @@ export interface AuthoredLevel {
 /** Blender goal: solid body size (m); centre sits on the pit floor (S1 props: position = box centre). */
 export const BLENDER_SIZE: Readonly<Vec2> = { x: 1.5, y: 3.6 };
 /** Goal pit: depth below the lip, floor length, drop run, sensor height above the floor (m). */
-export const PIT = { depth: 2.5, floor: 9, dropRun: 1.5, sensor: 2.2, lineAfterLip: 0.3, blenderFromDrop: 6.5 } as const;
+/**
+ * Goal pit. `wall` is the far wall's height; `shelf` (S6T #17) is the flat
+ * ground that continues from the wall top past the level end, so the far side
+ * renders as solid bench/sand instead of a hairline wall into a void.
+ */
+export const PIT = { depth: 2.5, floor: 9, dropRun: 1.5, sensor: 2.2, lineAfterLip: 0.3, blenderFromDrop: 6.5, wall: 8, shelf: 30 } as const;
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
 
@@ -243,7 +248,8 @@ export class Track {
       const pitX0 = this.x;
       this.push(this.x + PIT.floor, this.y);
       const pitX1 = this.x;
-      this.push(this.x + 0.1, this.y - 8);
+      this.push(this.x + 0.1, this.y - PIT.wall);
+      this.push(this.x + PIT.shelf, this.y);
       this.goal = {
         sensor: { x: pitX0, y: r3(floorY - PIT.sensor), width: r3(pitX1 - pitX0), height: PIT.sensor },
         lineX: r3(lipX + PIT.lineAfterLip),
