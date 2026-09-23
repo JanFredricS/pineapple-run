@@ -6,11 +6,16 @@
  * seconds since Release (0 before Release) — steps × 1/60, never wall clock.
  *
  * Terminal events (exactly one per run, nothing is emitted after it):
- *   - goalReached: level runs — a pineapple touched the blender base, then
+ *   - goalReached: level runs — a pineapple touched the goal sensor (the
+ *                  bottom 2.2 m of the finish pit, from the pit lip — on
+ *                  Kitchen from its goal line — to under the blender), then
  *                  the goal settle window (GOAL_SETTLE_SECONDS) elapsed or
  *                  every live pineapple crossed the goal line (S6T #2).
  *                  simTime is the FIRST-touch time; delivered is counted at
- *                  the end of the window.
+ *                  the end of the window: every pineapple past goal.lineX
+ *                  (by x alone), not only ones at the blender. The line is
+ *                  0.3 m past the pit lip (~7 m before the blender) on most
+ *                  courses; Kitchen's is 10.5 m before it (K1, RESIDUALS R30).
  *   - gaveUp:      the player gave up (any mode). Give Up during the goal
  *                  settle window finalises goalReached instead.
  *   - allLost:     endless — the last pineapple was lost (emitted right after

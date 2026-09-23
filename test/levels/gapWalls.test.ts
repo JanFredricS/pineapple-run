@@ -83,12 +83,16 @@ describe('gap side walls (S6T #1)', () => {
     }
   });
 
-  for (const [id, speed] of [
-    ['kitchen', 1],
-    ['kitchen', 3],
-    ['workbench', 2],
+  // K1: index 1 on kitchen is the sink (5.5 m, far side 0.5 m higher), which
+  // the example cart cannot cross: it must still never end up embedded.
+  for (const [id, speed, gapIndex] of [
+    ['kitchen', 1, 0],
+    ['kitchen', 3, 0],
+    ['kitchen', 2, 1],
+    ['kitchen', 5, 1],
+    ['workbench', 2, 0],
   ] as const) {
-    it(`${id}: the example cart crawling into a gap at ${speed} m/s is never embedded in the far block (recoverable or dies cleanly)`, async () => {
+    it(`${id}: the example cart crawling into gap ${gapIndex} at ${speed} m/s is never embedded in the far block (recoverable or dies cleanly)`, async () => {
       const c = courseFor(id)!;
       const level = c.level;
       const s = await RunSession.create(exampleCart(), c);
@@ -97,7 +101,7 @@ describe('gap side walls (S6T #1)', () => {
         for (let i = 0; i < 60; i++) s.step();
         s.release();
         for (let i = 0; i < 180; i++) s.step();
-        const gapX = gapsOf(id)[0]!.x0;
+        const gapX = gapsOf(id)[gapIndex]!.x0;
         const wheels = s.controller.cart.wheelBodies;
         let worst = 0;
         for (let n = 0; n < 60 * 40 && s.controller.phase !== 'ended'; n++) {

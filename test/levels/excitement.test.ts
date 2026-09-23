@@ -22,8 +22,20 @@ const ids = ['beach', 'kitchen', 'workbench', 'tikibar'] as const;
 
 const washboards = (fs: readonly CensusLabel[]) => fs.filter((f) => f.kind === 'washboard');
 
+/**
+ * The census window runs from the start plateau to the goal line: the whole
+ * stretch the player drives before scoring, on every course, with no cap
+ * (K1 audit-2 #2: Kitchen's line sits 11 m into its long pit, and that
+ * landing counter is counted). The pit edges are finish geometry, kept
+ * sharp like the washboards.
+ */
 function premadeCensus(a: AuthoredLevel, labels: readonly CensusLabel[] = a.features): Census {
-  return census(a.level, { x0: plateauRange(a.level.cartStart).maxX, x1: a.level.goal.lineX }, (x) => targetSpeed(a.pace, x), { labels, keepSharp: washboards(a.features) });
+  const fin = a.features.find((f) => f.kind === 'finish');
+  const x1 = a.level.goal.lineX;
+  return census(a.level, { x0: plateauRange(a.level.cartStart).maxX, x1 }, (x) => targetSpeed(a.pace, x), {
+    labels,
+    keepSharp: [...washboards(a.features), ...(fin ? [fin] : [])],
+  });
 }
 
 describe('excitement audit: the auditor itself', () => {
@@ -179,6 +191,13 @@ describe('excitement audit: premade courses', () => {
     });
   }
 
+  it('K1 audit-2 #2: every census window reaches the goal line (a longer landing counter cannot hide outside it)', () => {
+    for (const id of ids) {
+      const a = PREMADE[id]();
+      expect(censuses[id].length, id).toBeCloseTo(a.level.goal.lineX - plateauRange(a.level.cartStart).maxX, 6);
+    }
+  });
+
   it('beach stays the easiest: no gaps, the fewest hazards per 100 m, the softest washboard', () => {
     expect(censuses.beach.hazards.gap ?? 0).toBe(0);
     expect(censuses.beach.hazardsPer100m).toBeLessThan(censuses.kitchen.hazardsPer100m);
@@ -200,6 +219,39 @@ describe('excitement audit: premade courses', () => {
     // the pace line brakes to <= 6 m/s for it and is fast again after it
     expect(targetSpeed(b.pace, lip!.at!)).toBeLessThanOrEqual(6);
     expect(targetSpeed(b.pace, lip!.x1 + 12)).toBeGreaterThan(10);
+  });
+
+  // K1 (TUNING.md "K1: Kitchen difficulty"): pinned counts. Before K1:
+  // 12 hazards, 6 kinds (drop 2, gap 3, washboard 2, launchLip 3, steps 1,
+  // crest 1), 6.45 / 100 m, worst dull stretch 1.94 s, widest gap 3 m.
+  it('K1 kitchen: the census finds the 5.5 m sink and the slab bumps in the geometry; counts pinned; no duller than before', () => {
+    const k = censuses.kitchen;
+    // the window runs to Kitchen's goal line, 11 m into its pit: the pit drop (219.4-222.9 m) is the second drop
+    expect(k.hazards).toEqual({ crest: 2, drop: 2, launchLip: 7, gap: 3, washboard: 2, steps: 1, kicker: 1 });
+    expect(k.hazardCount).toBe(18);
+    expect(k.hazardKinds).toBe(7);
+    expect(k.hazardsPer100m).toBeCloseTo(8.31, 2);
+    const pitDrop = k.detected.filter((h) => h.kind === 'drop' && h.x0 > 215);
+    expect(pitDrop).toHaveLength(1);
+    // the sink: exactly one detected gap at least 5.5 m wide, where the authored sink is
+    const sink = PREMADE.kitchen().features.filter((f) => f.kind === 'gap').reduce((a, b) => (b.x1 - b.x0 > a.x1 - a.x0 ? b : a));
+    const wide = k.detected.filter((h) => h.kind === 'gap' && h.x1 - h.x0 >= 5.5);
+    expect(wide).toHaveLength(1);
+    expect(wide[0]!.x0).toBeLessThanOrEqual(sink.x0);
+    expect(wide[0]!.x1).toBeGreaterThanOrEqual(sink.x1);
+    // K1 audit #6: its detected bounds (measured 82.29-89.79 m: the hole 83.29-88.79 plus the census's edge margins)
+    expect(wide[0]!.x0).toBeCloseTo(82.29, 1);
+    expect(wide[0]!.x1).toBeCloseTo(89.79, 1);
+    // the sharpest crest is at the rounding cap (the rules limit), and the dull stretch pinned (measured 1.08 s)
+    expect(k.sharpestCrest).toBeLessThanOrEqual(PREMADE_RULES.maxCrest + 1e-9);
+    expect(k.longestDullSeconds).toBeLessThanOrEqual(1.2);
+    // the slab fields (16-40 m, 117-123 m, 128-163 m, 201-216 m) show up as bumps: 10 crests / lips / kickers (was 4)
+    const bumps = k.detected.filter((h) => h.kind === 'crest' || h.kind === 'launchLip' || h.kind === 'kicker');
+    expect(bumps).toHaveLength(10);
+    for (const [x0, x1] of [[16, 40], [128, 164]] as const) expect(bumps.filter((h) => h.x0 < x1 && h.x1 > x0).length, `slabs ${x0}-${x1} m`).toBeGreaterThanOrEqual(2);
+    // the worst dull stretch stays inside the rule, and below its pre-K1 1.94 s
+    expect(k.longestDullSeconds).toBeLessThanOrEqual(PREMADE_RULES.maxDullSeconds);
+    expect(k.longestDullSeconds).toBeLessThan(1.94);
   });
 });
 
