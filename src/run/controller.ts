@@ -497,9 +497,9 @@ export class RunController implements RunEventSource {
       return;
     }
     // compound.preStep would touch removed wheels: same law, survivors only.
-    // The surviving shocks keep their bump stops (S6T audit-1 #2).
+    // (The surviving shocks keep their travel limits: since S8a they are
+    // real Box2D distance-joint limits, so nothing needs calling here.)
     this.cart.setDrive(0);
-    this.cart.applyShockStops();
     if (dir === 0) return;
     for (const w of this.poweredWheels) {
       if (!this.attached.has(w.id)) continue;

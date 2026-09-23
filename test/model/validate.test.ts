@@ -7,6 +7,7 @@ import {
   validateLevelDef,
 } from '../../src/model/validate';
 import { MAX_PARTS } from '../../src/model/cart';
+import { MAX_LEVEL_PROPS } from '../../src/model/level';
 import spikeLevelJson from '../../src/spike/spike-level.json';
 import spikeCartJson from '../../src/spike/spike-cart.json';
 
@@ -167,6 +168,16 @@ describe('validateLevelDef', () => {
     ];
     const r = validateLevelDef(lvl);
     expect(r.ok && r.value.zones).toHaveLength(2);
+  });
+
+  it('caps props at MAX_LEVEL_PROPS (R4: a named shared constant, not an inline literal)', () => {
+    expect(MAX_LEVEL_PROPS).toBe(10_000);
+    const lvl = clone(spikeLevelJson) as Record<string, any>;
+    const prop = (i: number) => ({ id: `p${i}`, art: 'palm', position: { x: i * 0.01, y: 0 } });
+    lvl.props = Array.from({ length: MAX_LEVEL_PROPS }, (_, i) => prop(i));
+    expect(validateLevelDef(lvl).ok).toBe(true);
+    lvl.props.push(prop(MAX_LEVEL_PROPS));
+    expect(validateLevelDef(lvl)).toMatchObject({ ok: false, error: { code: 'schema', path: 'props' } });
   });
 
   it('rejects future level versions', () => {

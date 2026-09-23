@@ -8,6 +8,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { LevelDef } from '../../src/model/level';
 import type { RunEvent } from '../../src/model/runEvents';
+import { FIXED_DT } from '../../src/physics/clock';
 import { PhysicsWorld } from '../../src/physics/engine';
 import { LEVEL_ALL_LOST_SECONDS, RunController } from '../../src/run/controller';
 import { loadFixtureCart, loadFlatGoalLevel, loadOpenBedCart } from '../../src/run/fixtures';
@@ -62,8 +63,8 @@ describe('S1 run scenarios', () => {
     // measured: 8.683 s, 14 delivered (the one left bounces back over the goal line)
     console.info(`[S1 full] goal ${goal.simTime.toFixed(3)} s, delivered ${goal.delivered}`);
     expect(goal.delivered).toBe(14);
-    expect(goal.simTime).toBeGreaterThan(8.683 - 0.25);
-    expect(goal.simTime).toBeLessThan(8.683 + 0.25);
+    // pinned exactly: a fixed-step, deterministic run (8.683 s = step 521); S8a left it bit-identical
+    expect(goal.simTime).toBe(521 * FIXED_DT);
     expect(rc.delivered).toBe(goal.delivered);
     expect(rc.phase).toBe('ended');
     expect(rc.simTime()).toBe(goal.simTime);
@@ -80,8 +81,8 @@ describe('S1 run scenarios', () => {
     console.info(`[S1 cruise3] goal ${goal.simTime.toFixed(3)} s, delivered ${goal.delivered}`);
     // measured: 17.25 s, 15 delivered
     expect(goal.delivered).toBe(15);
-    expect(goal.simTime).toBeGreaterThan(17.25 - 0.3);
-    expect(goal.simTime).toBeLessThan(17.25 + 0.3);
+    // pinned exactly: a fixed-step, deterministic run (17.25 s = step 1035); S8a left it bit-identical
+    expect(goal.simTime).toBe(1035 * FIXED_DT);
   });
 
   it('a 5 m/s cruise tips the cart on the blender blade: all 15 delivered', async () => {
@@ -95,8 +96,8 @@ describe('S1 run scenarios', () => {
     console.info(`[S1 cruise5] goal ${goal.simTime.toFixed(3)} s, delivered ${goal.delivered}`);
     // measured: 13.05 s, 15 delivered
     expect(goal.delivered).toBe(15);
-    expect(goal.simTime).toBeGreaterThan(13.05 - 0.3);
-    expect(goal.simTime).toBeLessThan(13.05 + 0.3);
+    // pinned exactly: a fixed-step, deterministic run (13.05 s = step 783); S8a left it bit-identical
+    expect(goal.simTime).toBe(783 * FIXED_DT);
   });
 
   it('is deterministic: two identical runs emit identical events', async () => {
@@ -120,8 +121,11 @@ describe('S1 run scenarios', () => {
     const lost = events.filter((e): e is Extract<RunEvent, { type: 'pineappleLost' }> => e.type === 'pineappleLost');
     const goal = events.at(-1) as Extract<RunEvent, { type: 'goalReached' }>;
     expect(goal.type).toBe('goalReached');
-    // measured: 11 lost (first at 6 s), goal at 11.917 s with 4 delivered, 4 remaining
-    expect(lost.length).toBe(11);
+    // measured: 7 lost (first at 6 s), goal at 11.917 s with 9 delivered, 8 remaining.
+    // S8a: was 11 lost / 4 delivered at the old 0.9 pineapple–wheel friction
+    // (the load now slides off the wheels instead of being thrown by them);
+    // the goal time is unchanged to the step.
+    expect(lost.length).toBe(7);
     expect(new Set(lost.map((e) => e.pineappleId)).size).toBe(lost.length);
     lost.forEach((e, i) => {
       expect(e.remaining).toBe(15 - (i + 1));
@@ -136,9 +140,9 @@ describe('S1 run scenarios', () => {
     const past = rc.pineappleStates().filter((p) => p.alive && w.getTransform(p.handle).x > lineX).length;
     console.info(`[S1 spill] lost ${lost.length} (first at ${lost[0]?.simTime}), goal ${goal.simTime.toFixed(3)} s, delivered ${goal.delivered}, remaining ${rc.remaining}`);
     expect(goal.delivered).toBe(past);
-    expect(goal.delivered).toBe(4);
-    expect(goal.simTime).toBeGreaterThan(11.917 - 0.3);
-    expect(goal.simTime).toBeLessThan(11.917 + 0.3);
+    expect(goal.delivered).toBe(9);
+    // pinned exactly: a fixed-step, deterministic run (11.917 s = step 715); S8a left it bit-identical
+    expect(goal.simTime).toBe(715 * FIXED_DT);
   });
 
   it('pineappleLost: a cart parked away from the funnel loses the whole load 3 s after it lands (including one resting against a wheel)', async () => {
@@ -282,7 +286,16 @@ describe('S1 run scenarios', () => {
 
   it('S0 stability gate re-run: funnel + goal integration, 60 s washboard shuttle, no joint divergence', async () => {
     const w = await world();
-    const rc = new RunController(w, loadFixtureCart(), loadSpikeLevel());
+    // S8a: the goal (blender pit at x 115) is moved out of reach. With the
+    // 0.3 pineapple–wheel friction the load mostly stays aboard (at 0.9 the
+    // wheels flung all 15 off), and a pineapple that leaves the bed at ~12 s
+    // rolls down the washboard into the pit — which correctly ENDS the level
+    // run and would cut this 60 s shuttle short. The goal rule still runs
+    // every step; it just cannot fire. The cart itself is checked against
+    // x 115 below.
+    const spike = loadSpikeLevel();
+    const level = { ...spike, goal: { sensor: { ...spike.goal.sensor, x: spike.goal.sensor.x + 1000 }, lineX: spike.goal.lineX + 1000 } };
+    const rc = new RunController(w, loadFixtureCart(), level);
     const events = record(rc);
     rc.start();
     for (let i = 0; i < 60; i++) rc.step();
@@ -296,6 +309,7 @@ describe('S1 run scenarios', () => {
       }));
     let peakGap = 0;
     let peakSpeed = 0;
+    let cartMaxX = -Infinity;
     let dir: DriveDirection = 0;
     // identical drive script to the S0 stability test (test/physics/scenarios.test.ts)
     for (let s = 0; s < 60 * 60; s++) {
@@ -308,6 +322,7 @@ describe('S1 run scenarios', () => {
       else if (dir === -1 && x < 0) dir = 1;
       rc.setDrive(dir);
       rc.step();
+      cartMaxX = Math.max(cartMaxX, rc.rightmostCartBody()?.x ?? -Infinity);
       peakGap = Math.max(peakGap, maxJointGap());
       for (const h of w.bodyHandles()) {
         const t = w.getTransform(h);
@@ -328,7 +343,9 @@ describe('S1 run scenarios', () => {
     expect(t.x).toBeLessThan(118);
     expect(t.y).toBeLessThan(10);
     // the shuttle never reaches the blender at x 115, and the cart never leaves the world
+    expect(cartMaxX).toBeLessThan(115);
     expect(events.some((e) => e.type === 'goalReached')).toBe(false);
+    expect(rc.phase).toBe('released');
     expect(rc.cartLost).toBe(false);
     console.info(`[S1 stability] peakGap=${peakGap.toFixed(4)} finalGap=${maxJointGap().toFixed(5)} peakSpeed=${peakSpeed.toFixed(2)} lost=${rc.lostCount}`);
   });

@@ -99,7 +99,9 @@ export function beach(): AuthoredLevel {
  */
 export function kitchen(): AuthoredLevel {
   const t = new Track(0, 10);
-  t.speed(10).flat(16, 'plateau')
+  // pace 10 -> 10.5 m/s in S8a: with real shock limits the 10 m/s line
+  // lost 3 on the kicker (12/15); 10.5 delivers 15/15 (see TUNING.md)
+  t.speed(10.5).flat(16, 'plateau')
     // first cutting board: ramp on, ride the board, drop off
     .line(6, -1.2, 'ramp').flat(9).line(1.2, 1.2, 'drop')
     .flat(7)

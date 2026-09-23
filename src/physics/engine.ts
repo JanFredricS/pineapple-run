@@ -1,4 +1,17 @@
 /**
+ * FROZEN. This wrapper was frozen from S1 through S6T and opened ONCE,
+ * deliberately, in S8a (2026-09-23) for exactly two additions (residual R19):
+ *  1. pairwise contact friction — MaterialDef.surface (Box2D userMaterialId)
+ *     + PhysicsWorld.setPairFriction(), via b2World_SetFrictionCallback;
+ *     unlisted pairs keep Box2D's own sqrtf(fA·fB) mix bit-for-bit
+ *     (S8a audit-1: one module-level dispatcher + a per-world tag in
+ *     userMaterialId, because the binding keeps one callback per module);
+ *  2. distance-joint limits — DistanceJointDef.limits (b2DistanceJointDef
+ *     enableLimit/minLength/maxLength) + getDistanceJointLength/Limits.
+ * It is frozen again. Any further change to this file needs a plan-owner
+ * decision recorded in RESIDUALS.md / PLAN.md first — do not open it as a
+ * side effect of another slice.
+ *
  * Physics wrapper — the ONLY module that imports box2d3-wasm.
  *
  * Everything outside src/physics talks to plain numbers/objects: body and
@@ -50,6 +63,12 @@ export interface MaterialDef {
    * with each other (used so a cart's own bodies don't fight each other).
    */
   groupIndex?: number;
+  /**
+   * Surface id (S8a): a small non-negative integer naming what this shape is
+   * made of, for pairwise friction overrides (PhysicsWorld.setPairFriction).
+   * 0 (the default) = no special surface. Stored in the low 20 bits of Box2D's userMaterialId (the world's tag above).
+   */
+  surface?: number;
 }
 
 export interface BodyDef {
@@ -88,6 +107,11 @@ export interface DistanceJointDef {
   /** Spring (0 = rigid rod). */
   hertz?: number;
   dampingRatio?: number;
+  /**
+   * Hard travel limits (S8a): Box2D keeps the anchor distance within
+   * [minLength, maxLength] as a rigid constraint, on top of the spring.
+   */
+  limits?: { minLength: number; maxLength: number };
   collideConnected?: boolean;
 }
 
@@ -133,6 +157,11 @@ export class PhysicsWorld implements SnapshotSource {
   private destroyed = false;
   private readonly v1: b2Vec2;
   private readonly v2: b2Vec2;
+  /** Pairwise friction overrides, keyed by pairKey(surfaceA, surfaceB). */
+  private readonly pairFriction = new Map<number, number>();
+  private frictionCallbackInstalled = false;
+  /** This world's tag in the high bits of every shape's userMaterialId (see frictionDispatch). */
+  private readonly frictionTag: number;
 
   static async create(options: WorldOptions = {}): Promise<PhysicsWorld> {
     return new PhysicsWorld(await loadPhysics(), options);
@@ -142,6 +171,7 @@ export class PhysicsWorld implements SnapshotSource {
     private readonly b2: MainModule,
     options: WorldOptions,
   ) {
+    this.frictionTag = allocateFrictionTag(); // first: it may throw, and nothing is allocated yet
     this.v1 = new b2.b2Vec2(0, 0);
     this.v2 = new b2.b2Vec2(0, 0);
     const def = b2.b2DefaultWorldDef();
@@ -183,6 +213,8 @@ export class PhysicsWorld implements SnapshotSource {
   destroy(): void {
     if (this.destroyed) return;
     this.b2.b2DestroyWorld(this.worldId);
+    frictionTables.delete(this.frictionTag); // release this world's override table
+    liveFrictionTags.delete(this.frictionTag); // and its tag, for reuse
     this.v1.delete();
     this.v2.delete();
     this.bodies.clear();
@@ -415,6 +447,13 @@ export class PhysicsWorld implements SnapshotSource {
       jd.hertz = def.hertz;
       jd.dampingRatio = def.dampingRatio ?? 0;
     }
+    if (def.limits) {
+      const { minLength, maxLength } = def.limits;
+      if (!(minLength > 0) || !(maxLength >= minLength)) throw new Error('createDistanceJoint: need 0 < minLength <= maxLength');
+      jd.enableLimit = true;
+      jd.minLength = minLength;
+      jd.maxLength = maxLength;
+    }
     const id = b2.b2CreateDistanceJoint(this.worldId, jd);
     jd.delete();
     return this.addJoint({ id, kind: 'distance', bodyA: def.bodyA, bodyB: def.bodyB, localA, localB });
@@ -438,6 +477,54 @@ export class PhysicsWorld implements SnapshotSource {
     b2.b2RevoluteJoint_SetMotorSpeed(j.id, motor.speed);
     b2.b2RevoluteJoint_SetMaxMotorTorque(j.id, motor.maxTorque);
     b2.b2Joint_WakeBodies(j.id);
+  }
+
+  /** Current anchor distance of a distance joint (m), as Box2D sees it. */
+  getDistanceJointLength(handle: JointHandle): number {
+    const j = this.joint(handle);
+    if (j.kind !== 'distance') throw new Error('getDistanceJointLength: not a distance joint');
+    return this.b2.b2DistanceJoint_GetCurrentLength(j.id);
+  }
+
+  /** The [min, max] length range of a distance joint (Box2D's own values; unlimited joints report its huge defaults). */
+  getDistanceJointLimits(handle: JointHandle): { enabled: boolean; minLength: number; maxLength: number } {
+    const j = this.joint(handle);
+    if (j.kind !== 'distance') throw new Error('getDistanceJointLimits: not a distance joint');
+    const b2 = this.b2;
+    return { enabled: b2.b2DistanceJoint_IsLimitEnabled(j.id), minLength: b2.b2DistanceJoint_GetMinLength(j.id), maxLength: b2.b2DistanceJoint_GetMaxLength(j.id) };
+  }
+
+  // ------------------------------------------------------------ friction
+
+  /**
+   * Pairwise friction override (S8a): every contact between a shape of
+   * surface `a` and a shape of surface `b` (in either order) uses `friction`
+   * instead of Box2D's mix sqrt(fA · fB). Surfaces are MaterialDef.surface
+   * ids; 0 means "no surface" and cannot be overridden. Idempotent; call
+   * before the pair first touches (Box2D fixes a contact's friction when the
+   * contact is created).
+   *
+   * Mechanism: b2World_SetFrictionCallback. The JS callback is installed on
+   * the first override and reproduces Box2D's default mix bit-for-bit for
+   * every other pair (float32 product, then sqrt rounded to float32), so
+   * installing it changes nothing but the overridden pairs.
+   *
+   * The binding keeps ONE JS friction callback for the whole module (the
+   * latest b2World_SetFrictionCallback wins for every world that has one),
+   * and the callback is not told which world is calling. So every world
+   * installs the same module-level `frictionDispatch`, each shape's
+   * userMaterialId carries its world's tag above the 20 surface bits, and
+   * the dispatcher looks up that world's table. destroy() drops the table.
+   */
+  setPairFriction(a: number, b: number, friction: number): void {
+    this.assertAlive();
+    if (!(Number.isInteger(a) && Number.isInteger(b) && a > 0 && b > 0 && a < 1048576 && b < 1048576)) throw new Error('setPairFriction: surfaces must be integers in 1..2^20-1');
+    if (!(Number.isFinite(friction) && friction >= 0)) throw new Error('setPairFriction: friction must be finite and >= 0');
+    this.pairFriction.set(pairKey(a, b), friction);
+    if (this.frictionCallbackInstalled) return;
+    frictionTables.set(this.frictionTag, this.pairFriction);
+    this.b2.b2World_SetFrictionCallback(this.worldId, frictionDispatch);
+    this.frictionCallbackInstalled = true;
   }
 
   /** Constraint force (N) on body B, last step. For breakage / telemetry. */
@@ -597,8 +684,92 @@ export class PhysicsWorld implements SnapshotSource {
       const f = sd.filter;
       f.groupIndex = m.groupIndex;
     }
+    if (m.surface !== undefined) {
+      // validated whenever present: NaN / Infinity / fractions throw rather than silently meaning "no surface"
+      if (!Number.isInteger(m.surface) || m.surface < 0 || m.surface >= 1048576) throw new Error('MaterialDef.surface must be an integer in 0..2^20-1');
+      if (m.surface > 0) mat.userMaterialId = (BigInt(this.frictionTag) << SURFACE_BITS) | BigInt(m.surface);
+    }
     return sd;
   }
+}
+
+/** Surface ids live in the low 20 bits of userMaterialId; the world's tag above them. */
+const SURFACE_BITS = 20n;
+const SURFACE_MASK = (1n << SURFACE_BITS) - 1n;
+/** Tags must fit in the 44 bits above the surface: (tag << 20) | surface < 2^64. */
+const MAX_FRICTION_TAG = 2 ** 44 - 1;
+let frictionTagBound = MAX_FRICTION_TAG;
+let nextFrictionTag = 1;
+/**
+ * Tags held by live (not destroyed) worlds. A tag is reusable only once its
+ * world is destroyed — not merely when it has no table, because a live world
+ * that installs its first override later must still own a unique tag.
+ */
+const liveFrictionTags = new Set<number>();
+/** Live worlds' override tables by world tag (entries removed on destroy). */
+const frictionTables = new Map<number, Map<number, number>>();
+
+/**
+ * Bounded tag allocator: counts up to the 44-bit bound, then reuses the
+ * lowest tag no live world holds (found within liveFrictionTags.size + 1
+ * probes). Throws — never truncates — if every tag is live.
+ */
+function allocateFrictionTag(): number {
+  let tag: number;
+  while (nextFrictionTag <= frictionTagBound && liveFrictionTags.has(nextFrictionTag)) nextFrictionTag++;
+  if (nextFrictionTag <= frictionTagBound) {
+    tag = nextFrictionTag++;
+  } else {
+    tag = 1;
+    while (liveFrictionTags.has(tag)) tag++;
+    if (tag > frictionTagBound) throw new Error(`PhysicsWorld: all ${frictionTagBound} friction world tags are live`);
+  }
+  liveFrictionTags.add(tag);
+  return tag;
+}
+
+/**
+ * Test seam for the tag allocator (the real bound, 2^44 − 1, cannot be
+ * reached in a test). `set` moves the counter and/or lowers the bound;
+ * `reset` restores the 44-bit bound. Not for game code.
+ */
+export const frictionTagsForTests = {
+  MAX_FRICTION_TAG,
+  set(opts: { next?: number; bound?: number }): void {
+    if (opts.bound !== undefined) frictionTagBound = Math.min(opts.bound, MAX_FRICTION_TAG);
+    if (opts.next !== undefined) nextFrictionTag = opts.next;
+  },
+  reset(): void {
+    frictionTagBound = MAX_FRICTION_TAG;
+  },
+  tagOf(w: PhysicsWorld): number {
+    return (w as unknown as { frictionTag: number }).frictionTag;
+  },
+  live(): number[] {
+    return [...liveFrictionTags].sort((a, b) => a - b);
+  },
+};
+
+/**
+ * The single friction callback shared by every world (see setPairFriction).
+ * Hot path: called when a contact begins touching (~8 calls/step in a real run;
+ * see TUNING.md "S8a" for the measured cost); two Map lookups and bigint masks,
+ * no allocation beyond the bigint ops.
+ */
+function frictionDispatch(fA: number, idA: bigint, fB: number, idB: bigint): number {
+  const sA = idA & SURFACE_MASK;
+  const sB = idB & SURFACE_MASK;
+  if (sA !== 0n && sB !== 0n) {
+    const f = frictionTables.get(Number(idA >> SURFACE_BITS))?.get(pairKey(Number(sA), Number(sB)));
+    if (f !== undefined) return f;
+  }
+  // Box2D's b2MixFriction: sqrtf(fA * fB), all float32.
+  return Math.sqrt(Math.fround(fA * fB));
+}
+
+/** Order-independent key for a surface pair (ids < 2^20). */
+function pairKey(a: number, b: number): number {
+  return a < b ? a * 1048576 + b : b * 1048576 + a;
 }
 
 export function applyTransform(t: { x: number; y: number; angle: number }, p: Vec2): Vec2 {

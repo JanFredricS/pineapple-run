@@ -56,6 +56,9 @@ export interface ZoneDef {
   force?: Vec2;
 }
 
+/** Most props a level may carry (validateLevelDef rejects more; R4). */
+export const MAX_LEVEL_PROPS = 10_000;
+
 /** Decorative/interactive props placed by the map builder (theme art ids). */
 export interface PropDef {
   id: string;
