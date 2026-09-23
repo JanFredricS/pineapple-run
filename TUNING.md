@@ -319,6 +319,7 @@ Jan: the cart should sit about 30% from the left edge with about 70% of the view
 | `FINISH_PAD` | new: **{top 56, bottom 16} px** | The HUD chips and timer at the top; a small bottom margin. |
 | `FINISH_MARGIN_M` | new: **0.3 m** | World margin above the blender top and below the lowest of blender and cart. |
 | `FINISH_LEAD_M` / `FINISH_RAMP_M` | new: **4 m / 6 m** | The ease starts when the blender's front is 4 m past the follow view's right edge and is complete 6 m of travel later. The blender is therefore framed before it reaches the screen edge, and the view never jumps. |
+| `FINISH_MIN_ZOOM_RATIO` | new (audit-2 #1): **0.75** | The finish frame never zooms out below 0.75× the follow zoom (nor below `READY_MIN_ZOOM`), so the cart never gets tiny. When blender plus cart are taller than that allows (a cart flung far above the pit), the frame is centred on them and clipped instead of shrunk further. For example, on 844×390 the floor is 0.879 against a follow zoom of 1.172; a test builds that pose and checks the clamp engages. On the pace lines the zoom never gets near the floor. A negative control runs the same four courses with finish framing bypassed; each one clips the blender top. |
 
 **Reversing rule:** the look-ahead is always forward (+x). The camera does not mirror to put 70% of the view behind a reversing cart. Reasons:
 - Every course runs left to right. Reversing is a short correction (backing off a lip or rocking out of a hole), and the target is still ahead.
@@ -387,7 +388,12 @@ Checks (test/integration/wideBuildArea.test.ts plus the existing acceptance and 
   - `UPDATE_FIXTURES=1 npx vitest run test/terrain/original-course.test.ts`
   - `UPDATE_FIXTURES=1 npx vitest run test/levels/premade.test.ts`
 - **Results:** after regeneration, the full suite passes (927 passed, 1 skipped file), including S9's tikibar pace and bead tests and UX1's shared-blender test over `SHIPPED_LEVEL_IDS`.
-- **Add tikibar to the UX1 course lists:** adding `tikibar` to the lists in test/integration/wideBuildArea.test.ts and test/game/framing.test.ts (look-ahead and finish-pit) also passed in the trial. Add it there in the merge commit.
+- **Tikibar in the UX1 course lists:** the `goalBlenderBox` test in test/game/framing.test.ts derives its courses from `SHIPPED_LEVEL_IDS`, as test/render/solidProps.test.ts does, so tikibar joins automatically. Three lists are still hard-coded; add `tikibar` to each in the merge commit:
+  - the course list in test/integration/wideBuildArea.test.ts
+  - the look-ahead `lines` in test/game/framing.test.ts (with `PREMADE.tikibar().pace`)
+  - `PIT_COURSES` in test/game/framing.test.ts, which drives both the finish-pit tests and the finish-framing-disabled control
+
+  The trial merge passed the first two lists and the finish-pit test with tikibar. The control did not exist yet, so after adding tikibar to `PIT_COURSES`, confirm that the bare follow camera also clips on tikibar.
 
 ### 5. Builder touch loupe (new: src/builder/loupe.ts, `BuilderLoupe` in src/builder/render.ts)
 
