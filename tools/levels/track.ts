@@ -362,8 +362,10 @@ export class Track {
    * Goal: from the current point (the lip), a drop into the blender pit, the
    * pit floor, and a back wall. The blender is a SOLID prop standing on the
    * floor (S1 convention: position = box CENTRE); the base sensor is the
-   * bottom PIT.sensor metres of the pit; every pineapple past the lip line
-   * counts as delivered.
+   * bottom PIT.sensor metres of the pit, starting at the goal line. A
+   * pineapple whose CENTRE is past `goal.lineX` counts as delivered
+   * (src/run/controller.ts counts by x alone); one that stops between the
+   * lip and the line does not.
    *
    * K1: `frontGap` (m) overrides the free floor in front of the blender
    * (default BLENDER_FRONT_GAP, 5.75 m, sized for the 6.7 m example cart).
@@ -374,10 +376,12 @@ export class Track {
    *
    * K1 audit #4: `lineGap` (m), when set, moves the goal line and the
    * sensor's left edge forward to lineGap m before the blender's front face.
-   * The pit floor behind it is a sunken landing counter: a cart has to roll
-   * up to the line to score, so the goal never fires further from the
-   * blender than the finish framing can show the whole of it (a normal cart
-   * sees all of the blender from ~15 m; measured, test/game/framing.test.ts).
+   * The pit floor behind it is a sunken landing counter: cargo landing
+   * there is not counted, and settlement starts when a pineapple touches
+   * the sensor (which begins at the line — cart position is irrelevant).
+   * Keeping lineGap ≤ ~10.8 m means the goal never fires further from the
+   * blender than the finish framing can show the whole of it for a normal
+   * cart (measured, test/game/framing.test.ts).
    * Unset (every course but Kitchen): the line is PIT.lineAfterLip past the
    * lip and the sensor spans the whole floor, as before.
    */
