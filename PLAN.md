@@ -275,6 +275,12 @@ Gravity zones via per-body `gravityScale` sensors (low-grav pockets) and
 directional force fields ("gravity shooters"); bead-ocean section (300–600
 small sleeping-enabled beads, adaptive count by device perf); one new level
 ("Zero-G Tiki Bar") using both, with its own backdrop.
+STATUS (S9 implementer, 2026-09-23): done on branch slice-s9. engine.ts
+opened a second time (gravity scale, applyForceToCenter, sensors) and
+re-frozen; "adaptive count" is a static device-capability bucket chosen once
+at level load (300/450/600), never adjusted mid-run (determinism). Tiki Bar
+unlocks after Workbench; the Original now needs all four campaign courses.
+See TUNING.md "S9" and RESIDUALS R23–R26.
 
 ## Testing strategy
 
