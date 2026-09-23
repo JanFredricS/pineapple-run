@@ -44,7 +44,14 @@ function drive(w: PhysicsWorld, wheel: BodyHandle): void {
  * velocity over the last second of 3 s of full drive.
  */
 async function pinch(pair: number | null, n: number): Promise<number> {
-  const w = await world();
+  const r = await pinchRig(pair, n);
+  for (let i = 0; i < 300; i++) r.step();
+  return r.mean();
+}
+
+/** The pinch rig, stepped by the caller (300 steps: 120 settle, 180 drive; mean over the last 60). */
+async function pinchRig(pair: number | null, n: number, own = true): Promise<{ w: PhysicsWorld; step: () => void; mean: () => number }> {
+  const w = own ? await world() : await PhysicsWorld.create();
   const axle = w.createBody({ type: 'static', position: { x: 0, y: 0 } });
   const wheel = w.createBody({ type: 'dynamic', position: { x: 0, y: 0 }, angularDamping: WHEEL_ANGULAR_DAMPING });
   w.addCircle(wheel, { x: 0, y: 0 }, WHEEL_R, { density: 1, ...WHEEL_MATERIAL });
@@ -54,14 +61,15 @@ async function pinch(pair: number | null, n: number): Promise<number> {
   w.addPolygon(wall, [{ x: wx, y: -4 }, { x: wx + 0.2, y: -4 }, { x: wx + 0.2, y: 2 }, { x: wx, y: 2 }], PART_MATERIAL);
   for (let i = 0; i < n; i++) spawnPineapple(w, { x: wx - PINEAPPLE_RADIUS - 0.01, y: -1.2 - i * 0.7 });
   if (pair !== null) w.setPairFriction(SURFACE.pineapple, SURFACE.wheel, pair);
-  for (let i = 0; i < 120; i++) w.step(); // settle into the wedge
+  let i = 0;
   let sum = 0;
-  for (let i = 0; i < 180; i++) {
-    drive(w, wheel);
+  const step = () => {
+    if (i >= 120) drive(w, wheel); // the first 120 steps settle into the wedge
     w.step();
-    if (i >= 120) sum += w.getAngularVelocity(wheel);
-  }
-  return sum / 60;
+    if (i >= 240) sum += w.getAngularVelocity(wheel);
+    i++;
+  };
+  return { w, step, mean: () => sum / 60 };
 }
 
 describe('pineapple–wheel pair friction (S8a, backlog #9)', () => {
@@ -131,7 +139,58 @@ describe('pineapple–wheel pair friction (S8a, backlog #9)', () => {
     expect(() => w.setPairFriction(0, 1, 0.3)).toThrow();
     expect(() => w.setPairFriction(1, 1.5, 0.3)).toThrow();
     expect(() => w.setPairFriction(1, 2, -1)).toThrow();
+    expect(() => w.setPairFriction(1, 2, Infinity)).toThrow();
+    expect(() => w.setPairFriction(1, 2, NaN)).toThrow();
     const b = w.createBody({ type: 'dynamic', position: { x: 0, y: 0 } });
     expect(() => w.addCircle(b, { x: 0, y: 0 }, 1, { surface: -1 })).toThrow();
+    expect(() => w.addCircle(b, { x: 0, y: 0 }, 1, { surface: NaN })).toThrow();
+    expect(() => w.addCircle(b, { x: 0, y: 0 }, 1, { surface: Infinity })).toThrow();
+    expect(() => w.addCircle(b, { x: 0, y: 0 }, 1, { surface: 1.5 })).toThrow();
+    expect(() => w.addCircle(b, { x: 0, y: 0 }, 1, { surface: 1048576 })).toThrow();
+    // 0 is valid and means "no surface"
+    expect(() => w.addCircle(b, { x: 0, y: 0 }, 1, { surface: 0 })).not.toThrow();
+  });
+
+  /**
+   * Callback lifetime. The binding holds ONE JS friction callback for the
+   * whole module (the latest b2World_SetFrictionCallback wins) and does not
+   * say which world is calling, so the engine installs a single dispatcher
+   * and tags each shape's userMaterialId with its world. Without that, the
+   * second world's table silently replaced the first's (a 0.9 world ran at
+   * 0.3 — measured before the fix).
+   */
+  it('two live worlds keep their own overrides, stepped interleaved', async () => {
+    const lock = await pinchRig(0.9, 3);
+    const free = await pinchRig(0.3, 3);
+    for (let i = 0; i < 300; i++) {
+      lock.step();
+      free.step();
+    }
+    expect(Math.abs(lock.mean())).toBeLessThan(0.5);
+    expect(free.mean()).toBeGreaterThan(0.9 * DRIVE_MAX_SPEED);
+  });
+
+  it('create/destroy in sequence (the retry pattern): the current world\'s override is the one in effect, every time', async () => {
+    const results: number[] = [];
+    for (let n = 0; n < 8; n++) {
+      const pair = n % 2 ? 0.9 : 0.3;
+      const r = await pinchRig(pair, 3, false);
+      for (let i = 0; i < 300; i++) r.step();
+      results.push(r.mean());
+      r.w.destroy(); // drops its table; the next world must not see it
+    }
+    for (let n = 0; n < 8; n++) {
+      if (n % 2) expect(Math.abs(results[n]!), `world ${n} (0.9)`).toBeLessThan(0.5);
+      else expect(results[n]!, `world ${n} (0.3)`).toBeGreaterThan(0.9 * DRIVE_MAX_SPEED);
+    }
+    // deterministic across recreations: same configuration, bit-identical result
+    expect(new Set(results.filter((_, n) => n % 2 === 0)).size).toBe(1);
+    expect(new Set(results.filter((_, n) => n % 2 === 1)).size).toBe(1);
+    // a world that outlives a destroyed one keeps its override
+    const keep = await pinchRig(0.3, 3);
+    const gone = await pinchRig(0.9, 3, false);
+    gone.w.destroy();
+    for (let i = 0; i < 300; i++) keep.step();
+    expect(keep.mean()).toBeGreaterThan(0.9 * DRIVE_MAX_SPEED);
   });
 });
