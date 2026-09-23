@@ -1,4 +1,4 @@
-# Tuning log (S6T, S8a, UX1)
+# Tuning log (S6T, S8a, UX1, K1, M1)
 
 Every constant changed in slice S6T (Tuning & playability), as **old → new → why**.
 The input was the headless-Chrome playtest in `research/s6t-playtest-backlog.md`; `#n` refers to its items.
@@ -425,7 +425,7 @@ Jan: the cart should sit about 30% from the left edge with about 70% of the view
 | Constant / rule | Old → new | Why |
 |---|---|---|
 | Follow x | right-most body − 100 px, screen-centred (`CameraFollow`, src/run/camera.ts) → **cart AABB centre placed at `LOOK_AHEAD_FRACTION` of the view width** (`LookAheadFollow` + `followCamera`) | The old camera put the cart's front about 100 px right of centre, so only 40–45% of the view showed what was coming. |
-| `LOOK_AHEAD_FRACTION` | new: **0.3** | Jan's "[..x.....]": 30% behind, 70% ahead. It holds at every zoom (`followZoom` = clamp(w/720, 0.5, 1.5)). |
+| `LOOK_AHEAD_FRACTION` | new: **0.3** | Jan's "[..x.....]": 30% behind, 70% ahead. It holds at every zoom (`followZoom` = clamp(w/720, 0.5, 1.5); **M1: also capped by h/420**, see "M1"). |
 | `LOOK_SMOOTHING` | new: **0.1** per 60 Hz step | Same smoothing as the old follow. |
 | Lag compensation | new: target = anchor + vel·(1 − s)/s | A plain exponential follow trails a moving cart by vel·(1 − s)/s, which is about 1.2 m at 9 m/s, or 5% of the view. The estimated per-step velocity is fed forward, so at constant speed the cart sits exactly at 0.3. On beach, kitchen, workbench, the original and endless, the worst deviation while cruising is 0.007–0.011 of the view width. The test (test/game/framing.test.ts) measures the rendered, interpolated path at five alphas per step. It bounds cruising at 0.015 and the mean at 0.005, and checks that interpolation adds under 0.002 of its own, including while accelerating. |
 | Vertical | unchanged | y still comes from the controller's `CameraFollow`, centred. Jan asked for no change there. |
@@ -768,8 +768,8 @@ The Kitchen pace notes are the bridger line: 6.5 m/s, then 10 m/s from the kicke
   - 11 and 13 m/s: jammed at 89.7–89.9 m, stuck hint at t = 18.3 s / 17.4 s.
 
 **Finish framing** (test/game/framing.test.ts, 844×390 and 1280×720):
-- **A normal cart, full strength.** The example cart, on a course that ends in exactly Kitchen's pit (pinned equal), at 3, 6.5 and 12 m/s and holding right: from the goal line to the end of the run, the whole blender and the whole cart are on screen. The negative control fails without finish framing, as for every other course. Measured 0 violations at 2–14 m/s and floored. With the line at 12 m, the blender's top or right edge was off screen until the front was ~10.8 m from it, which is why `lineGap` is 10.5.
-- **The bridger (R30).** Over its final 4.75 m (29 of its 61 steps past the line): the whole blender and the cart's front half. Through its whole pit window: its front stays on screen, and its rear overhangs the left edge by up to 1.64 m (bound 2 m). Earlier in the window, the camera (cart centre at 30%) leaves the blender's right edge up to ~6 m off screen, and the 5.2 m-tall frame under the top HUD pad while finish framing eases in.
+- **A normal cart, full strength.** The example cart, on a course that ends in exactly Kitchen's pit (pinned equal), at 3, 6.5 and 12 m/s and holding right: from the goal line to the end of the run, the whole blender and the whole cart are on screen. The negative control fails without finish framing, as for every other course. Measured 0 violations at 2–14 m/s and floored. With the line at 12 m, the blender's top or right edge was off screen until the front was ~10.8 m from it, which is why `lineGap` is 10.5. **M1:** with the height-aware zoom the phone sees the whole blender from ~14.4 m (844×390) and ~18.9 m (844×320); 1280×720 (unchanged, ~12.8–13.1 m) is now the binding view.
+- **The bridger (R30).** Over its final 4.75 m (29 of its 61 steps past the line): the whole blender and the cart's front half. Through its whole pit window: its front stays on screen, and its rear overhangs the left edge by up to 1.64 m (bound 2 m). **M1:** 0.19 m at 844×390, 0 at 844×320, 0.75 m at 1280×720 (unchanged, now the worst case; bound 1 m). Earlier in the window, the camera (cart centre at 30%) leaves the blender's right edge up to ~6 m off screen, and the 5.2 m-tall frame under the top HUD pad while finish framing eases in.
 
 ### K1 round-1 audit (fixes)
 
@@ -844,7 +844,7 @@ The Kitchen pace notes are the bridger line: 6.5 m/s, then 10 m/s from the kicke
 - **Kitchen:** now the course that teaches building. The example cart cannot finish it, and a purpose-built long cart clears it across a wide speed band: steady 4–9 m/s all reach the goal with ≥ 13/15.
 - **Workbench:** hard driving with the example cart.
 - **Tiki Bar:** exotic physics.
-- **Bonus · Expert (the original):** hardest on driving. With the example cart it forgives only the right speed: 9.3, 10.0 and 10.1 m/s finish with 10/15; 9.0–9.25, 9.9 and 10.05 get stuck.
+- **Bonus · Expert (the original):** hardest on driving. With the example cart it forgives only the right speed: 9.3, 10.0 and 10.1 m/s finish with 10/15; 9.0–9.25, 9.9 and 10.05 get stuck. **M1:** its finish is now Kitchen-style (20 m landing strip), so long carts built for Kitchen can finish it too (the bridger: 12–15/15 at 7–12 m/s and floored).
 
 Kitchen asks for a harder build, but once built, its line is far more forgiving than the original's. It is harder than before, and it is not harder than Bonus · Expert. One oddity: course 3 is again doable with the stock cart after course 2 was not. See R30.
 
@@ -861,3 +861,123 @@ Kitchen asks for a harder build, but once built, its line is far more forgiving 
 - **New test/levels/roughness.test.ts:** the bumps table, measured and pinned.
 - **New test/integration/kitchenSinkFlat.test.ts, kitchenSinkPitch.test.ts, sinkCourse.ts:** the synthetic sink sweep.
 - **New test/integration/kitchen.test.ts:** the sink arithmetic, the bridger's fit, validation and loaded centre of mass, the example-cart sweep with each speed's mode pinned, the level 12 m run-up, the bridger line, the speed band (4–9 m/s, ≥ 13/15) and holding right.
+
+## M1: mobile camera, dynamic viewport, the original's finish
+
+Jan tested on a real iPhone (landscape Safari) and reported three things. `src/physics/engine.ts` is untouched; the 71 recovered original-course vertices are unchanged (byte-identical `course` span).
+
+### 1. Height-aware follow zoom (src/game/framing.ts)
+
+The follow zoom was width-only (`clamp(w / 720, 0.5, 1.5)`: 24 m of world across). A landscape phone is much wider than 24:14, so it zoomed in until only ~11 m of height showed, and the start and the run felt cramped.
+
+| Constant / rule | Old → new | Why |
+|---|---|---|
+| `followZoom(w, h)` | `clamp(w/720, 0.5, 1.5)` → **`clamp(min(w/720, h/420), 0.5, 1.5)`** | The view always shows at least 24 m across AND 14 m of height (until the 0.5 floor). |
+| `VIEW_HEIGHT_M` | new: **14 m** | Holds the 9 m blender plus margins, so on phones finish framing never has to zoom out: it only moves the look point. The width term alone binds for any aspect narrower than 24:14 (≈1.71) and height ≥ 630 px. |
+| `FOLLOW_ZOOM_MIN` / `FOLLOW_ZOOM_MAX` | new names: **0.5 / 1.5** | Unchanged values, now named. |
+| Users of it | `runCamera` (follow, finish floor 0.75× follow) and the ready frame's cap (`readyFrame` in src/game/runScreen.ts) | One formula everywhere in the game. The spike (src/run/harness.ts, still width-only) and the styleguide (fixed zooms) are dev pages and keep their own framing. |
+
+Zoom before → after (pinned in test/game/framing.test.ts "M1: height-aware follow zoom"):
+
+| Viewport | Old zoom | New zoom | World shown, old → new |
+|---|---|---|---|
+| 844×390 (iPhone landscape, toolbar hidden) | 1.172 | **0.929** | 24 × 11.1 m → 30.3 × 14 m |
+| 844×320 (toolbar showing) | 1.172 | **0.762** | 24 × 9.1 m → 36.9 × 14 m |
+| 932×430 | 1.294 | **1.024** | 24 × 11.1 m → 30.3 × 14 m |
+| 667×375 | 0.926 | **0.893** | 24 × 13.5 m → 24.9 × 14 m |
+| 800×600 | 1.111 | 1.111 | unchanged |
+| 1280×720, 1280×760 | 1.5 | 1.5 | unchanged |
+| 200×120 | 0.5 | 0.5 | floor |
+
+The value was chosen by eye in the browser pane at 844×390 and 844×320 on beach, kitchen and the original: the example cart and the funnel stay readable, and the terrain ahead is visible. 14 m holds the 9 m blender, its margins and the HUD pads (about 12.2 m at 844×390), so the phone finish frame never has to zoom (pinned).
+
+Knock-on figures (measured with the framing harness, `finishPitRun`):
+
+| Distance from the blender at which the whole blender + cart are first on screen | 844×390 | 844×320 | 1280×720 |
+|---|---|---|---|
+| Example cart, Kitchen pit (20 m strip) | 10.8–11.0 → **14.3–14.5 m** | 12.1–12.6 → **18.8–19.0 m** | 12.8–13.1 m (unchanged) |
+| Example cart, original expert line (new finish) | 12.0 → **14.7 m** | 13.3 → **18.9 m** | 13.6 m (unchanged) |
+
+So the `lineGap` bound (goal never fires before the camera can show the whole blender for a normal cart) moves from ~10.8 m (phone-bound) to ~12.8 m (1280×720-bound). Both finishes use 10.5 m.
+
+| Bridger rear overhang past the left edge (R30), old zoom → new | 844×390 | 844×320 | 1280×720 |
+|---|---|---|---|
+| Kitchen, pace line | 1.64 → **0.19 m** | 1.58 → **0 m** | 0.75 m |
+| Original, 7 m/s | 1.50 → **0.05 m** | 1.49 → **0 m** | 0.61 m |
+| Original, 10 m/s | 1.53 → **0.08 m** | 1.45 → **0 m** | 0.64 m |
+| Original, 12 m/s | 1.35 → **0 m** | 1.35 → **0 m** | 0.25 m |
+| Original, holding right | 1.81 → **0.37 m** | 1.63 → **0 m** | 0.92 m |
+
+The bridger's front was on screen at every step in every case. On a phone the whole blender is now on screen once its front is within ~9 m (Kitchen: 5.5 → 9.0 m); desktop is unchanged (~7.5–7.9 m).
+
+### 2. Dynamic viewport (index.html, src/game/runScreen.ts)
+
+| Item | Old → new | Why |
+|---|---|---|
+| `html, body` and `#app` height | `100%` → **`100%` then `100dvh`** | iOS Safari's toolbars change the visible height; `100dvh` tracks it, `100%` is the fallback where dvh is unsupported. |
+| Canvas sizing | `app.resizeTo = canvasHost` (listens to window `resize` only) → **plus a `ResizeObserver` on the host** calling `app.resize()`, disconnected on unmount | A toolbar collapse can resize the host without a window `resize` event. |
+| Safe areas | unchanged | `viewport-fit=cover` was already in index.html, and the HUD already pads with `env(safe-area-inset-*)` (src/ui/ui.css `--pr-safe-*`). |
+
+Checked in the browser pane: switching 844×390 ↔ 844×320 mid-run, the canvas followed (1688×780 ↔ 1688×640 device px) with no squish or letterbox, and the camera re-fit to the new zoom. Not checked on a real iPhone.
+
+### 3. The original's finish (src/terrain/originalCourse.ts → levels/original-course.json)
+
+Before M1 the original ended as the 2008 game did: the goal line at the lip (7670 px) and an added pit with 3.75 m of floor before the blender. A long cart (the 17.5 m Kitchen Bridger, the reference long cart since K1) drove in nose-first. It stopped against the blender with its bed and load still above the lip, the load never reached the sensor, and the run ended on the stuck hint.
+
+| Constant | Old → new | Why |
+|---|---|---|
+| `ORIGINAL_FINISH` | new: **{ frontGap: 20, lineGap: 10.5 }** | Kitchen's finish (`KITCHEN_FINISH`), measured below: the smallest landing strip on which the bridger scores at every speed that gets it to the pit, with the line as far from the blender as the camera allows. |
+| Pit floor (`PIT_FLOOR_M` = `blenderPitFloor(frontGap)`) | 9.25 → **25.5 m** (x 256.225 → 281.725) | 20 m before the blender + blender 3.75 m + back gap 1.75 m. |
+| Blender front | 3.75 → **20 m** past the last recovered vertex (x 276.225) | |
+| Goal line and sensor left edge | the lip, x 255.667 (7670 px), sensor over the whole floor → **x 265.725 (7971.75 px), sensor 16 m wide to the back wall** | The Kitchen scoring rule: the first ~9.5 m of the floor is a landing strip where pineapples don't count, so a normal cart scores only where the camera shows the whole blender. |
+| `ORIGINAL_GOAL_LINE_PX` | 7670, kept | Now the recovered course's datum, not the goal line. The roughness reference (test/levels/roughness.test.ts) is still measured up to it, so K1's bumps table is unchanged. |
+
+The recovered `course` span is byte-identical (71 points), and the vertex and washboard tests were not touched. The fixture was regenerated with `UPDATE_FIXTURES=1`, and its diff is the pit floor, the goal and the blender position only. The level now reaches one more terrain chunk (lastChunk 6 → 7).
+
+Finish sweep (deterministic, pace-note driver; F = frontGap, L = lineGap; bridger at steady speeds and holding right, delivered/15 and rating):
+
+| Finish | Bridger 7 | 9 | 10 | 11 | 12 | Holding right | Example cart, expert line + 3 variants |
+|---|---|---|---|---|---|---|---|
+| **before M1** (3.75 m, line at lip) | stuck | stuck | stuck | 4 | 4 | stuck | expert line 10 · 52 |
+| F12 or F16, any L | stuck | stuck | stuck | – | – | stuck | 10 |
+| F18, L10.5 | 13 · 46 | 12 · 51 | 13 · 63 | 13 · 65 | 15 · 76 | 14 · 77 | 10 · 52 / 10 · 51 / 10 · 53 / 10 · 52 |
+| F19, L10.5 | – | 11 | – | – | – | 13 | – |
+| **F20, L10.5 (shipped)** | **13 · 46** | **12 · 51** | **13 · 63** | **13 · 65** | **15 · 76** | **14 · 77** | **10 · 52 / 10 · 51 / 10 · 53 / 10 · 52** |
+| F20, L11 or L12 | same as L10.5 | | | | | | |
+| F20, L10 | – | – | – | 11 | – | – | – |
+| F20, L9 | 11 | 11 | 11 | 8 | – | 11 | – |
+| F20, L8 | 10 | 7 | 8 | 5 | 4 | 7 | – |
+| F21, L10.5 | – | – | – | 10 | – | – | – |
+| F22, L10.5 | – | – | – | – | – | 13 | steady 8 m/s: 0 |
+| F24, L10.5 | – | – | – | – | – | – | expert 9 (v185: 7) |
+
+(– = not measured in that configuration.) F18 matched F20 on these lines. F20 was chosen for Kitchen parity: one finish for long carts, the same numbers players learn on Kitchen, and 2 m more room for a longer build. Lines at 11–12 m score the same, but 10.5 m is the most the camera allowed a normal cart before M1, and it is still well inside the new ~12.8 m bound. At 8–10 m the load (which rests 5.6–10.4 m before the blender) starts falling short of the line.
+
+Other results on the shipped finish:
+- **The expert line is unchanged.** The example cart's expert line (ORIGINAL_EXPERT_LINE) delivers 10/15 at rating 52 on the old finish and on the new one; acceptance.test.ts is unchanged.
+- **Failing example-cart lines end differently.** On the old finish, some failing lines scored a pineapple or two that fell into the pit. Now they end on the stuck hint or with a lower count: steady 7 m/s is stuck at 26.6 m before the lip (unchanged); 8 m/s scores 1/15 → 1/15; 10 m/s scores 4/15 → 2/15.
+- **The bridger stalls at 6 and 8 m/s.** Steady 6 and 8 m/s stall on the original's terrain long before the finish (111 and 61 m short of the blender), so the pit plays no part.
+- **Holding right, where the load ends.** 13 pineapples rest in the pit, all short of the blender, and 1 is counted as arrived (it crossed the line and left the world): delivered 14 = the controller's `pastGoalLine()` (pinned).
+
+Browser pane check, bridger holding right on the original: the whole cart is in the widened pit and the whole blender is on screen at 844×390, 844×320 and 1280×720. Live keyboard runs (frame-rate dependent) scored 13/15 (73%), 10/15 and 12/15.
+
+### Tests changed for M1
+
+- **test/game/framing.test.ts:**
+  - Inline copies of the old formula now call `followZoom(w, h)`.
+  - 844×320 was added to the viewports and pit viewports.
+  - The finish-floor test was re-pinned to the height term.
+  - New "M1: height-aware follow zoom" block: the zoom table, never zooming in, at least 14 m tall, `runCamera` and the ready frame use it, and phone finish frames keep the follow zoom.
+  - Bridger R30 bound 2 → 1 m.
+  - New bridger-on-the-original cases at 10 m/s and holding right.
+- **test/game/runContextLoss.test.ts:** the ResizeObserver resizes the app and disconnects on unmount; index.html orders the `100%` fallback before `100dvh`.
+- **test/terrain/original-course.test.ts:**
+  - The goal-line test became the M1 finish test: the 7670 px datum, ORIGINAL_FINISH, the pit, blender, sensor and line geometry, a custom finish, and bad-lineGap rejection.
+  - lastChunk 6 → 7.
+- **test/levels/roughness.test.ts:** the original's reference window ends at the 2008 lip (min of the line and 7670 px), so the K1 bumps table is unchanged.
+- **New test/integration/originalFinish.test.ts:**
+  - The pre-M1 finish, rebuilt from the level, as a control: the bridger jams at 7, 9 and 10 m/s and holding right.
+  - The bridger band on the new finish.
+  - The scoring contract.
+  - The expert line: 10/15 at 52, before and after.
+
