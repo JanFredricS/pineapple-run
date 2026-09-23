@@ -162,10 +162,32 @@ export function frameBox(
 
 /** Course width shown across the screen (m) on narrow screens; the follow zoom is clamped to 0.5–1.5. */
 export const VIEW_WIDTH_M = 24;
+/**
+ * M1 (Jan, iPhone landscape: "zooms in a bit too much"): the least world
+ * HEIGHT (m) the follow view shows. The width rule alone gave an 844×390
+ * phone zoom 1.17, 24 × 11.1 m, less world than desktop's 28.4 × 16.9 m in
+ * both axes; the height cap zooms a short viewport out until VIEW_HEIGHT_M
+ * fits. It binds only where the width rule would show less than
+ * VIEW_HEIGHT_M of height: aspect wider than 24:14 (≈1.71) below 1080 px
+ * wide, or under 630 px tall at the 1.5 clamp — so 1280×760, 1280×720 and
+ * 800×600 are unchanged. 14 m holds the 9 m blender plus the finish
+ * margins between the HUD pads, so on a phone the finish frame no longer
+ * zooms out, it only moves the look point. TUNING.md "M1".
+ */
+export const VIEW_HEIGHT_M = 14;
+/** Follow-zoom clamp (the 0.5 floor wins over the height cap on a tiny viewport). */
+export const FOLLOW_ZOOM_MIN = 0.5;
+export const FOLLOW_ZOOM_MAX = 1.5;
 
-/** The run's follow zoom for a viewport width. */
-export function followZoom(viewportWidth: number): number {
-  return Math.min(1.5, Math.max(0.5, viewportWidth / (VIEW_WIDTH_M * PX_PER_M)));
+/**
+ * The run's follow zoom for a viewport: VIEW_WIDTH_M across (clamped to
+ * 0.5–1.5), zoomed further out if that would show less than VIEW_HEIGHT_M
+ * of height, never below 0.5.
+ */
+export function followZoom(viewportWidth: number, viewportHeight: number): number {
+  const byWidth = viewportWidth / (VIEW_WIDTH_M * PX_PER_M);
+  const byHeight = viewportHeight / (VIEW_HEIGHT_M * PX_PER_M);
+  return Math.max(FOLLOW_ZOOM_MIN, Math.min(FOLLOW_ZOOM_MAX, byWidth, byHeight));
 }
 
 /** UX1: the cart's screen-x as a fraction of the viewport width, from the left edge. */
@@ -354,6 +376,6 @@ export interface RunCameraInput {
 
 /** The camera the run screen renders: look-ahead follow -> finish framing -> ready blend. */
 export function runCamera(i: RunCameraInput): Camera {
-  const follow = followCamera(i.anchorX, i.followY, followZoom(i.viewportWidth), i.viewportWidth, i.viewportHeight);
+  const follow = followCamera(i.anchorX, i.followY, followZoom(i.viewportWidth, i.viewportHeight), i.viewportWidth, i.viewportHeight);
   return blendCamera(withFinish(follow, i.anchorX, i.blender, i.cart), i.ready, i.sinceRelease);
 }

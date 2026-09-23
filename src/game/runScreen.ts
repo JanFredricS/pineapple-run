@@ -381,7 +381,7 @@ async function mountRunOnce(
         const h = app.screen.height;
         const cart = cartBox();
         // ready phase: frame funnel + cart (tracks a cart driven before Release); then blend to follow
-        if (sinceRelease === null) readyView = readyFrame(funnelBox, cart, w, h, followZoom(w));
+        if (sinceRelease === null) readyView = readyFrame(funnelBox, cart, w, h, followZoom(w, h));
         // look-ahead follow, eased into the whole-blender finish frame near the goal (framing.ts)
         const view: Camera = runCamera({
           anchorX: look.interpolated(alpha),
