@@ -76,8 +76,12 @@ describe('two-box spring-only cart', () => {
     const min = Math.min(...sep);
     const max = Math.max(...sep);
     // Real relative motion: the spring visibly compresses and extends
-    // during the drop, not a welded pair at constant distance.
-    expect(max - min).toBeGreaterThan(0.05);
+    // during the drop, not a welded pair at constant distance (a rod keeps
+    // this under 0.005 m). Tolerance 0.05 -> 0.03 in S6T: shocks went
+    // 5 Hz/0.5 -> 8 Hz/0.7 (2.56x stiffer, better damped), so the same drop
+    // swings ~0.043 m instead of ~0.1 m — still an order of magnitude more
+    // than a welded pair.
+    expect(max - min).toBeGreaterThan(0.03);
     // The springs work: separation deviates from the rest length under load...
     expect(min).toBeLessThan(rest - 0.01);
     // ...but the boxes never collide.
