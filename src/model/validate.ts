@@ -25,7 +25,9 @@ import {
   hasSolidBody,
   LEVEL_DEF_VERSION,
   LevelDef,
+  MAX_BEAD_ZONES,
   MAX_LEVEL_PROPS,
+  MAX_ZONE_FORCE,
   PropDef,
   Rect,
   THEME_IDS,
@@ -275,7 +277,12 @@ function zone(v: unknown, path: string): ZoneDef {
     return { id, kind, rect: rect(o.rect, `${path}.rect`), gravityScale: num(o.gravityScale, `${path}.gravityScale`, { min: -10, max: 10 }) };
   }
   if (kind === 'force') {
-    return { id, kind, rect: rect(o.rect, `${path}.rect`), force: vec2(o.force, `${path}.force`) };
+    const force = vec2(o.force, `${path}.force`);
+    if (Math.hypot(force.x, force.y) > MAX_ZONE_FORCE) fail(`${path}.force`, `force zones are limited to ${MAX_ZONE_FORCE} m/s²`);
+    return { id, kind, rect: rect(o.rect, `${path}.rect`), force };
+  }
+  if (kind === 'beads') {
+    return { id, kind, rect: rect(o.rect, `${path}.rect`) };
   }
   return fail(`${path}.kind`, 'unknown zone kind');
 }
@@ -327,6 +334,7 @@ export function validateLevelDef(raw: unknown): ValidationResult<LevelDef> {
     });
     const g = obj(doc.goal, 'goal');
     const zones = arr(doc.zones ?? [], 'zones', 1000).map((z, i) => zone(z, `zones[${i}]`));
+    if (zones.filter((z) => z.kind === 'beads').length > MAX_BEAD_ZONES) fail('zones', `at most ${MAX_BEAD_ZONES} bead zones`);
     const props = arr(doc.props ?? [], 'props', MAX_LEVEL_PROPS).map((p, i) => prop(p, `props[${i}]`));
     const level: LevelDef = {
       version: LEVEL_DEF_VERSION,

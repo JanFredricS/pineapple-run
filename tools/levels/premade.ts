@@ -184,8 +184,55 @@ export function workbench(): AuthoredLevel {
   return t.build({ id: 'workbench', name: 'Workbench', theme: 'workbench' });
 }
 
-export const PREMADE: Record<'beach' | 'kitchen' | 'workbench', () => AuthoredLevel> = {
+/**
+ * Zero-G Tiki Bar (S9 stretch): the exotic-physics course, after Workbench.
+ * Terrain hazards as usual, plus zone hazards (LevelDef zones, see
+ * src/run/zones.ts and src/run/beads.ts):
+ *   - the moon hop: a launch lip over a wide gap inside a low-gravity pocket
+ *     (only floatable in it), then a moon-gravity washboard where a fast cart
+ *     bounces its load out;
+ *   - the shooter: a force column at the foot of a bar-stool cliff lifts the
+ *     cart onto the upper deck (the cliff is unclimbable without it);
+ *   - the ice-bucket pool shortcut right after the upper deck (jump it at
+ *     pace, or roll through the crushed-ice floor);
+ *   - the bead ocean: a basin full of cocktail beads to plough through, then
+ *     steps down to the blender.
+ * The pool comes BEFORE the beads: a cart that has just ploughed the ocean is
+ * too slow (beads on its nose) to jump anything.
+ */
+export function tikibar(): AuthoredLevel {
+  const t = new Track(0, 10);
+  t.speed(9).flat(16, 'plateau')
+    .ease(10, 1.2, 'valley').ease(10, -1.2)
+    // the moon hop
+    .speedAt(38, 7)
+    .field({ id: 'moon-hop', kind: 'gravity', gravityScale: 0.3, above: 7, below: 3 }, (u) =>
+      u.flat(3).line(6, -1.5, 'launchLip').gap(8, 0.5).flat(6).washboard(8, 0.25, 1).flat(4))
+    .speed(6).flat(6)
+    .hump(6, -0.5)
+    .speed(4).hump(6, 0.25)
+    // the shooter: a force column at the foot of a cliff
+    .field({ id: 'shooter', kind: 'force', force: { x: 2, y: -16 }, above: 6.5, below: 2 }, (u) => u.flat(9))
+    .line(1.8, -6)
+    .speed(6).flat(12)
+    // the shortcut: jump the ice bucket (a crushed-ice rasp floor) or roll through it
+    .speed(9).ease(12, 1.5, 'valley').speed(13).ease(8, -0.5)
+    .flat(4)
+    .pool(pool((u) => u.washboard(6, 0.35, 1)))
+    .speed(9).flat(4)
+    .speed(6)
+    // the bead ocean
+    .beadPool({ id: 'bead-ocean', entryRun: 3, depth: 1.2, floor: 12, exitRun: 7, fill: 0.7 })
+    .flat(6)
+    .steps(3, 3.5, 0.5)
+    .flat(5)
+    .finish();
+  return t.build({ id: 'tikibar', name: 'Zero-G Tiki Bar', theme: 'tiki' });
+}
+
+export const PREMADE: Record<'beach' | 'kitchen' | 'workbench' | 'tikibar', () => AuthoredLevel> = {
   beach,
   kitchen,
   workbench,
+  tikibar,
 };

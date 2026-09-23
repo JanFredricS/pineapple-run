@@ -32,6 +32,12 @@
  *   - "endless": no goal (the LevelDef goal is ignored). Lost is final; the
  *                last loss ends the run with `allLost`.
  *
+ * S9 level furniture (built after the props, before the cart): zone sensors
+ * (run/zones.ts; applied around every world step: zones.preStep() before,
+ * zones.postStep() after) and the bead ocean (run/beads.ts; swept for
+ * fallen beads every 30 steps). Beads are never cargo: nothing below counts
+ * them.
+ *
  * Per fixed step after Release (in this order; each stage stops once ended):
  *   1. kill-plane (level.killY): a pineapple below it is removed (and lost,
  *      unless it had already passed the goal line in a level run — then it
@@ -75,6 +81,7 @@ import type { BodyHandle, PhysicsWorld } from '../physics/engine';
 import { buildTerrain } from '../physics/terrain';
 import { CameraFollow } from './camera';
 import { buildFunnel, type FunnelInstance } from './funnel';
+import { BEAD_COUNT_DEFAULT, BeadOcean } from './beads';
 import { buildSolidProps, type SolidProp } from './props';
 import {
   circleTouchesPolygon,
@@ -86,6 +93,7 @@ import {
   type AboardMargin,
 } from './shapes';
 import { TerrainIndex, type TerrainQuery } from './terrainQuery';
+import { ZoneField } from './zones';
 
 export type RunPhase = 'idle' | 'started' | 'released' | 'ended';
 export type RunMode = 'level' | 'endless';
@@ -145,6 +153,11 @@ export interface RunControllerOptions {
    * it, the whole `level.terrain` is built as one static body (S1 default).
    */
   terrain?: TerrainQuery;
+  /**
+   * S9: beads per bead zone (clamped to 300..600; default 450). Chosen once
+   * at level load (src/game/deviceTier.ts), never changed mid-run.
+   */
+  beadCount?: number;
 }
 
 interface PineappleState {
@@ -181,6 +194,10 @@ export class RunController implements RunEventSource {
   readonly ground: BodyHandle | null;
   readonly props: readonly SolidProp[];
   readonly funnel: FunnelInstance;
+  /** S9: gravity pockets / force fields (null when the level has none). */
+  readonly zones: ZoneField | null;
+  /** S9: the bead ocean (null when the level has no bead zone). Never cargo, never scored. */
+  readonly beads: BeadOcean | null;
   readonly camera: CameraFollow;
   readonly terrain: TerrainQuery;
   readonly total: number;
@@ -232,6 +249,9 @@ export class RunController implements RunEventSource {
 
     this.ground = options.terrain ? null : buildTerrain(world, level.terrain);
     this.props = buildSolidProps(world, level.props);
+    // S9 level furniture: zone sensors, then the bead ocean (fixed order: deterministic handles)
+    this.zones = level.zones.some((z) => z.kind === 'gravity' || z.kind === 'force') ? new ZoneField(world, level.zones) : null;
+    this.beads = level.zones.some((z) => z.kind === 'beads') ? new BeadOcean(world, level, options.beadCount ?? BEAD_COUNT_DEFAULT) : null;
     this.cart = buildCompound(world, this.spec, level.cartStart);
     this.cartBodies = this.spec.bodies.map((b) => ({ id: b.id, handle: this.cart.bodies.get(b.id)!, spec: b }));
     this.attached = new Set(this.spec.bodies.map((b) => b.id));
@@ -431,8 +451,11 @@ export class RunController implements RunEventSource {
   step(): void {
     if (this._phase === 'idle') return;
     this.applyDrive(this._phase !== 'ended' && !this._cartLost ? this.drive : 0);
+    this.zones?.preStep();
     this.world.step();
     this._steps++;
+    this.zones?.postStep();
+    this.beads?.sweep(this._steps);
 
     if (this._phase === 'released') {
       this.killPlane();
@@ -461,6 +484,8 @@ export class RunController implements RunEventSource {
     this.funnel.pullPlug();
     if (this.world.hasBody(this.funnel.walls)) this.world.destroyBody(this.funnel.walls);
     for (const p of this.props) if (this.world.hasBody(p.handle)) this.world.destroyBody(p.handle);
+    this.zones?.destroy();
+    this.beads?.destroy();
     if (this.ground !== null && this.world.hasBody(this.ground)) this.world.destroyBody(this.ground);
   }
 

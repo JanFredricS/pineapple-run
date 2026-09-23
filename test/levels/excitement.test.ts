@@ -18,7 +18,7 @@ import { PREMADE } from '../../tools/levels/premade';
 import { Track, type AuthoredLevel } from '../../tools/levels/track';
 import { targetSpeed } from '../integration/driver';
 
-const ids = ['beach', 'kitchen', 'workbench'] as const;
+const ids = ['beach', 'kitchen', 'workbench', 'tikibar'] as const;
 
 const washboards = (fs: readonly CensusLabel[]) => fs.filter((f) => f.kind === 'washboard');
 

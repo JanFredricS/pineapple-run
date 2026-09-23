@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Tiki terrain fill: stacked bamboo poles in a lashed bar front. Seamless 256 tile (all periods divide 256). -->
+  <defs>
+    <linearGradient id="pole" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#B98449"/>
+      <stop offset="0.35" stop-color="#A06E3A"/>
+      <stop offset="1" stop-color="#7C5028"/>
+    </linearGradient>
+    <pattern id="poles" width="256" height="32" patternUnits="userSpaceOnUse">
+      <rect x="0" y="1" width="256" height="30" rx="4" fill="url(#pole)"/>
+      <rect x="0" y="5" width="256" height="3" fill="#D9A767" fill-opacity="0.45"/>
+      <rect x="62" y="1" width="4" height="30" fill="#6A421F" fill-opacity="0.7"/>
+      <rect x="190" y="1" width="4" height="30" fill="#6A421F" fill-opacity="0.7"/>
+    </pattern>
+    <pattern id="knots" width="128" height="64" patternUnits="userSpaceOnUse">
+      <rect x="126" y="33" width="4" height="30" fill="#6A421F" fill-opacity="0.6"/>
+      <ellipse cx="34" cy="20" rx="5" ry="2" fill="#5A3818" fill-opacity="0.35"/>
+      <ellipse cx="96" cy="50" rx="4" ry="1.6" fill="#5A3818" fill-opacity="0.35"/>
+    </pattern>
+  </defs>
+  <rect width="256" height="256" fill="#5A3818"/>
+  <rect width="256" height="256" fill="url(#poles)"/>
+  <rect width="256" height="256" fill="url(#knots)"/>
+  <!-- rope lashings, period 128 -->
+  <g stroke="#E8C77A" stroke-opacity="0.55" stroke-width="2" fill="none">
+    <path d="M20 60 L28 76 M24 60 L32 76 M20 188 L28 204 M24 188 L32 204"/>
+    <path d="M148 60 L156 76 M152 60 L160 76 M148 188 L156 204 M152 188 L160 204"/>
+  </g>
+</svg>

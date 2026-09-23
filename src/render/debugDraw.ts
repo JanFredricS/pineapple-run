@@ -22,6 +22,8 @@ const ROLE_COLOR: Record<BodyRole, number> = {
   terrain: 0x8bd17c,
   prop: 0xc3a6ff,
   debug: 0xffffff,
+  zone: 0x5ee6d0,
+  bead: 0xf7f1e3,
 };
 
 export class DebugDraw {

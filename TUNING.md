@@ -298,3 +298,119 @@ Pool shortcut, jump vs careful line:
 | Workbench | 2.02 s, 88 | 4.92 s, 82 |
 
 Every one of these runs delivers 15/15.
+
+## S9: exotic physics — Zero-G Tiki Bar
+
+`src/physics/engine.ts` was opened a second time and re-frozen (its header lists additions 3–5).
+
+### Engine surface (box2d3-wasm 5.2.0)
+
+| Capability | Engine API | Box2D binding |
+|---|---|---|
+| Per-body gravity scale | `setGravityScale(h, s)`, `getGravityScale(h)` (non-finite throws; Box2D stores float32) | `b2Body_SetGravityScale` / `b2Body_GetGravityScale` |
+| Continuous force | `applyForceToCenter(h, {x, y})` (wakes; for the next step only) | `b2Body_ApplyForceToCenter(id, f, true)` |
+| Sensors | `addSensorPolygon(h, vertices, partId)`; `WorldOptions.sensorVisitors`; `MaterialDef.sensorVisitor` (per-shape opt-in / opt-out); `sensorEvents(): {begin, end}` of `{sensor, visitor}` body handles | `b2ShapeDef.isSensor` + `enableSensorEvents`; `b2World_GetSensorEvents` (shape ids mapped back through the ids the engine recorded; events with dead shape ids are dropped) |
+
+Only a world with at least one field zone is created with `sensorVisitors: true`. Every other world creates every shape exactly as before, so the four S1 step-count pins (521 / 1035 / 783 / 715) and all pre-S9 traces are unchanged.
+
+### Zones (src/run/zones.ts, src/model/zones.ts)
+
+- A `gravity` or `force` zone is a static sensor box (role `zone`; the zone tag in `partIds` is all the renderer reads).
+- Membership comes from the previous step's begin/end events. It is counted per visitor shape, so a multi-shape body stays inside while any of its shapes is.
+- Before each step, every member gets:
+  - the **lowest** gravity scale of its pockets (never compounded);
+  - mass × the **sum** of its force-zone accelerations.
+- A body that leaves every zone gets scale 1 back once. Destroyed bodies are pruned.
+- Everything is keyed and ordered by body handle, with no clock or randomness, so it is deterministic.
+
+### Bead ocean (src/run/beads.ts, src/game/deviceTier.ts)
+
+- A `beads` zone is filled at load with 300–600 sleeping-enabled circles (role `bead`).
+- Bead properties: density 0.35, friction 0.2, restitution 0.05. Beads opt out of sensor events.
+- The layout is a hex lattice filled bottom-up, a pure function of (terrain, rect, count).
+- The radius is derived from the count, so the pile keeps its extent and mass: r = 0.090 / 0.075 / 0.064 m at 300 / 450 / 600.
+- The count is fixed **at level load** and **pinned per device** (`resolveBeadCount`, audit-1 #1). The first bead level a browser loads stores its tier count in localStorage (`pineapple-run.beadCount.v1`); courses without a bead zone never resolve or store a count (`runSessionOptions`, audit-2), so Beach or Endless runs cannot pin a stale tier. Every later load, including retries, page reloads and reloads after the device reports different cores or memory, uses the stored count, so a run and its reload always build the same bead ocean. There is no run/replay save format; saved carts are designs only. Tiers for the first load:
+
+  | Tier | Reported device | Beads |
+  |---|---|---|
+  | low | ≤ 2 cores or ≤ 2 GB | 300 |
+  | mid | ≤ 4 cores, or nothing reported | 450 |
+  | high | anything more | 600 |
+
+  There is no frame-time feedback and no URL override (the run screen reads no query string). Tests override the count through `RunSessionOptions.beadCount` / `RunScreenDeps.beadCount` (an override is never pinned), and can inject `RunScreenDeps.deviceInfo` / `beadStorage`. Invalid or unreadable storage falls back to the tier; unwritable storage skips pinning.
+- Run worlds are configured from the level in one place, `src/run/runWorld.ts` (`worldOptionsForLevel`, `createRun`). Both RunSession and the run harness page use it, so the harness loads `levels/tikibar.json` (audit-1 #2).
+- Beads are not cargo and are never scored.
+- Beads are not streaming anchors. `RunSession.furnitureXs` pins the zone's two fixed ends, so the basin terrain stays loaded while the cart is away.
+- A bead that falls below killY is swept every 30 steps, so the count only goes down (asserted).
+
+### Level layout (tools/levels/premade.ts `tikibar` → levels/tikibar.json)
+
+The level uses the tiki theme (dusk sky, moon, lagoon, bar back, lanterns; bamboo ground with a bar-top edge). It is 195.5 m from the plateau to the goal line at x 210.35. In course order:
+
+| x (m) | Section | Pace (m/s) |
+|---|---|---|
+| 0–36 | plateau, valley | 9 |
+| 36–71 | **moon hop**: gravity 0.3 pocket over a launch lip, an 8 m gap and a moon washboard | 7 |
+| 71–89 | exit humps | 6 → 4 |
+| 89–98 | **shooter**: force (2, −16) m/s² column at the foot of a 6 m bar-stool cliff (`line(1.8, -6)`) | 4 |
+| 98–124 | upper deck, valley | 6 → 9 → 13 |
+| 136–162 | ice-bucket pool shortcut (crushed-ice washboard floor) | 13 |
+| 166–188 | **bead ocean**, 22 m wide | 9 → 6 |
+| 194–205 | steps down to the blender | 6 |
+
+The pool comes before the beads because a cart that has just ploughed the ocean is too slow to jump anything.
+
+### Driver results (example cart, pace-note driver, test/integration/tikibar.test.ts)
+
+| Line | Beads | Delivered | Rating |
+|---|---|---|---|
+| Pace | 300 | 14/15 | 76 |
+| Pace | 450 | 12/15 | 66 |
+| Pace | 600 | 13/15 | 72 |
+| Flooring it | 450 | 5/15 | 29 |
+| Careful (5 m/s from 20 m before the pool) | 450 | 14/15 | 70 |
+
+- Pacing beats flooring it by 37 points.
+- **What the tests pin** (audit-1 #3; runs are deterministic):
+  - pace: ≥ 12/15 and rating ≥ 60 at every tier (measured 12–14, 66–76; the acceptance floor is 10);
+  - flooring it: ≤ 7/15, and pacing wins by ≥ 25 points (measured 5/15 and 37; acceptance ≥ 5);
+  - pool: careful ≥ 2 s slower than the jump (measured 2.77 s);
+  - census: exactly 10 hazards / 8 kinds / 5.11 per 100 m with zones and 7 / 5 / 3.58 without, dull ≤ 4 s (3.83), crest ≤ 0.5 (0.49), 1 shortcut.
+- Pool shortcut, time from pool start to pool end: jump 2.05 s, careful 4.82 s.
+  - At 450 beads the careful line scores higher, because the jump costs two pineapples (R23).
+- Both mechanics are load-bearing. With the moon-hop pocket removed, or with the shooter removed, the pace line does not finish (asserted).
+- Retry and save → reload → rerun are bit-identical: events, chassis trace and every bead pose.
+
+### Census (tools/levels/census.ts, test/levels/censusZones.test.ts)
+
+A zone becomes a hazard only if it reaches the driving corridor, meaning the band from the exact surface up to 3 m above it, tested per surface piece. The kinds and thresholds are:
+
+| Hazard kind | Zone kind | Counts when |
+|---|---|---|
+| `lowGravity` | gravity | scale ≤ 0.6 |
+| `shooter` | force | \|a\| ≥ 3 m/s² |
+| `beads` | beads | width ≥ 2 m and depth ≥ 0.3 m |
+
+Zone hazards count, and break dull stretches, like terrain hazards. Weak, tiny, out-of-corridor and past-the-finish zones are asserted not to count.
+
+Tikibar passes the premade rules in two ways:
+
+- **With the zones:** 10 hazards in 8 kinds, 5.11 / 100 m, longest dull stretch 3.83 s, sharpest crest 0.49, 1 shortcut.
+- **Honestly without any zone credit:** zones and zone labels removed, 7 hazards in 5 kinds, 3.58 / 100 m, same dull and crest figures. The zones add variety; they are not what gets the level past the audit.
+
+### Perf (headless, node 22, this laptop; `S9_PERF=1 npx vitest run test/integration/beadPerf.test.ts`, exactly `1`, any other value skips; not a gate)
+
+| Beads | Build (ms) | Settle (steps) | Parked (ms/step) | Ploughing (ms/step) | Ploughing max (ms) | Whole run (ms/step) |
+|---|---|---|---|---|---|---|
+| 0 (bead zone removed) | 1 | 0 | 0.051 | 0.069 | 0.19 | 0.072 |
+| 300 | 3 | 75 | 0.275 | 0.598 | 1.03 | 0.418 |
+| 450 | 4 | 94 | 0.399 | 1.003 | 1.52 | 0.594 |
+| 600 | 4 | 83 | 0.513 | 1.429 | 2.07 | 0.829 |
+
+Column meanings:
+
+- **Parked:** cart on the plateau with every bead asleep.
+- **Ploughing:** steps while the chassis is inside the bead zone.
+- **Settle:** steps after Start until every bead sleeps.
+
+Sleeping beads are not free, at about 0.75 µs each per step. `PhysicsWorld.step` reads every dynamic body's transform for render interpolation, whether awake or not (R24). The worst ploughing step at 600 beads is about 2 ms, well inside a 16.7 ms frame, but a real phone is slower. That is why low-tier devices get 300.

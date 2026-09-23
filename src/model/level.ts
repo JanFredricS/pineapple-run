@@ -16,8 +16,8 @@ import type { Vec2 } from './geometry';
 
 export const LEVEL_DEF_VERSION = 1 as const;
 
-export type ThemeId = 'beach' | 'kitchen' | 'workbench' | 'test';
-export const THEME_IDS: readonly ThemeId[] = ['beach', 'kitchen', 'workbench', 'test'];
+export type ThemeId = 'beach' | 'kitchen' | 'workbench' | 'tiki' | 'test';
+export const THEME_IDS: readonly ThemeId[] = ['beach', 'kitchen', 'workbench', 'tiki', 'test'];
 
 export interface TerrainSpan {
   id: string;
@@ -39,12 +39,16 @@ export interface Rect {
   height: number;
 }
 
-export type ZoneKind = 'gravity' | 'force';
+export type ZoneKind = 'gravity' | 'force' | 'beads';
+export const ZONE_KINDS: readonly ZoneKind[] = ['gravity', 'force', 'beads'];
 
 /**
- * Zone regions (used by the S9 gravity-zones stretch level). A gravity zone
- * scales gravity for bodies inside it; a force zone applies a constant force
- * (N per kg, i.e. an acceleration) in `force`.
+ * Zone regions (S9 exotic physics; src/run/zones.ts, src/run/beads.ts). A
+ * gravity zone scales gravity for bodies inside it; a force zone ("gravity
+ * shooter") applies a constant force (N per kg, i.e. an acceleration) in
+ * `force` to bodies inside it; a beads zone is filled with a bead ocean at
+ * load (the rect is the pile's extent above the terrain). Zones are level
+ * furniture: sensors / decorative bodies, never terrain and never cargo.
  */
 export interface ZoneDef {
   id: string;
@@ -55,6 +59,11 @@ export interface ZoneDef {
   /** force zones: acceleration vector, m/s^2. */
   force?: Vec2;
 }
+
+/** Largest force-zone acceleration magnitude a level may carry (m/s², validate). */
+export const MAX_ZONE_FORCE = 100;
+/** Most bead zones per level (each is filled with up to 600 bodies). */
+export const MAX_BEAD_ZONES = 2;
 
 /** Most props a level may carry (validateLevelDef rejects more; R4). */
 export const MAX_LEVEL_PROPS = 10_000;

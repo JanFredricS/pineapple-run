@@ -61,6 +61,25 @@
  *   steps     — >= 2 risers (0.25–1.2 m of height at slope >= 1 over
  *               <= 0.75 m) in the same direction, separated by 1–6 m treads.
  *
+ * ZONE HAZARDS (S9 exotic physics): gravity zones, force fields and bead
+ * oceans change how the cart drives without any terrain shape, so they are
+ * detected from `level.zones` — simulation data the physics acts on (like the
+ * terrain itself), NOT authoring labels (Track features stay annotations
+ * only, cross-checked as before). A zone is a hazard only where it can touch
+ * the cart and is strong enough to matter:
+ *   - in the DRIVING CORRIDOR: somewhere in its x-range its rect overlaps
+ *     the band from the driving surface up to ZONE_CORRIDOR_HEIGHT above it
+ *     (tested exactly per surface piece, which is linear);
+ *   lowGravity — a 'gravity' zone with gravityScale <= ZONE_MAX_GRAVITY_SCALE;
+ *   shooter    — a 'force' zone with |force| >= ZONE_MIN_FORCE (m/s²);
+ *   beads      — a 'beads' zone at least ZONE_MIN_BEADS_WIDTH wide and
+ *                ZONE_MIN_BEADS_DEPTH deep (the pile the cart ploughs).
+ * Its extent is the rect's x-range (clipped to the census window). Zone
+ * hazards count like terrain hazards (kinds, per 100 m) and break dull
+ * stretches: driving through a zone is never "nothing happening". A weak or
+ * out-of-reach zone counts for nothing. Levels without zones (every level
+ * before S9, all endless terrain) census exactly as before.
+ *
  * SHORTCUT (S6T audit-1 #4, PLAN "risk/reward shortcut"): an OPTIONAL faster
  * route. Detected at a launchLip/kicker: a point projectile leaving the lip
  * along its approach at SHORTCUT_FAST_SPEED lands at least SHORTCUT_MIN_SKIP
@@ -86,10 +105,10 @@
  */
 
 import type { Vec2 } from '../../src/model/geometry';
-import type { LevelDef } from '../../src/model/level';
+import type { LevelDef, ZoneDef } from '../../src/model/level';
 import { sharpestCrest } from '../../src/terrain/rounding';
 
-export const HAZARD_KINDS = ['crest', 'drop', 'launchLip', 'washboard', 'kicker', 'gap', 'steps'] as const;
+export const HAZARD_KINDS = ['crest', 'drop', 'launchLip', 'washboard', 'kicker', 'gap', 'steps', 'lowGravity', 'shooter', 'beads'] as const;
 export type HazardKind = (typeof HAZARD_KINDS)[number];
 
 /** Slack for float round-off in threshold comparisons (always in the hazard's favour for minimums). */
@@ -122,6 +141,12 @@ export const SHORTCUT_FAST_SPEED = 13;
 export const SHORTCUT_SLOW_SPEED = 6;
 export const SHORTCUT_MIN_SKIP = 8;
 export const SHORTCUT_MIN_DEPTH = 1;
+/** Zone hazards (S9, see the header). */
+export const ZONE_CORRIDOR_HEIGHT = 3;
+export const ZONE_MAX_GRAVITY_SCALE = 0.6;
+export const ZONE_MIN_FORCE = 3;
+export const ZONE_MIN_BEADS_WIDTH = 2;
+export const ZONE_MIN_BEADS_DEPTH = 0.3;
 /** World gravity (physics/engine.ts default), m/s². */
 const GRAVITY = 10;
 
@@ -547,6 +572,39 @@ function detect(S: Surface): Hazard[] {
   return out.sort((a, b) => a.x0 - b.x0);
 }
 
+/** Does the zone's rect reach the driving corridor (surface .. ZONE_CORRIDOR_HEIGHT above it) anywhere in its x-range? Exact per piece. */
+function inCorridor(S: Surface, z: ZoneDef): boolean {
+  const { x, y, width, height } = z.rect;
+  // y is down: the cart's band [g - CORRIDOR, g] overlaps [y, y + height] iff y <= g <= y + height + CORRIDOR
+  const bottom = y + height + ZONE_CORRIDOR_HEIGHT;
+  for (const p of S.pieces) {
+    const a = Math.max(p.xa, x);
+    const b = Math.min(p.xb, x + width);
+    if (b < a) continue;
+    const ya = lerp(p, a);
+    const yb = lerp(p, b);
+    // the piece is linear: its ground heights over [a, b] are exactly [min, max]
+    if (Math.max(ya, yb) >= y && Math.min(ya, yb) <= bottom) return true;
+  }
+  return false;
+}
+
+/** Zone hazards from the level's zones (S9, see the header). */
+function detectZones(S: Surface, zones: readonly ZoneDef[]): Hazard[] {
+  const out: Hazard[] = [];
+  for (const z of zones) {
+    const x0 = Math.max(S.x0, z.rect.x);
+    const x1 = Math.min(S.x1, z.rect.x + z.rect.width);
+    if (x1 <= x0 || !inCorridor(S, z)) continue;
+    let kind: HazardKind | null = null;
+    if (z.kind === 'gravity' && (z.gravityScale ?? 1) <= ZONE_MAX_GRAVITY_SCALE + EPS) kind = 'lowGravity';
+    else if (z.kind === 'force' && Math.hypot(z.force?.x ?? 0, z.force?.y ?? 0) >= ZONE_MIN_FORCE - EPS) kind = 'shooter';
+    else if (z.kind === 'beads' && z.rect.width >= ZONE_MIN_BEADS_WIDTH - EPS && z.rect.height >= ZONE_MIN_BEADS_DEPTH - EPS) kind = 'beads';
+    if (kind) out.push({ kind, x0, x1 });
+  }
+  return out;
+}
+
 /** First x past the lip where a point launched from (lipX, lipY) at `v` along slope `rise` (per m, up) meets the ground. */
 function landing(S: Surface, lipX: number, lipY: number, rise: number, v: number): number {
   const n = Math.hypot(1, rise);
@@ -605,7 +663,7 @@ export function census(
 ): Census {
   // detect with context around the range; count hazards whose centre is inside it
   const S = new Surface(level, range.x0 - 12, range.x1 + 12);
-  const all = detect(S);
+  const all = [...detect(S), ...detectZones(S, level.zones)].sort((a, b) => a.x0 - b.x0);
   const centre = (h: Hazard) => h.at ?? (h.x0 + h.x1) / 2;
   const counted = all.filter((h) => centre(h) >= range.x0 && centre(h) < range.x1);
   const hazards: Partial<Record<HazardKind, number>> = {};

@@ -15,7 +15,12 @@
 import type { ShapeSpec } from './attach';
 import type { Vec2 } from './geometry';
 
-export type BodyRole = 'cart' | 'wheel' | 'pineapple' | 'terrain' | 'prop' | 'debug';
+/**
+ * S9 (additive): 'zone' = a level zone's sensor body (gravity pocket / force
+ * field; its partIds carry the zone tag, see model/zones.ts); 'bead' = a
+ * bead-ocean bead (decorative obstacle, never cargo).
+ */
+export type BodyRole = 'cart' | 'wheel' | 'pineapple' | 'terrain' | 'prop' | 'debug' | 'zone' | 'bead';
 
 export interface RenderBodyInfo {
   /** Physics-wrapper body handle (stable for the body's lifetime). */

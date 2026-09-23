@@ -50,6 +50,30 @@ work. S6 works through this list; each item is a plan-owner ruling.
 - **Retry mid-run** (backlog #5): AppState gains 'run' + startRun → a fresh
   run (R key, and the Retry button of the stuck hint).
 
+## S9 exotic physics (implementer, 2026-09-23 — for plan-owner review)
+
+- **Second engine.ts opening**: gravity scale, applyForceToCenter, sensors
+  (header lists them; re-frozen). Worlds without field zones are created
+  exactly as before (no sensor visitors), so pre-S9 physics is bit-identical.
+- **Contract additions** (additive): `ZoneKind` gains `'beads'`; `BodyRole`
+  gains `'zone'` and `'bead'`; `ThemeId` gains `'tiki'`; census
+  `HAZARD_KINDS` gains `lowGravity`, `shooter`, `beads`;
+  `RunSessionOptions.beadCount` / `RunScreenDeps.beadCount` (test override;
+  no URL parameter, the run screen reads no query string).
+- **Unlock order**: beach → kitchen → workbench → tikibar; the Original
+  bonus now unlocks when all FOUR campaign courses are cleared (catalog's
+  generic rule; flow/acceptance tests updated to say so).
+- **Music**: tikibar uses the beach loop (marimba/shaker/lazy reggae bass fit
+  a slow, floaty course; endless's steel drum escalates).
+- **Beads are furniture**: not scored, not streaming anchors (the bead
+  zone's fixed ends are, via `RunSession.furnitureXs`), swept below killY.
+- Builder untouched; renderer reads only the manifest (zone tag in partIds).
+- **Fix cycle 1**:
+  - The bead count is pinned per browser in localStorage (`pineapple-run.beadCount.v1`) on the first bead-level load, so reloads never re-guess it. There is no run/replay save format to carry it; saved carts are builder designs, left untouched.
+  - Run worlds come from `src/run/runWorld.ts`, which the run harness now uses, so it loads zone levels.
+  - Tiki Bar music is an explicit `COURSE_MUSIC` entry.
+- **Fix cycle 2**: only a level with a bead zone resolves (and so pins) the bead count (`runSessionOptions`); every other course leaves bead storage untouched.
+
 ## Conventions to reconcile
 
 3. **Y-origin**: S2 builder assumes design y = 0 is the ground line;

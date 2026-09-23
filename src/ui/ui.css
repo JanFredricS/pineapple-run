@@ -39,6 +39,7 @@
   --pr-theme-beach: linear-gradient(160deg, #6fd3e8 0%, #bff0f2 55%, #f4dc9c 56%, #ecc978 100%);
   --pr-theme-kitchen: linear-gradient(160deg, #f5efe6 0%, #e8ddcc 60%, #b98b5e 61%, #9f7147 100%);
   --pr-theme-workbench: linear-gradient(160deg, #3d6e9e 0%, #5b88b5 60%, #c49a63 61%, #a67c47 100%);
+  --pr-theme-tiki: radial-gradient(circle at 30% 30%, #fff1d6 0 9%, transparent 10%), linear-gradient(170deg, #2b1b4e 0%, #6a3f8f 45%, #f2856b 62%, #b98449 63%, #7c5028 100%);
   --pr-theme-endless: linear-gradient(160deg, #6a4fb3 0%, #d45a8a 55%, #ffb347 100%);
 }
 
@@ -261,6 +262,9 @@
 .pr-card__art[data-theme='workbench'],
 .pr-card__art[data-theme='test'] {
   background: var(--pr-theme-workbench);
+}
+.pr-card__art[data-theme='tiki'] {
+  background: var(--pr-theme-tiki);
 }
 .pr-card__art[data-theme='endless'] {
   background: var(--pr-theme-endless);

@@ -24,11 +24,28 @@ import {
   type PropDef,
   type TerrainSpan,
   type ThemeId,
+  type ZoneDef,
 } from '../../src/model/level';
 import { funnelFor } from '../../src/game/startArea';
 import { roundCrests } from '../../src/terrain/rounding';
 
-export type FeatureKind = 'plateau' | 'valley' | 'crest' | 'drop' | 'ramp' | 'launchLip' | 'washboard' | 'kicker' | 'gap' | 'steps' | 'shortcut' | 'finish';
+export type FeatureKind =
+  | 'plateau'
+  | 'valley'
+  | 'crest'
+  | 'drop'
+  | 'ramp'
+  | 'launchLip'
+  | 'washboard'
+  | 'kicker'
+  | 'gap'
+  | 'steps'
+  | 'shortcut'
+  | 'finish'
+  // S9 zone features (annotations of the zones this Track added; the census reads the zones themselves)
+  | 'lowGravity'
+  | 'shooter'
+  | 'beads';
 
 export interface Feature {
   kind: FeatureKind;
@@ -75,6 +92,7 @@ export class Track {
   private spans: TerrainSpan[] = [];
   private pts: Vec2[] = [];
   private props: PropDef[] = [];
+  private zones: ZoneDef[] = [];
   readonly features: Feature[] = [];
   readonly pace: PaceNote[] = [];
   x: number;
@@ -233,6 +251,52 @@ export class Track {
     });
   }
 
+  /**
+   * S9: a FIELD ZONE over the terrain `build` lays down: the rect runs from
+   * the current x to where `build` ends, from `above` m above the highest
+   * ground in it to `below` m under the lowest (clipped nowhere: zones are
+   * plain rects). kind 'gravity' scales gravity by `gravityScale`
+   * (a low-gravity pocket); 'force' adds the acceleration `force` (m/s², a
+   * "gravity shooter").
+   */
+  field(
+    z: { id: string; above: number; below?: number } & ({ kind: 'gravity'; gravityScale: number } | { kind: 'force'; force: Vec2 }),
+    build: (t: this) => void,
+  ): this {
+    const x0 = this.x;
+    const p0 = this.pts.length - 1; // include the start point
+    const s0 = this.spans.length;
+    build(this);
+    const x1 = this.x;
+    // every point emitted by `build` (a gap() inside moves the open span into this.spans)
+    const emitted = this.spans.length === s0 ? this.pts.slice(p0) : [...this.spans[s0]!.points.slice(p0), ...this.spans.slice(s0 + 1).flatMap((sp) => sp.points), ...this.pts];
+    const ys = emitted.map((p) => p.y);
+    const top = Math.min(...ys) - z.above;
+    const bottom = Math.max(...ys) + (z.below ?? 1);
+    const rect = { x: r3(x0), y: r3(top), width: r3(x1 - x0), height: r3(bottom - top) };
+    this.zones.push(z.kind === 'gravity' ? { id: z.id, kind: 'gravity', rect, gravityScale: z.gravityScale } : { id: z.id, kind: 'force', rect, force: { ...z.force } });
+    this.features.push({ kind: z.kind === 'gravity' ? 'lowGravity' : 'shooter', x0, x1 });
+    return this;
+  }
+
+  /**
+   * S9: a bead-ocean basin: down `depth` over `entryRun`, a flat floor of
+   * `floor` m, up `depth - exitRise` … back to the approach height over
+   * `exitRun`; a beads zone fills the basin from the floor up `fill` m.
+   */
+  beadPool(o: { id: string; entryRun: number; depth: number; floor: number; exitRun: number; fill: number }): this {
+    const x0 = this.x;
+    const y0 = this.y;
+    this.line(o.entryRun, o.depth);
+    const floorY = this.y;
+    this.flat(o.floor);
+    this.line(o.exitRun, y0 - this.y);
+    const rect = { x: r3(x0), y: r3(floorY - o.fill), width: r3(this.x - x0), height: r3(o.fill) };
+    this.zones.push({ id: o.id, kind: 'beads', rect });
+    this.features.push({ kind: 'beads', x0, x1: this.x });
+    return this;
+  }
+
   /** Staircase: n steps of `rise` (negative = up) each `tread` long, with a short `riser` run. */
   steps(n: number, tread: number, rise: number, riser = 0.3): this {
     return this.feature('steps', () => {
@@ -331,7 +395,7 @@ export class Track {
       funnel: { x: r3(funnel.x), y: r3(funnel.y) },
       goal: this.goal,
       props: this.props,
-      zones: [],
+      zones: this.zones,
       killY,
     };
     const pace = [...this.pace].sort((a, b) => a.x - b.x);

@@ -1,5 +1,5 @@
 /**
- * The three premade campaign levels (S6). levels/{beach,kitchen,workbench}.json
+ * The premade campaign levels (S6; tikibar S9). levels/{beach,kitchen,workbench,tikibar}.json
  * are generated from the Track DSL in tools/levels/premade.ts; regenerate with
  *   UPDATE_FIXTURES=1 npx vitest run test/levels/premade.test.ts
  *
@@ -19,7 +19,7 @@ import { LevelChunkSource } from '../../src/terrain/chunks';
 import { groundAt, PREMADE } from '../../tools/levels/premade';
 
 const root = join(__dirname, '..', '..');
-const ids = ['beach', 'kitchen', 'workbench'] as const;
+const ids = ['beach', 'kitchen', 'workbench', 'tikibar'] as const;
 const authored = Object.fromEntries(ids.map((id) => [id, PREMADE[id]()])) as Record<(typeof ids)[number], ReturnType<(typeof PREMADE)['beach']>>;
 
 if (process.env.UPDATE_FIXTURES) {
@@ -58,7 +58,7 @@ describe('premade level fixtures', () => {
 });
 
 describe('shipped level conventions', () => {
-  for (const id of ['beach', 'kitchen', 'workbench', 'original']) {
+  for (const id of ['beach', 'kitchen', 'workbench', 'tikibar', 'original']) {
     describe(id, () => {
       const level = levelById(id)!;
 
@@ -136,7 +136,15 @@ describe('premade level design', () => {
       expect(longest, id).toBeLessThanOrEqual(12);
       sigs.add(authored[id].features.map((f) => f.kind).join(','));
     }
-    expect(sigs.size).toBe(3);
+    expect(sigs.size).toBe(ids.length);
+  });
+
+  it('tikibar (S9) uses both exotic mechanics: a low-gravity pocket, a shooter and a bead ocean', () => {
+    const zones = authored.tikibar.level.zones;
+    expect(zones.filter((z) => z.kind === 'gravity' && (z.gravityScale ?? 1) < 1)).toHaveLength(1);
+    expect(zones.filter((z) => z.kind === 'force' && (z.force?.y ?? 0) < 0)).toHaveLength(1);
+    expect(zones.filter((z) => z.kind === 'beads')).toHaveLength(1);
+    for (const id of ['beach', 'kitchen', 'workbench'] as const) expect(authored[id].level.zones, id).toEqual([]);
   });
 
   it('difficulty rises: beach has no gaps, kitchen several, workbench the widest', () => {

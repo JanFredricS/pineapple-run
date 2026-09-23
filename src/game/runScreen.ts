@@ -41,7 +41,8 @@ import { mountScreenError } from './errorScreen';
 import { testedDesign } from './cartState';
 import { courseFor } from './courses';
 import { acquireRunResources } from './runResources';
-import { RunSession } from './session';
+import { deviceBeadStorage, detectDeviceInfo, resolveBeadCount, type BeadCountStorage, type DeviceInfo } from './deviceTier';
+import { RunSession, type RunSessionOptions } from './session';
 import './game.css';
 
 type Dispatch = (action: AppAction) => Promise<void> | void;
@@ -58,6 +59,31 @@ export interface RunScreenDeps {
     app?: () => Promise<Application>;
     assets?: (theme: ThemeId) => Promise<AssetLibrary>;
   };
+  /** Bead-ocean count override (S9; default: this device's pinned count, see deviceTier.ts). Never pinned. */
+  beadCount?: number;
+  /** Device report for the bead tier (tests; default: navigator). */
+  deviceInfo?: DeviceInfo;
+  /** Where the device's bead count is pinned (tests; default: localStorage; null = no pinning). */
+  beadStorage?: BeadCountStorage | null;
+}
+
+/** The bead count a run built with `deps` uses (S9): override, else the device's pinned count. */
+export function runBeadCount(deps: Pick<RunScreenDeps, 'beadCount' | 'deviceInfo' | 'beadStorage'>): number {
+  return resolveBeadCount({
+    ...(deps.beadCount !== undefined ? { override: deps.beadCount } : {}),
+    info: deps.deviceInfo ?? detectDeviceInfo(),
+    storage: deps.beadStorage !== undefined ? deps.beadStorage : deviceBeadStorage(),
+  });
+}
+
+/**
+ * Session options for running `level` (S9 audit-2): the bead count is
+ * resolved — and so pinned — ONLY for a level that has a bead zone. Any other
+ * course touches no bead state, so the device's count is pinned by its first
+ * bead-level load, never by an earlier Beach / Kitchen / Endless run.
+ */
+export function runSessionOptions(level: Pick<LevelDef, 'zones'>, deps: Pick<RunScreenDeps, 'beadCount' | 'deviceInfo' | 'beadStorage'>): RunSessionOptions {
+  return level.zones.some((z) => z.kind === 'beads') ? { beadCount: runBeadCount(deps) } : {};
 }
 
 /** Course width shown across the screen (m) on narrow screens; zoom is clamped. */
@@ -204,7 +230,8 @@ async function mountRunOnce(
     const { app, lib, session: s } = await acquireRunResources({
       app: deps.loaders?.app ?? pixiApp,
       lib: () => (deps.loaders?.assets ?? assetsFor)(level.theme),
-      session: () => RunSession.create(design, course),
+      // S9: a bead level's count is fixed here, at level load: this device's pinned count (deviceTier.ts)
+      session: () => RunSession.create(design, course, runSessionOptions(course.level, deps)),
     });
     let started = false;
     cleanup.push(() => {

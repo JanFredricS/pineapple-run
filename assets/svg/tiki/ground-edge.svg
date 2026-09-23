@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="64" viewBox="0 0 256 64">
+  <!-- Tiki edge strip: a polished bar-top rail of split bamboo. v: 0 = 0.05 m above the surface,
+       surface at y=5, 64 = 0.5 m below. Glossy rail, lashings every 64 px, a soft shadow below. -->
+  <defs>
+    <linearGradient id="rail" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFE7A8"/>
+      <stop offset="0.3" stop-color="#E8C77A"/>
+      <stop offset="1" stop-color="#B98449"/>
+    </linearGradient>
+    <linearGradient id="shadow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2A160A" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#2A160A" stop-opacity="0"/>
+    </linearGradient>
+    <g id="lash">
+      <path d="M0 6 L6 24 M4 6 L10 24 M8 6 L14 24" stroke="#6A421F" stroke-width="1.6"/>
+    </g>
+  </defs>
+  <rect x="0" y="26" width="256" height="38" fill="url(#shadow)"/>
+  <rect x="0" y="4" width="256" height="22" rx="3" fill="url(#rail)"/>
+  <rect x="0" y="7" width="256" height="2" fill="#FFF6DA" fill-opacity="0.8"/>
+  <use href="#lash" transform="translate(26 0)"/>
+  <use href="#lash" transform="translate(90 0)"/>
+  <use href="#lash" transform="translate(154 0)"/>
+  <use href="#lash" transform="translate(218 0)"/>
+</svg>
