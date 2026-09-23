@@ -602,16 +602,16 @@ The loupe is purely visual:
   | 0.3 m higher | 5.5 m and up | never |
   | 0.5 m higher | 5–6.5 m | never (8, 11, 14 m/s and floored); often wedged against the far wall rather than lost |
 
-  The sink sits at the 0.5 m-higher, 5.5 m point: margin on both width and height.
-- **On Kitchen itself** (test/integration/kitchen.test.ts): hold right and steady 5, 7, 9, 11 and 13 m/s. Every run is stopped at the sink (hole 83.3–88.8 m) and never gets past it:
-  - At 5, 7 and 9 m/s the cart falls in. The run ends with `allLost` (S6T #16), so the player gets Retry.
-  - Held right and at 11 and 13 m/s, the cart jams against the far wall. The stuck hint shows about 5 s later and Give Up works.
+  The sink sits at the 0.5 m-higher, 5.5 m point: margin on both width and height. These early measurements are now superseded by the committed synthetic sweep below ("K1 round-1 audit").
+- **On Kitchen itself** (test/integration/kitchen.test.ts): hold right and steady 5–15 m/s in 1 m/s steps. Every run is stopped at the sink (hole 83.3–88.8 m) and never gets past it. Each speed's mode is pinned:
+  - At 5, 6, 7 and 9 m/s the cart falls in. The run ends with `allLost` (S6T #16), so the player gets Retry.
+  - Held right and at 8 and 10–15 m/s, the cart jams against the far wall. The stuck hint shows about 5 s later and Give Up works.
   - The side walls keep the jammed cart in the open. The gap-wall crawl test now also covers the sink at 2 and 5 m/s: no wheel is ever embedded.
   - The catalog blurb says it: "Rough tiles and a sink too wide for the example cart: build long."
 
 ### The bumps: the original vs Kitchen before and after
 
-Measured from the end of the start plateau to 1 m before the goal line, on the driving surface (gap walls excluded):
+Measured from the end of the start plateau to 1 m before the goal line (for Kitchen, before the pit lip + 0.3 m, where its line was until the audit moved it into the pit), on the driving surface (gap walls excluded). Committed as test/levels/roughness.test.ts:
 - **travel/m:** Σ|Δy| per metre;
 - **1 m slope:** |y(x+1) − y(x)|, mean and p90;
 - **relief:** RMS of the height minus its ±10 m moving average;
@@ -655,7 +655,7 @@ Not matched:
 | Before K1 | 12: drop 2, gap 3, washboard 2, launchLip 3, steps 1, crest 1 | 6 | 6.45 | 1.94 s | 0.49 | lip 161 m, landing 175 m |
 | K1 | **17: crest 2, drop 1, launchLip 7, gap 3, washboard 2, steps 1, kicker 1** | **7** | **8.26** | **1.08 s** | 0.60 (the rounding cap) | lip 178 m, landing 193 m |
 
-The census finds the sink geometrically: exactly one detected gap ≥ 5.5 m, at 82.3–89.8 m, covering the authored hole. The slab fields show up as 10 crests, launch lips and kickers, up from 4 (pinned: at least 2 in each of the slab fields at 16–40 m and 128–164 m). The audit passes `PREMADE_RULES`, and the worst dull stretch is shorter than before.
+The census window ends at the pit lip + 0.3 m (the goal line on every other course). The census finds the sink geometrically: exactly one detected gap ≥ 5.5 m, at 82.3–89.8 m (pinned ±0.05 m), covering the authored hole. The dull stretch is pinned ≤ 1.2 s and the sharpest crest ≤ 0.6. The slab fields show up as 10 crests, launch lips and kickers, up from 4 (pinned: at least 2 in each of the slab fields at 16–40 m and 128–164 m). The audit passes `PREMADE_RULES`, and the worst dull stretch is shorter than before.
 
 ### The Kitchen Bridger (test/integration/kitchenBridger.ts)
 
@@ -680,7 +680,7 @@ The design, in px (30 px = 1 m):
 | F | 305, r 35 |
 | F − M2 | 5.83 m |
 | M1 − R | 7.17 m |
-| Loaded C | ≈ 97 px (measured, between M1 and M2) |
+| Loaded C | 92.8 px (frame and wheel centroids by mass plus the settled load; pinned between M1 and M2 in kitchen.test.ts) |
 
 - **Frame.** The wheels pin to one rigid frame: bed, rails, hangers, and chords out to end legs.
 - **Why an arch.** An earlier straight low-beam version (bridger4) crossed the sink but high-centred on the pool lip (x ≈ 161) at 5, 7, 9 and 9.5 m/s. The arch's chords run at 3.8 m, which gives the clearance.
@@ -689,7 +689,9 @@ The design, in px (30 px = 1 m):
 - **Run-up.** The sink's run-up is a 12 m flat, the maximum the premade "no flat > 12 m" rule allows. With 6–9 m of flat after the grout, the long cart reached the sink still pitching: its rear wheel was 3 m up, and the nose dropped into the far wall.
 - **Landing.** The far counter is also a 12 m flat (it was 5 m, straight into the stairs). With 5 m, a steady 5 m/s left the bridger rocking with its rear wheel hung on the sink's far wall and its front on the first stair. It rocked ±0.3 m, enough to reset the StuckDetector (5 s / 0.3 m), so no stuck hint showed: a soft-lock. With 12 m the whole cart is on the counter before the stairs. The band test covers 4 and 5 m/s.
 
-**The pit.** A 17.5 m cart only gets its bed into the goal sensor (the bottom 2.2 m) once all of it is in the pit. So Kitchen's pit has a longer landing strip: `finish({ frontGap: 20 })` instead of the shared 5.75 m. The blender, sensor rule, depth, drop and back gap are the shared ones (`blenderPitFloor`, as the original course does). At a 16 m strip the bridger stalled with its rear wheel on the lip at 2 of 13 speeds.
+**The pit.** A 17.5 m cart only gets its bed into the goal sensor (the bottom 2.2 m) once all of it is in the pit. So Kitchen's pit has a longer landing strip: 20 m instead of the shared 5.75 m. The blender, sensor rule, depth, drop and back gap are the shared ones (`blenderPitFloor`, as the original course does). At a 16 m strip the bridger stalled with its rear wheel on the lip at 2 of 13 speeds.
+
+The goal line and the sensor's left edge sit 10.5 m before the blender (`KITCHEN_FINISH = { frontGap: 20, lineGap: 10.5 }`), not at the lip. The first ~10 m of the pit floor is a sunken landing counter. This was added in the round-1 audit (below): with the line at the lip, a normal-length cart scored the moment it dropped in, 15–21 m from the blender, which was then entirely off screen.
 
 ### Acceptance results (deterministic)
 
@@ -698,10 +700,10 @@ The Kitchen pace notes are the bridger line: 6.5 m/s, then 10 m/s from the kicke
 | Line | Cart | Result |
 |---|---|---|
 | **Kitchen pace notes (the bridger line)** | bridger | **15/15, 39.8 s, rating 75** (asserted ≥ 14 and ≥ 65; the target was 12 and 60) |
-| steady 4 / 5 / 6 / 7 / 8 / 9 m/s | bridger | 15/15 57 · 15/15 58 · 15/15 70 · 14/15 70 · 13/15 67 · 13/15 68 (each asserted: goal, ≥ 12, and rating ≥ 60 from 6 m/s) |
+| steady 4 / 5 / 6 / 7 / 8 / 9 m/s | bridger | 15/15 57 · 15/15 58 · 15/15 70 · 14/15 70 · 13/15 66 · 13/15 68 (each asserted: goal, ≥ 13, and rating ≥ 60 from 6 m/s) |
 | steady 5.5 / 6.5 / 7.5 / 8.5 m/s | bridger | 13/15 57 · 15/15 72 · 14/15 71 · 15/15 78 |
 | steady 9.5 / 10 / 11 / 12 / 13 m/s | bridger | stalls at the sink (stuck hint at 88.8 m) · 12/15 63 · 11/15 60 · 9/15 49 · 12/15 66 (above 9 m/s the crossing turns chaotic) |
-| holding right | bridger | 11/15, 30.9 s, rating 62 (pacing beats flooring by 13) |
+| holding right | bridger | 9/15, 30.9 s, rating 50 (pacing beats flooring by 25; pinned ≥ 8/15, rating ≥ 45). It was 11/15 (62) before the goal line moved: 2 pineapples spill onto the landing counter, which is no longer past the line |
 | careful pool line (5 m/s from 20 m before the pool) | bridger | 15/15, rating 63, 5.60 s through the pool vs the pace line's 3.90 s; the bridger rolls through the drainer on both lines and never flies it |
 | hold right, steady 5 / 7 / 9 / 11 / 13 m/s | example | never past the sink (above) |
 
@@ -715,7 +717,51 @@ The Kitchen pace notes are the bridger line: 6.5 m/s, then 10 m/s from the kicke
   - 5, 7 and 9 m/s: the cart falls in and is lost at 87.4–88.5 m, `allLost`, and the run ends;
   - 11 and 13 m/s: jammed at 89.7–89.9 m, stuck hint at t = 18.3 s / 17.4 s.
 
-**Finish framing** (test/game/framing.test.ts, 844×390 and 1280×720): the bridger's final 4.75 m into the pit (29 steps) keeps the whole blender and the cart's front half on screen, with minimum zoom 0.941. Its rear overhangs the left edge by up to 1.64 m (bound 2 m; R30).
+**Finish framing** (test/game/framing.test.ts, 844×390 and 1280×720):
+- **A normal cart, full strength.** The example cart, on a course that ends in exactly Kitchen's pit (pinned equal), at 3, 6.5 and 12 m/s and holding right: from the goal line to the end of the run, the whole blender and the whole cart are on screen. The negative control fails without finish framing, as for every other course. Measured 0 violations at 2–14 m/s and floored. With the line at 12 m, the blender's top or right edge was off screen until the front was ~10.8 m from it, which is why `lineGap` is 10.5.
+- **The bridger (R30).** Over its final 4.75 m (29 of its 61 steps past the line): the whole blender and the cart's front half. Through its whole pit window: its front stays on screen, and its rear overhangs the left edge by up to 1.64 m (bound 2 m). Earlier in the window, the camera (cart centre at 30%) leaves the blender's right edge up to ~6 m off screen, and the 5.2 m-tall frame under the top HUD pad while finish framing eases in.
+
+### K1 round-1 audit (fixes)
+
+**1. The synthetic sink sweep** (test/integration/kitchenSinkFlat.test.ts, kitchenSinkPitch.test.ts; courses built by sinkCourse.ts).
+- **Setup.** The example cart at every steady speed from 5 to 15 m/s in 1 m/s steps and holding right (~16 m/s). The flat cases check the arrival speed at the hole. The far counter ends at a wall, so a pineapple thrown over the hole cannot roll into the finish and end the run.
+- **Assertion.** "Never crosses" means the cart's rear never passes the far edge, whatever happens at the far wall, bounces included. Every run also ends in `allLost` or the stuck hint, so there is no soft-lock.
+
+| Approach | Result, every speed |
+|---|---|
+| Kitchen's sink (5.5 m, +0.5 m) after a 12, 30 or 60 m flat run-up | never crosses |
+| Margin: a 5.0 m hole +0.5 m; a 5.5 m hole only +0.3 m (60 m run-up) | never crosses |
+| Kitchen's washboard (10 × 0.45 m) 3, 6, 9 or 12 m before the hole | never crosses |
+| A 0.3 or 0.6 m hump or kicker 12 m before the hole | never crosses |
+
+- **Not asserted: bumps that end close to the hole are launch lips.** Measured, a 0.3 m hump within 4 m of the edge crosses at 12 m/s and up. A 0.6 m hump within 8 m, or a 0.6 m kicker within 2 m, crosses at 10–14 m/s and up.
+- **Why that doesn't reach Kitchen:** its sink has none. kitchen.test.ts pins the run-up level for 12 m, with the last feature (the washboard) at least 12 m back. A future edit that adds a lip there fails that test.
+- **Measured on the shipped course:** 5, 6, 7 and 9 m/s fall in; 8, 10–15 m/s and holding right jam.
+
+**2. Modes pinned.** Each speed on the shipped course asserts its mode:
+- falls in: the cart is lost and `allLost` fires;
+- jams: the cart is not lost, the stuck hint shows and Give Up works.
+
+**3. Speed band at ≥ 13/15.** Every steady 4–9 m/s run delivers at least 13 (the lowest are 8 and 9 m/s, 13 each). No tuning was needed.
+
+**4. Finish framing.** Kitchen's goal line moved into the pit (above, "The pit"). The normal-cart check is full strength again; the bridger's allowances are its own, named test (R30).
+- **Pit length.** The 20 m strip is the minimum for the bridger.
+- **Line distance.** 10.5 m is the most the camera allows for a normal cart (blender fully shown from ~10.8 m).
+- **Bridger's load.** Its load rests 5.5–9.2 m before the blender on the pace line, past the line. Slow runs end as the last pineapple crosses it.
+- **Unchanged:** the pace line and the band.
+- **Cost:** holding right drops from 11/15 to 9/15 (above).
+
+**5. Roughness** is committed as test/levels/roughness.test.ts:
+- the original's values computed and pinned;
+- Kitchen's floors: travel ≥ 0.25/m, slope mean ≥ 0.2, p90 ≥ 0.43, relief ≥ 0.55, ≥ 14 bumps per 100 m;
+- Kitchen ≥ 65% of the original's travel per metre and ≥ 55% of its mean slope;
+- Kitchen the roughest premade course.
+
+**6. Pins.**
+- **Census:** the detected sink gap bounds (82.29–89.79 m), dull stretch ≤ 1.2 s, sharpest crest ≤ 0.6.
+- **Bridger centre of mass:** computed as the sim has it (each body's mass from the physics world, at its shape centroid, plus the settled load). It is 92.8 px, between M1 (65) and M2 (130).
+
+**7. Bridger holding right** reaches the goal with ≥ 8/15, rating ≥ 45 (measured 9/15, 50). The audit asked for ≥ 10 against the earlier 11. #4 moved the goal line, and two of the floored run's spills now land short of it, so the honest pin is one below the new measurement.
 
 ### Progression
 
@@ -733,8 +779,10 @@ Kitchen asks for a harder build, but once built, its line is far more forgiving 
   - Kitchen's reference cart is the bridger for completion, pacing-vs-flooring and the unlock chain.
   - The pool-jump test keeps beach and workbench. For kitchen it asserts that the pace line rattles through the pool faster than the careful line, keeping every pineapple.
 - **premade.test.ts:** "workbench the widest" became "kitchen has the widest (the 5.5 m sink)".
-- **track.ts:** `finish({ frontGap })` (default unchanged, 5.75 m); `BLENDER_FRONT_GAP` is exported for the framing test.
-- **framing.test.ts:** the kitchen finish-pit case drives the bridger over its last 4.75 m, checks its front half, and bounds the rear clip at 2 m (R30).
+- **track.ts:** `finish({ frontGap, lineGap })` (defaults unchanged: 5.75 m, line at the lip); `BLENDER_FRONT_GAP` is exported for the framing test.
+- **framing.test.ts:** Kitchen's pit at full strength for the example cart (a synthetic course with the same pit, 4 speeds, plus the negative control), and a separate, honestly named bridger case (R30).
 - **gapWalls.test.ts:** added the sink crawls at 2 and 5 m/s.
-- **excitement.test.ts:** the K1 census pins.
-- **New test/integration/kitchen.test.ts:** the sink arithmetic, the bridger's fit and validation, the example-cart sweep, the bridger line and the speed band (4–9 m/s).
+- **excitement.test.ts:** the K1 census pins; the census window ends at the pit lip + 0.3 m, and the pit edges are kept sharp.
+- **New test/levels/roughness.test.ts:** the bumps table, measured and pinned.
+- **New test/integration/kitchenSinkFlat.test.ts, kitchenSinkPitch.test.ts, sinkCourse.ts:** the synthetic sink sweep.
+- **New test/integration/kitchen.test.ts:** the sink arithmetic, the bridger's fit, validation and loaded centre of mass, the example-cart sweep with each speed's mode pinned, the level 12 m run-up, the bridger line, the speed band (4–9 m/s, ≥ 13/15) and holding right.
