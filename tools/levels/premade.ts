@@ -114,8 +114,9 @@ function slabs(t: Track, runs: readonly (readonly [number, number])[]): Track {
  * gets its bed down to the goal sensor, and (K1 audit #4) the goal line and
  * sensor 10.5 m before the blender, so every cart scores where the finish
  * framing shows the whole blender (the camera shows all of it from ~10.8 m
- * for a normal cart). The first ~10 m of the pit floor is a sunken landing
- * counter. The Bridger's load rests 5.5-9.2 m before the blender, past the
+ * for a normal cart). The first ~9.5 m of the pit floor is a sunken landing
+ * counter. Delivered = pineapples past the line, so one ~10 m short of the
+ * blender counts (RESIDUALS R30). The Bridger's load rests 5.5-9.2 m before the blender, past the
  * line.
  */
 export const KITCHEN_FINISH = { frontGap: 20, lineGap: 10.5 } as const;

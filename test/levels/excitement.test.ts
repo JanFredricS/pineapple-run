@@ -15,7 +15,7 @@ import { plateauRange } from '../../src/game/startArea';
 import { blockDifficulty, generateLevel, type FeatureInstance } from '../../src/terrain/generator';
 import { auditLevel, census, ENDLESS_RULES, PREMADE_RULES, type Census, type CensusLabel } from '../../tools/levels/census';
 import { PREMADE } from '../../tools/levels/premade';
-import { PIT, Track, type AuthoredLevel } from '../../tools/levels/track';
+import { Track, type AuthoredLevel } from '../../tools/levels/track';
 import { targetSpeed } from '../integration/driver';
 
 const ids = ['beach', 'kitchen', 'workbench', 'tikibar'] as const;
@@ -23,14 +23,15 @@ const ids = ['beach', 'kitchen', 'workbench', 'tikibar'] as const;
 const washboards = (fs: readonly CensusLabel[]) => fs.filter((f) => f.kind === 'washboard');
 
 /**
- * The census window runs from the start plateau to the finish pit's lip
- * (PIT.lineAfterLip past it: the goal line on every course but Kitchen,
- * whose line sits in its long pit, K1 audit #4), and the pit edges are
- * finish geometry, kept sharp like the washboards.
+ * The census window runs from the start plateau to the goal line: the whole
+ * stretch the player drives before scoring, on every course, with no cap
+ * (K1 audit-2 #2: Kitchen's line sits 11 m into its long pit, and that
+ * landing counter is counted). The pit edges are finish geometry, kept
+ * sharp like the washboards.
  */
 function premadeCensus(a: AuthoredLevel, labels: readonly CensusLabel[] = a.features): Census {
   const fin = a.features.find((f) => f.kind === 'finish');
-  const x1 = fin ? Math.min(a.level.goal.lineX, fin.x0 + PIT.lineAfterLip) : a.level.goal.lineX;
+  const x1 = a.level.goal.lineX;
   return census(a.level, { x0: plateauRange(a.level.cartStart).maxX, x1 }, (x) => targetSpeed(a.pace, x), {
     labels,
     keepSharp: [...washboards(a.features), ...(fin ? [fin] : [])],
@@ -190,6 +191,13 @@ describe('excitement audit: premade courses', () => {
     });
   }
 
+  it('K1 audit-2 #2: every census window reaches the goal line (a longer landing counter cannot hide outside it)', () => {
+    for (const id of ids) {
+      const a = PREMADE[id]();
+      expect(censuses[id].length, id).toBeCloseTo(a.level.goal.lineX - plateauRange(a.level.cartStart).maxX, 6);
+    }
+  });
+
   it('beach stays the easiest: no gaps, the fewest hazards per 100 m, the softest washboard', () => {
     expect(censuses.beach.hazards.gap ?? 0).toBe(0);
     expect(censuses.beach.hazardsPer100m).toBeLessThan(censuses.kitchen.hazardsPer100m);
@@ -218,10 +226,13 @@ describe('excitement audit: premade courses', () => {
   // crest 1), 6.45 / 100 m, worst dull stretch 1.94 s, widest gap 3 m.
   it('K1 kitchen: the census finds the 5.5 m sink and the slab bumps in the geometry; counts pinned; no duller than before', () => {
     const k = censuses.kitchen;
-    expect(k.hazards).toEqual({ crest: 2, drop: 1, launchLip: 7, gap: 3, washboard: 2, steps: 1, kicker: 1 });
-    expect(k.hazardCount).toBe(17);
+    // the window runs to Kitchen's goal line, 11 m into its pit: the pit drop (219.4-222.9 m) is the second drop
+    expect(k.hazards).toEqual({ crest: 2, drop: 2, launchLip: 7, gap: 3, washboard: 2, steps: 1, kicker: 1 });
+    expect(k.hazardCount).toBe(18);
     expect(k.hazardKinds).toBe(7);
-    expect(k.hazardsPer100m).toBeCloseTo(8.26, 2);
+    expect(k.hazardsPer100m).toBeCloseTo(8.31, 2);
+    const pitDrop = k.detected.filter((h) => h.kind === 'drop' && h.x0 > 215);
+    expect(pitDrop).toHaveLength(1);
     // the sink: exactly one detected gap at least 5.5 m wide, where the authored sink is
     const sink = PREMADE.kitchen().features.filter((f) => f.kind === 'gap').reduce((a, b) => (b.x1 - b.x0 > a.x1 - a.x0 ? b : a));
     const wide = k.detected.filter((h) => h.kind === 'gap' && h.x1 - h.x0 >= 5.5);

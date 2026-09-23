@@ -118,7 +118,8 @@ describe('K1 audit #5: Kitchen is bumpy, in line with the original', () => {
     expect(k.slopeMean / o.slopeMean).toBeGreaterThanOrEqual(0.55);
   });
 
-  it('Kitchen is the roughest premade course by travel, slope and bump count', () => {
+  // Not relief: Kitchen's 0.58 is above beach (0.51) but below workbench (0.61) and tikibar (0.64).
+  it('Kitchen is the roughest premade course by travel/m, mean 1 m slope and bumps/100 m (not by relief)', () => {
     for (const id of ['beach', 'workbench', 'tikibar'] as const) {
       const r = premade(id);
       expect(k.travelPerM, id).toBeGreaterThan(r.travelPerM);

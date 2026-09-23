@@ -16,11 +16,12 @@ import { BUILD_AREA } from '../../src/builder/constants';
 import { maxRadiusInArea } from '../../src/builder/edits';
 import { courseFor } from '../../src/game/courses';
 import { RunSession } from '../../src/game/session';
+import { goalBlenderBox } from '../../src/game/framing';
 import type { CartDesign } from '../../src/model/cart';
 import { resolveAttachments } from '../../src/model/attach';
 import { efficiencyRating, TOTAL_PINEAPPLES } from '../../src/model/score';
 import { validateCartDesign } from '../../src/model/validate';
-import { PREMADE } from '../../tools/levels/premade';
+import { KITCHEN_FINISH, PREMADE } from '../../tools/levels/premade';
 import type { PaceNote } from '../../tools/levels/track';
 import { FLOOR_IT, paceDrive, runWithPace } from './driver';
 import { KITCHEN_BRIDGER_LINE, kitchenBridger } from './kitchenBridger';
@@ -77,7 +78,7 @@ describe('K1: the sink is the widest gap, wider than the example cart can bridge
     expect((m1!.center.x - r!.center.x) / PX).toBeGreaterThan(SINK_HOLE);
   });
 
-  it('K1 audit #6: the loaded centre of mass lies between the middle wheels (so the cart never rests on one side of the hole alone)', async () => {
+  it('K1 audit #6: the loaded centre of mass is 80-110 px, well between the middle wheels (so the cart never rests on one side of the hole alone)', async () => {
     const d = kitchenBridger();
     const spec = resolveAttachments(d);
     const s = await RunSession.create(d, courseFor('kitchen')!);
@@ -132,9 +133,14 @@ describe('K1: the sink is the widest gap, wider than the example cart can bridge
       }
       const comPx = (mx / m) * PX;
       const [, m1, m2] = wheelsOf(d);
-      // measured 92.8 px, between M1 (65) and M2 (130)
+      // Masses are the engine's (getMass); each body's centre is reconstructed as the area centroid
+      // of its resolved shapes (uniform density), not read from the engine. Measured 92.8 px.
+      // K1 audit-2 #4: pinned to a band around it (80-110 px), well inside M1 (65) - M2 (130),
+      // so a drift toward either wheel, the edge of stability over the hole, fails.
       expect(comPx).toBeGreaterThan(m1!.center.x);
       expect(comPx).toBeLessThan(m2!.center.x);
+      expect(comPx).toBeGreaterThanOrEqual(80);
+      expect(comPx).toBeLessThanOrEqual(110);
     } finally {
       s.destroy();
     }
@@ -253,5 +259,61 @@ describe('K1: the Kitchen Bridger clears Kitchen', () => {
     expect(r.last.delivered).toBeGreaterThanOrEqual(8);
     expect(efficiencyRating(r.last.simTime, r.last.delivered)).toBeGreaterThanOrEqual(45);
     expect(r.cartLost).toBe(false);
+  }, 120_000);
+});
+
+/**
+ * K1 audit-2 #1: Kitchen's scoring, pinned as intended. Delivered = pineapples past the goal line
+ * at the count (x only, every course; src/model/runEvents.ts). Kitchen's line sits
+ * KITCHEN_FINISH.lineGap (10.5 m) before the blender, not at the pit lip, so a pineapple in the
+ * pit between the line and the blender counts even ~10 m short of it (on the floor or in a
+ * cart's bed alike), and one in the pit before the line does not. A line nearer the blender was measured and rejected (TUNING.md "K1 round-2 audit"):
+ * the bridger's bed rests 5.5-9.2 m before the blender, so at 2-4 m it delivers 0-1/15.
+ */
+describe('K1: Kitchen scores at its goal line, 10.5 m before the blender', () => {
+  it('the line and the sensor edge are 10.5 m before the blender', () => {
+    const lvl = courseFor('kitchen')!.level;
+    const blender = goalBlenderBox(lvl);
+    expect(blender.minX - lvl.goal.lineX).toBeCloseTo(KITCHEN_FINISH.lineGap, 6);
+    expect(lvl.goal.sensor.x).toBeCloseTo(lvl.goal.lineX, 6);
+  });
+
+  it('holding right with the bridger: at the count, pineapples past the line count however far short of the blender; ones in the pit before the line do not', async () => {
+    const lvl = courseFor('kitchen')!.level;
+    const lineX = lvl.goal.lineX;
+    const blenderX = goalBlenderBox(lvl).minX;
+    const lip = kitchen.features.find((f) => f.kind === 'finish')!.x0;
+    const s = await RunSession.create(kitchenBridger(), courseFor('kitchen')!);
+    try {
+      s.start();
+      for (let i = 0; i < 60; i++) s.step();
+      s.release();
+      for (let i = 0; i < 180; i++) s.step();
+      for (let n = 0; s.controller.phase !== 'ended' && n < 150 * 60; n++) {
+        s.setDrive(paceDrive(s, FLOOR_IT));
+        s.step();
+      }
+      const last = s.events.at(-1)!;
+      expect(last.type).toBe('goalReached');
+      if (last.type !== 'goalReached') return;
+      const live = s.controller.pineappleStates().filter((p) => p.alive).map((p) => {
+        const t = s.world.getTransform(p.handle);
+        return { x: t.x, lost: p.lost };
+      });
+      const past = live.filter((p) => p.x > lineX);
+      // delivered is exactly the pineapples past the line (measured 9)
+      expect(last.delivered).toBe(past.length);
+      expect(last.delivered).toBeGreaterThanOrEqual(8);
+      // the counted ones are in the bed between the line and the blender, all >= 5 m short of it
+      // (measured 233.5-236.3 m against the blender's 241.9 m; the run ends 2 s after the first touch,
+      // with the cart still settling against the blender, so they are counted where they are, not at rest)
+      for (const p of past) expect(p.x).toBeLessThan(blenderX - 5);
+      // in the pit but before the line (the rear of the 17.5 m bed, measured 226.8 and 228.8 m): carried, not lost, not counted
+      const short = live.filter((p) => p.x > lip && p.x < lineX && !p.lost);
+      expect(short.length, 'pineapples in the pit before the line').toBeGreaterThanOrEqual(1);
+      expect(last.delivered + short.length).toBeLessThanOrEqual(live.length);
+    } finally {
+      s.destroy();
+    }
   }, 120_000);
 });

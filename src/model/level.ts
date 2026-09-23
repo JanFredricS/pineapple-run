@@ -102,7 +102,7 @@ export interface LevelDef {
   cartStart: Vec2;
   /** Where the funnel releases the 15 pineapples (metres). */
   funnel: Vec2;
-  /** Goal: the blender. `sensor` is the base sensor; `lineX` the counting line. */
+  /** Goal: the blender. `sensor` is the pit-floor sensor that starts the settle window; `lineX` the counting line (delivered = pineapples past it). */
   goal: { sensor: Rect; lineX: number };
   props: PropDef[];
   zones: ZoneDef[];
