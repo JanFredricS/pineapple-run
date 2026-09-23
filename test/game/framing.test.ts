@@ -487,7 +487,7 @@ describe('UX1 look-ahead follow camera', () => {
     }, 120_000);
   }
 
-  it('kitchen, the 17.5 m Kitchen Bridger (R30): over its final 4.75 m the WHOLE blender and the cart front half are on screen; through the whole pit its front stays on screen and its rear overhangs the left edge by at most 2 m', async () => {
+  it('kitchen, the 17.5 m Kitchen Bridger (R30): over its final 4.75 m the WHOLE blender and the cart front half are on screen; through the whole pit its front stays on screen and its rear overhangs the left edge by at most 1 m (M1; 2 m before)', async () => {
     const r = await finishPitRun(courseFor('kitchen')!, kitchenBridger(), PREMADE.kitchen().pace, true, true);
     // measured: 61 steps past the goal line, 29 of them in the final stretch
     expect(r.inPit).toBeGreaterThan(40);
@@ -495,9 +495,29 @@ describe('UX1 look-ahead follow camera', () => {
     expect(r.violations, 'blender / cart front half off screen in the final stretch').toEqual([]);
     expect(r.frontOff, 'the bridger front off screen').toBe(0);
     expect(r.minZoomSeen).toBeGreaterThan(0.75);
-    // measured 1.64 m: the camera's 30% look-ahead cannot show the rear of a > ~14.4 m cart (R30)
-    expect(r.rearClipM).toBeLessThanOrEqual(2);
+    // R30: the camera's 30% look-ahead cannot show the rear of a cart longer than its rear allowance.
+    // Measured 1.64 m with the width-only zoom (at 844x390); M1's height-aware zoom shows ~30 m on that
+    // phone, so the worst case is now 1280x720 (unchanged, 0.75 m) and the phone 0.19 m (0 at 844x320).
+    expect(r.rearClipM).toBeLessThanOrEqual(1);
   }, 120_000);
+
+  // M1: the original's widened finish (ORIGINAL_FINISH) takes the bridger into the pit, so its framing is
+  // checked like Kitchen's (R30 long mode). Measured rear clip (max over 844x390, 844x320, 1280x720):
+  // 10 m/s 0.64 m, holding right 0.92 m (both at 1280x720; 0.08 / 0.37 m at 844x390, 0 at 844x320).
+  for (const [name, line] of [
+    ['10 m/s', [{ x: 0, speed: 10 }]],
+    ['holding right', FLOOR_IT],
+  ] as [string, readonly PaceNote[]][]) {
+    it(`original, the 17.5 m Kitchen Bridger at ${name} (M1): the WHOLE blender and the cart front half on screen in the final stretch; front always on screen; rear clip <= 1 m`, async () => {
+      const r = await finishPitRun(courseFor('original')!, kitchenBridger(), line, true, true);
+      expect(r.inPit).toBeGreaterThan(40);
+      expect(r.finalStretch).toBeGreaterThan(20);
+      expect(r.violations, 'blender / cart front half off screen in the final stretch').toEqual([]);
+      expect(r.frontOff, 'the bridger front off screen').toBe(0);
+      expect(r.minZoomSeen).toBeGreaterThan(0.75);
+      expect(r.rearClipM).toBeLessThanOrEqual(1);
+    }, 120_000);
+  }
 
   // audit-2 #3: negative control — the same runs with finish framing bypassed must FAIL the criterion
   it('control: with finish framing disabled, every one of those courses clips the blender or cart', async () => {

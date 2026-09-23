@@ -379,10 +379,13 @@ export class Track {
    * The pit floor behind it is a sunken landing counter: cargo landing
    * there is not counted, and settlement starts when a pineapple touches
    * the sensor (which begins at the line — cart position is irrelevant).
-   * Keeping lineGap ≤ ~10.8 m means the goal never fires further from the
+   * Keeping lineGap ≤ ~12.8 m means the goal never fires further from the
    * blender than the finish framing can show the whole of it for a normal
-   * cart (measured, test/game/framing.test.ts).
-   * Unset (every course but Kitchen): the line is PIT.lineAfterLip past the
+   * cart (measured, test/game/framing.test.ts; ~10.8 m before M1's
+   * height-aware follow zoom, when the 844x390 phone was the binding view —
+   * now 1280x720 binds, the phone shows the whole blender from ~14.4 m).
+   * The original course uses the same finish (ORIGINAL_FINISH, M1).
+   * Unset (every premade course but Kitchen): the line is PIT.lineAfterLip past the
    * lip and the sensor spans the whole floor, as before.
    */
   finish(o: { frontGap?: number; lineGap?: number } = {}): this {

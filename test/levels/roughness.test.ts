@@ -18,6 +18,8 @@ import { plateauRange } from '../../src/game/startArea';
 import type { LevelDef } from '../../src/model/level';
 import { groundAt, PREMADE } from '../../tools/levels/premade';
 import { PIT } from '../../tools/levels/track';
+import { pxToM } from '../../src/model/coords';
+import { ORIGINAL_GOAL_LINE_PX } from '../../src/terrain/originalCourse';
 
 interface Roughness {
   travelPerM: number;
@@ -90,7 +92,9 @@ const premade = (id: 'beach' | 'kitchen' | 'workbench' | 'tikibar') => {
 };
 const original = () => {
   const l = levelById('original')!;
-  return roughness(l, l.goal.lineX);
+  // the recovered course up to the 2008 goal line (the lip), as the premade windows stop at their lip:
+  // M1 moved the counting line 10.5 m before the blender, deep in the added pit, which is not terrain roughness
+  return roughness(l, Math.min(l.goal.lineX, pxToM(ORIGINAL_GOAL_LINE_PX)));
 };
 
 describe('K1 audit #5: Kitchen is bumpy, in line with the original', () => {
