@@ -34,7 +34,7 @@ import { el } from '../ui/dom';
 import { isPortraitBlocked, onPortraitChange } from '../ui/orientation';
 import type { DriveIntent } from '../ui/screens/runHud';
 import type { SoundControl } from '../ui/sound';
-import { blendCamera, boxOf, frameBox, READY_BLEND_SECONDS, type Box } from './framing';
+import { blendCamera, bodiesBox, boxOf, READY_BLEND_SECONDS, readyFrame, type Box } from './framing';
 import { NO_AUDIO, RunAudioFeed, safeHooks, type AudioHooks } from './audioHooks';
 import { mountMissingCourse } from './buildScreen';
 import { mountScreenError } from './errorScreen';
@@ -233,20 +233,10 @@ async function mountRunOnce(
     const funnel = funnelGeometry(level.funnel, TOTAL_PINEAPPLES);
     renderer.setFunnel(funnel);
     // S6T #13: before Release, frame the whole funnel + the waiting cart
+    // (real shape AABBs; the cart alone when it was driven too far away)
     const funnelBox = boxOf([...funnel.walls[0], ...funnel.walls[1]]);
-    const readyBox = (): Box => {
-      const b = { ...funnelBox };
-      for (const h of s.controller.cartBodyHandles()) {
-        const t = s.world.getTransform(h);
-        // body centres, padded by about a wheel radius
-        b.minX = Math.min(b.minX, t.x - 1);
-        b.maxX = Math.max(b.maxX, t.x + 1);
-        b.minY = Math.min(b.minY, t.y - 1);
-        b.maxY = Math.max(b.maxY, t.y + 1);
-      }
-      return b;
-    };
-    let readyFrame: { center: { x: number; y: number }; zoom: number } | null = null;
+    const cartBox = (): Box | null => bodiesBox(s.world.manifest().bodies, s.controller.cartBodyHandles(), (id) => s.world.getTransform(id));
+    let readyView: { center: { x: number; y: number }; zoom: number } | null = null;
     let sinceRelease: number | null = null;
     app.stage.addChild(renderer.view);
     cleanup.push(() => app.stage.removeChild(renderer.view));
@@ -328,8 +318,8 @@ async function mountRunOnce(
         camera.zoom = Math.min(1.5, Math.max(0.5, w / (VIEW_WIDTH_M * 30)));
         camera.center = s.controller.camera.interpolated(alpha);
         // ready phase: frame funnel + cart (tracks a cart driven before Release); then blend to follow
-        if (sinceRelease === null) readyFrame = frameBox(readyBox(), w, h, camera.zoom);
-        const view = blendCamera(camera, readyFrame, sinceRelease);
+        if (sinceRelease === null) readyView = readyFrame(funnelBox, cartBox(), w, h, camera.zoom);
+        const view = blendCamera(camera, readyView, sinceRelease);
         if (goalAt !== null) renderer.setGoal(goalFill * Math.min(1, goalAt / GOAL_FILL_SECONDS), goalAt < GOAL_FILL_SECONDS + 1 ? 1 : 0.3);
         renderer.render(s.world.manifest(), s.world.snapshot(alpha), view, dt);
         app.render();
