@@ -13,16 +13,38 @@
  * dull stretch; the census is identical with or without labels.
  *
  * The driving surface is the topmost terrain at x (gap side walls, which go
- * down to killY, are not ground), sampled every STEP metres; a hole is where
- * there is no ground. Detected hazard kinds (HAZARD_KINDS):
+ * down to killY, are not ground); a hole is where there is no ground.
+ *
+ * S6T audit-2: every quantity with a threshold is measured EXACTLY on that
+ * surface, never on a sample grid. `Surface` rebuilds it as an exact
+ * piecewise-linear function: its breakpoints are every segment end point
+ * plus every crossing of two overlapping segments, so between breakpoints
+ * one straight piece is on top, and a hole is exactly the interval where no
+ * segment is. Then:
+ *   - a gap's width is its hole's exact end points;
+ *   - range extremes (tooth height, rise, fall, prominence, depth) are taken
+ *     over the piece end points in the range, where a piecewise-linear
+ *     function has its extremes, plus the clipped range ends;
+ *   - a peak's top width is where the surface leaves PEAK_FLAT_TOL of the
+ *     top height, interpolated exactly inside the crossing piece;
+ *   - drop and riser runs are runs of whole pieces by slope.
+ * Comparisons are made in the conservative direction: a measure that must
+ * reach a minimum (gap width, tooth height, drop height, fall) passes at
+ * the threshold minus EPS; the peak-width maximum is exact (the tolerance
+ * can only WIDEN a top, so a plateau is never measured narrow enough to
+ * become a peak). The only grid left is the dull-stretch scan (see below).
+ *
+ * Detected hazard kinds (HAZARD_KINDS):
  *
  *   gap       — a hole at least GAP_MIN_WIDTH wide.
- *   washboard — at least WASHBOARD_MIN_TEETH teeth (peaks standing
- *               TOOTH_MIN_HEIGHT above the ground within TOOTH_REACH on both
- *               sides), each within WASHBOARD_MAX_PITCH of the last.
- *   A PEAK is a local top (highest within ±1 m) no wider than
- *   PEAK_MAX_TOP: a wider flat top is a plateau, whose edges can only be
- *   drops (so a ramp, a flat 5 m and a descent is NOT a crest).
+ *   washboard — at least WASHBOARD_MIN_TEETH teeth (peaks no wider than
+ *               TOOTH_MAX_TOP standing TOOTH_MIN_HEIGHT above the lowest
+ *               ground within TOOTH_REACH on both sides), each within
+ *               WASHBOARD_MAX_PITCH of the last.
+ *   A PEAK is a local top (no ground higher within ±PEAK_REACH) whose top —
+ *   the connected ground within PEAK_FLAT_TOL of its height — is no wider
+ *   than PEAK_MAX_TOP: a wider flat top is a plateau, whose edges can only
+ *   be drops (so a ramp, a flat 5 m and a descent is NOT a crest).
  *   launchLip — a peak reached by a rising approach (mean slope over the
  *               last LIP_APPROACH m before its far edge >=
  *               LIP_MIN_APPROACH_SLOPE, rise >= 0.3 m within 3 m) that falls
@@ -33,8 +55,9 @@
  *   crest     — any other peak with >= CREST_MIN_PROMINENCE of ground below
  *               it within CREST_REACH on both sides (a hill); overlapping
  *               crest peaks count once.
- *   drop      — a steep descent (every STEP falls at slope >= DROP_MIN_SLOPE)
- *               totalling >= DROP_MIN_HEIGHT, not part of a lip or a gap.
+ *   drop      — a steep descent (consecutive pieces each falling at slope
+ *               >= DROP_MIN_SLOPE) totalling >= DROP_MIN_HEIGHT, not part of
+ *               a lip or a gap.
  *   steps     — >= 2 risers (0.25–1.2 m of height at slope >= 1 over
  *               <= 0.75 m) in the same direction, separated by 1–6 m treads.
  *
@@ -50,11 +73,14 @@
  * (test/integration/acceptance.test.ts).
  *
  * Also measured over [x0, x1]:
- *   - the longest DULL stretch: consecutive 0.5 m samples where the next
+ *   - the longest DULL stretch: consecutive DULL_SCAN starts where the next
  *     DULL_WINDOW metres of ground is locally straight (within
- *     DULL_STRAIGHTNESS of its chord), gentle (|chord slope| <
- *     DULL_MAX_SLOPE), has no hole, and no DETECTED hazard overlaps it;
- *     in metres and in SECONDS at the level's typical speed;
+ *     DULL_STRAIGHTNESS of its chord, checked exactly at every vertex),
+ *     gentle (|chord slope| < DULL_MAX_SLOPE), has no hole (exact), and no
+ *     DETECTED hazard overlaps it; in metres and in SECONDS at the level's
+ *     typical speed. Grid invariant: only the stretch's LENGTH is scanned,
+ *     and its error is under one DULL_SCAN step (0.5 m) at each end, which
+ *     is under 1/10 s at pace speed; the smallest dull threshold is 6 s;
  *   - the sharpest crest left (slope jump at a convex vertex), outside the
  *     `keepSharp` ranges (washboard teeth) and the goal pit.
  */
@@ -66,10 +92,21 @@ import { sharpestCrest } from '../../src/terrain/rounding';
 export const HAZARD_KINDS = ['crest', 'drop', 'launchLip', 'washboard', 'kicker', 'gap', 'steps'] as const;
 export type HazardKind = (typeof HAZARD_KINDS)[number];
 
-export const STEP = 0.25;
+/** Slack for float round-off in threshold comparisons (always in the hazard's favour for minimums). */
+const EPS = 1e-9;
 export const GAP_MIN_WIDTH = 0.3;
 export const TOOTH_REACH = 0.75;
 export const TOOTH_MIN_HEIGHT = 0.12;
+export const TOOTH_MAX_TOP = 0.5;
+/** A peak has no ground higher than it within this reach (m). */
+export const PEAK_REACH = 1;
+/**
+ * A peak's top is the connected ground within this height of it (m): 1 mm,
+ * i.e. its flat extent. The tolerance can only WIDEN a top (a plateau is
+ * never measured narrower than it is); it widens a top between slopes >= s
+ * by at most 2 mm / s, under 0.05 m for any side steeper than 0.04.
+ */
+export const PEAK_FLAT_TOL = 0.001;
 export const WASHBOARD_MIN_TEETH = 4;
 export const WASHBOARD_MAX_PITCH = 2;
 export const LIP_APPROACH = 1.5;
@@ -89,6 +126,8 @@ export const SHORTCUT_MIN_DEPTH = 1;
 const GRAVITY = 10;
 
 export const DULL_WINDOW = 4;
+/** Dull-window start spacing (m): the only sampled quantity, see the header. */
+export const DULL_SCAN = 0.5;
 export const DULL_STRAIGHTNESS = 0.2;
 export const DULL_MAX_SLOPE = 0.25;
 
@@ -152,6 +191,227 @@ export const ENDLESS_RULES: AuditRules = { maxDullSeconds: 20, minHazardKinds: 3
 /** Handmade courses are held to more: never more than a few seconds of nothing, and a shortcut (PLAN S6). */
 export const PREMADE_RULES: AuditRules = { maxDullSeconds: 6, minHazardKinds: 5, minHazardsPer100m: 3, maxCrest: 0.6, minShortcuts: 1 };
 
+interface Piece {
+  xa: number;
+  xb: number;
+  ya: number;
+  yb: number;
+}
+
+const lerp = (p: Piece, x: number) => (p.xb === p.xa ? p.ya : p.ya + ((p.yb - p.ya) * (x - p.xa)) / (p.xb - p.xa));
+
+/**
+ * The EXACT driving surface over [x0, x1] as sorted, non-overlapping straight
+ * pieces plus the exact holes between them (see the header). y is down, so
+ * "lowest ground" is the MAX y and "highest" the MIN y.
+ */
+export class Surface {
+  readonly pieces: Piece[] = [];
+  readonly holes: [number, number][] = [];
+  constructor(
+    readonly level: LevelDef,
+    readonly x0: number,
+    readonly x1: number,
+  ) {
+    // ground segments per span (a span is a chain: its segments never overlap in x)
+    const spans: Piece[][] = [];
+    for (const sp of level.terrain.spans) {
+      const segs: Piece[] = [];
+      for (let i = 1; i < sp.points.length; i++) {
+        const a = sp.points[i - 1]!;
+        const b = sp.points[i]!;
+        if (a.y >= level.killY - 1e-9 || b.y >= level.killY - 1e-9) continue; // a gap wall
+        if (b.x <= a.x || b.x < x0 || a.x > x1) continue;
+        segs.push({ xa: a.x, xb: b.x, ya: a.y, yb: b.y });
+      }
+      if (segs.length) spans.push(segs);
+    }
+    const xs = new Set<number>([x0, x1]);
+    for (const segs of spans) for (const g of segs) for (const x of [g.xa, g.xb]) if (x > x0 && x < x1) xs.add(x);
+    // crossings of segments from different spans (overlapping spans are rare: only the pieces in the overlap are compared)
+    for (let i = 0; i < spans.length; i++) {
+      for (let j = i + 1; j < spans.length; j++) {
+        const A = spans[i]!;
+        const B = spans[j]!;
+        const lo = Math.max(A[0]!.xa, B[0]!.xa);
+        const hi = Math.min(A[A.length - 1]!.xb, B[B.length - 1]!.xb);
+        if (hi <= lo) continue;
+        for (const g of A) {
+          if (g.xb <= lo || g.xa >= hi) continue;
+          for (const h of B) {
+            const l = Math.max(g.xa, h.xa);
+            const r = Math.min(g.xb, h.xb);
+            if (r <= l) continue;
+            const dl = lerp(g, l) - lerp(h, l);
+            const dr = lerp(g, r) - lerp(h, r);
+            if (dl * dr < 0) xs.add(l + ((r - l) * dl) / (dl - dr));
+          }
+        }
+      }
+    }
+    const sorted = [...xs].filter((x) => x >= x0 && x <= x1).sort((p, q) => p - q);
+    /** The topmost segment over the open interval around m (binary search per span). */
+    const top = (m: number): Piece | null => {
+      let best: Piece | null = null;
+      let bestY = Infinity;
+      for (const segs of spans) {
+        let lo = 0;
+        let hi = segs.length - 1;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          const g = segs[mid]!;
+          if (m < g.xa) hi = mid - 1;
+          else if (m > g.xb) lo = mid + 1;
+          else {
+            const y = lerp(g, m);
+            if (y < bestY) {
+              bestY = y;
+              best = g;
+            }
+            break;
+          }
+        }
+      }
+      return best;
+    };
+    for (let i = 1; i < sorted.length; i++) {
+      const xa = sorted[i - 1]!;
+      const xb = sorted[i]!;
+      if (xb - xa <= 1e-12) continue;
+      const g = top((xa + xb) / 2);
+      if (g) {
+        this.pieces.push({ xa, xb, ya: lerp(g, xa), yb: lerp(g, xb) });
+      } else {
+        const last = this.holes[this.holes.length - 1];
+        if (last && Math.abs(last[1] - xa) <= 1e-12) last[1] = xb;
+        else this.holes.push([xa, xb]);
+      }
+    }
+  }
+
+  /** Index of the first piece with xb > x (binary search). */
+  private first(x: number): number {
+    let lo = 0;
+    let hi = this.pieces.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.pieces[mid]!.xb <= x) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  }
+
+  /** Ground height at x (the topmost where two pieces meet); null over a hole. */
+  y(x: number): number | null {
+    let best: number | null = null;
+    for (let i = Math.max(0, this.first(x) - 1); i < this.pieces.length; i++) {
+      const p = this.pieces[i]!;
+      if (p.xa > x) break;
+      if (x >= p.xa && x <= p.xb) {
+        const y = lerp(p, x);
+        if (best === null || y < best) best = y;
+      }
+    }
+    return best;
+  }
+
+  /** Does a hole overlap (a, b) by more than a point? */
+  hasHole(a: number, b: number): boolean {
+    return this.holes.some(([h0, h1]) => h0 < b - 1e-12 && h1 > a + 1e-12);
+  }
+
+  /** Exact extremes of the ground over [a, b] (holes skipped): at piece end points and the clipped range ends. */
+  extremes(a: number, b: number): { minY: number; maxY: number; maxX: number } {
+    let minY = Infinity;
+    let maxY = -Infinity;
+    let maxX = a;
+    for (let i = Math.max(0, this.first(a) - 1); i < this.pieces.length; i++) {
+      const p = this.pieces[i]!;
+      if (p.xa > b) break;
+      if (p.xb < a) continue;
+      for (const x of [Math.max(a, p.xa), Math.min(b, p.xb)]) {
+        const y = lerp(p, x);
+        minY = Math.min(minY, y);
+        if (y >= maxY) {
+          maxY = y;
+          maxX = x;
+        }
+      }
+    }
+    return { minY, maxY, maxX };
+  }
+
+  /** Lowest ground (max y) over [a, b]; Infinity if a hole is in it (ground falls away without bound). */
+  lowest(a: number, b: number): number {
+    return this.hasHole(a, b) ? Infinity : this.extremes(a, b).maxY;
+  }
+
+  /** Lowest ground over [a, b], ignoring holes (for the ground BEFORE a peak). */
+  lowestSolid(a: number, b: number): number {
+    return this.extremes(a, b).maxY;
+  }
+
+  /** Every vertex (piece end point) in [a, b] with its topmost height. */
+  vertices(a: number, b: number): { x: number; y: number }[] {
+    const out: { x: number; y: number }[] = [];
+    for (let i = Math.max(0, this.first(a) - 1); i < this.pieces.length; i++) {
+      const p = this.pieces[i]!;
+      if (p.xa > b) break;
+      for (const [x, y] of [
+        [p.xa, p.ya],
+        [p.xb, p.yb],
+      ] as const) {
+        if (x < a || x > b) continue;
+        const last = out[out.length - 1];
+        if (last && Math.abs(last.x - x) <= 1e-12) last.y = Math.min(last.y, y);
+        else out.push({ x, y });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * The top around a vertex at (x, y): the connected ground within `tol` of
+   * y (either way: ground rising above the top ends it too), its ends
+   * interpolated exactly inside the piece that leaves the band (a hole or a
+   * jump also ends it).
+   */
+  topAround(x: number, y: number, tol: number): [number, number] {
+    const lo = y - tol;
+    const hi = y + tol;
+    const inBand = (v: number) => v >= lo && v <= hi;
+    /** Where the piece, entering at (x0, y0) in the band, leaves it towards (x1, y1). */
+    const exit = (x0: number, y0: number, x1: number, y1: number) => {
+      const level = y1 > hi ? hi : lo;
+      return x0 + ((level - y0) * (x1 - x0)) / (y1 - y0);
+    };
+    let right = x;
+    for (let i = this.first(x); i < this.pieces.length; i++) {
+      const p = this.pieces[i]!;
+      if (p.xa > right + 1e-12 || !inBand(p.ya)) break;
+      if (inBand(p.yb)) {
+        right = p.xb;
+        continue;
+      }
+      right = exit(p.xa, p.ya, p.xb, p.yb);
+      break;
+    }
+    let left = x;
+    for (let i = this.first(x) - 1; i >= 0; i--) {
+      const p = this.pieces[i]!;
+      if (p.xb > x + 1e-12) continue; // the piece starting at x
+      if (p.xb < left - 1e-12 || !inBand(p.yb)) break;
+      if (inBand(p.ya)) {
+        left = p.xa;
+        continue;
+      }
+      left = exit(p.xb, p.yb, p.xa, p.ya);
+      break;
+    }
+    return [left, right];
+  }
+}
+
 /** Topmost ground (min y) at x over all spans, ignoring gap side walls (points at/below killY); null over a hole. */
 export function surfaceAt(level: LevelDef, x: number): number | null {
   let best: number | null = null;
@@ -169,137 +429,70 @@ export function surfaceAt(level: LevelDef, x: number): number | null {
   return best;
 }
 
-/** The sampled driving surface. */
-class Profile {
-  readonly xs: number[] = [];
-  readonly ys: (number | null)[] = [];
-  constructor(
-    readonly level: LevelDef,
-    readonly x0: number,
-    readonly x1: number,
-  ) {
-    const n = Math.floor((x1 - x0) / STEP + 1e-9);
-    for (let i = 0; i <= n; i++) {
-      const x = x0 + i * STEP;
-      this.xs.push(x);
-      this.ys.push(surfaceAt(level, x));
-    }
-  }
-  get n(): number {
-    return this.xs.length;
-  }
-  y(i: number): number | null {
-    return i >= 0 && i < this.n ? this.ys[i]! : null;
-  }
-  x(i: number): number {
-    return this.xs[Math.max(0, Math.min(this.n - 1, i))]!;
-  }
-  /** Lowest ground (max y) over sample indices [a, b]; Infinity if any is a hole. */
-  lowest(a: number, b: number): number {
-    let m = -Infinity;
-    for (let j = Math.max(0, a); j <= Math.min(this.n - 1, b); j++) {
-      const y = this.ys[j]!;
-      if (y === null) return Infinity;
-      m = Math.max(m, y);
-    }
-    return m;
-  }
-  /** Same, ignoring holes (for the ground BEFORE a peak). */
-  lowestSolid(a: number, b: number): number {
-    let m = -Infinity;
-    for (let j = Math.max(0, a); j <= Math.min(this.n - 1, b); j++) {
-      const y = this.ys[j]!;
-      if (y !== null) m = Math.max(m, y);
-    }
-    return m;
-  }
-  idx(x: number): number {
-    return Math.round((x - this.x0) / STEP);
-  }
-}
-
-const samples = (m: number) => Math.round(m / STEP);
-
 interface Peak {
-  ia: number;
-  ib: number;
+  /** Top extent (exact). */
+  ta: number;
+  tb: number;
   y: number;
 }
 
-/** Local highest points (min y within ±1 m); plateaus collapse into one region [ia, ib]. */
-function peaks(p: Profile): Peak[] {
+/** Local tops: vertices with no ground higher within ±PEAK_REACH, with their exact top extents (deduplicated). */
+function peaks(S: Surface): Peak[] {
   const out: Peak[] = [];
-  const r = samples(1);
-  let cur: Peak | null = null;
-  for (let i = 0; i < p.n; i++) {
-    const y = p.y(i);
-    if (y === null) continue;
-    let isPeak = true;
-    for (let j = i - r; j <= i + r && isPeak; j++) {
-      const q = p.y(j);
-      if (q !== null && q < y - 1e-6) isPeak = false;
+  for (const v of S.vertices(S.x0, S.x1)) {
+    if (S.extremes(v.x - PEAK_REACH, v.x + PEAK_REACH).minY < v.y - 1e-6) continue;
+    const [ta, tb] = S.topAround(v.x, v.y, PEAK_FLAT_TOL);
+    const last = out[out.length - 1];
+    if (last && ta <= last.tb + 1e-9) {
+      // the same top (a flat run of vertices): keep the union and the highest point
+      last.tb = Math.max(last.tb, tb);
+      last.y = Math.min(last.y, v.y);
+      continue;
     }
-    if (!isPeak) continue;
-    if (cur && i - cur.ib <= 2) {
-      cur.ib = i;
-      cur.y = Math.min(cur.y, y);
-    } else {
-      if (cur) out.push(cur);
-      cur = { ia: i, ib: i, y };
-    }
+    out.push({ ta, tb, y: v.y });
   }
-  if (cur) out.push(cur);
   return out;
 }
 
-/** Maximal runs of consecutive steps whose drop per step satisfies `ok(dy / STEP)`. */
-function runs(p: Profile, ok: (slope: number, first: number) => boolean): [number, number][] {
-  const out: [number, number][] = [];
-  for (let i = 0; i + 1 < p.n; i++) {
-    const a = p.y(i);
-    const b = p.y(i + 1);
-    if (a === null || b === null) continue;
-    const first = (b - a) / STEP;
+/** Maximal runs of consecutive, continuous pieces whose slope dy/dx satisfies `ok(slope, firstSlope)`; [x0, y0, x1, y1]. */
+function runs(S: Surface, ok: (slope: number, first: number) => boolean): [number, number, number, number][] {
+  const out: [number, number, number, number][] = [];
+  const slope = (p: Piece) => (p.yb - p.ya) / (p.xb - p.xa);
+  const P = S.pieces;
+  for (let i = 0; i < P.length; i++) {
+    const first = slope(P[i]!);
     if (!ok(first, first)) continue;
-    let j = i + 1;
-    for (;;) {
-      const c = p.y(j);
-      const d = p.y(j + 1);
-      if (c === null || d === null || !ok((d - c) / STEP, first)) break;
-      j++;
-    }
-    out.push([i, j]);
+    let j = i;
+    while (j + 1 < P.length && Math.abs(P[j + 1]!.xa - P[j]!.xb) <= 1e-9 && Math.abs(P[j + 1]!.ya - P[j]!.yb) <= 1e-9 && ok(slope(P[j + 1]!), first)) j++;
+    out.push([P[i]!.xa, P[i]!.ya, P[j]!.xb, P[j]!.yb]);
     i = j;
   }
   return out;
 }
 
-function detect(p: Profile): Hazard[] {
+function detect(S: Surface): Hazard[] {
   const out: Hazard[] = [];
 
-  // gaps
-  for (let i = 0; i < p.n; i++) {
-    if (p.y(i) !== null) continue;
-    let j = i;
-    while (j + 1 < p.n && p.y(j + 1) === null) j++;
-    if ((j - i + 1) * STEP >= GAP_MIN_WIDTH) out.push({ kind: 'gap', x0: p.x(i) - 1, x1: p.x(j) + 1 });
-    i = j;
+  // gaps: exact hole widths
+  for (const [h0, h1] of S.holes) {
+    if (h0 <= S.x0 || h1 >= S.x1) continue; // cut by the census window: not a measurable hole
+    if (h1 - h0 >= GAP_MIN_WIDTH - EPS) out.push({ kind: 'gap', x0: h0 - 1, x1: h1 + 1 });
   }
 
   // washboards: runs of teeth
-  const pk = peaks(p);
+  const pk = peaks(S);
   const isTooth = (q: Peak) =>
-    (q.ib - q.ia) * STEP <= 0.5 &&
-    p.lowestSolid(q.ia - samples(TOOTH_REACH), q.ia) - q.y >= TOOTH_MIN_HEIGHT &&
-    p.lowest(q.ib, q.ib + samples(TOOTH_REACH)) - q.y >= TOOTH_MIN_HEIGHT;
+    q.tb - q.ta <= TOOTH_MAX_TOP &&
+    S.lowestSolid(q.ta - TOOTH_REACH, q.ta) - q.y >= TOOTH_MIN_HEIGHT - EPS &&
+    S.lowest(q.tb, q.tb + TOOTH_REACH) - q.y >= TOOTH_MIN_HEIGHT - EPS;
   const teeth = pk.filter(isTooth);
   const inBoard = new Set<Peak>();
   for (let i = 0; i < teeth.length; ) {
     let j = i;
-    while (j + 1 < teeth.length && (teeth[j + 1]!.ia - teeth[j]!.ib) * STEP <= WASHBOARD_MAX_PITCH) j++;
+    while (j + 1 < teeth.length && teeth[j + 1]!.ta - teeth[j]!.tb <= WASHBOARD_MAX_PITCH) j++;
     if (j - i + 1 >= WASHBOARD_MIN_TEETH) {
       for (let t = i; t <= j; t++) inBoard.add(teeth[t]!);
-      out.push({ kind: 'washboard', x0: p.x(teeth[i]!.ia) - 0.75, x1: p.x(teeth[j]!.ib) + 0.75 });
+      out.push({ kind: 'washboard', x0: teeth[i]!.ta - 0.75, x1: teeth[j]!.tb + 0.75 });
     }
     i = j + 1;
   }
@@ -308,47 +501,46 @@ function detect(p: Profile): Hazard[] {
   const lipRanges: [number, number][] = [];
   for (const q of pk) {
     if (inBoard.has(q)) continue;
-    if ((q.ib - q.ia) * STEP > PEAK_MAX_TOP) continue; // a plateau: its edges are drops
+    if (q.tb - q.ta > PEAK_MAX_TOP) continue; // a plateau: its edges are drops
     // the approach is measured where the cart leaves the top (its far edge)
-    const approach = p.y(q.ib - samples(LIP_APPROACH));
+    const approach = S.y(q.tb - LIP_APPROACH);
     const approachSlope = approach === null ? 0 : (approach - q.y) / LIP_APPROACH;
-    const rise3 = p.lowestSolid(q.ib - samples(3), q.ib) - q.y;
-    const fallQuick = p.lowest(q.ib, q.ib + samples(2)) - q.y;
-    const fall4 = p.lowest(q.ib, q.ib + samples(4)) - q.y;
-    const at = (p.x(q.ia) + p.x(q.ib)) / 2;
-    if (approachSlope >= LIP_MIN_APPROACH_SLOPE && rise3 >= 0.3 && fallQuick >= LIP_MIN_FALL) {
+    const rise3 = S.lowestSolid(q.tb - 3, q.tb) - q.y;
+    const fallQuick = S.lowest(q.tb, q.tb + 2) - q.y;
+    const fall4 = S.lowest(q.tb, q.tb + 4) - q.y;
+    const at = (q.ta + q.tb) / 2;
+    if (approachSlope >= LIP_MIN_APPROACH_SLOPE - EPS && rise3 >= 0.3 - EPS && fallQuick >= LIP_MIN_FALL - EPS) {
       const kind: HazardKind = fall4 >= rise3 + 0.3 ? 'launchLip' : 'kicker';
-      out.push({ kind, x0: p.x(q.ia) - 3, x1: p.x(q.ib) + 3, at });
-      lipRanges.push([p.x(q.ia) - 3, p.x(q.ib) + 3]);
+      out.push({ kind, x0: q.ta - 3, x1: q.tb + 3, at });
+      lipRanges.push([q.ta - 3, q.tb + 3]);
       continue;
     }
-    const riseBefore = p.lowestSolid(q.ia - samples(CREST_REACH), q.ia) - q.y;
-    const fallAfter = p.lowestSolid(q.ib, q.ib + samples(CREST_REACH)) - q.y;
+    const riseBefore = S.lowestSolid(q.ta - CREST_REACH, q.ta) - q.y;
+    const fallAfter = S.lowestSolid(q.tb, q.tb + CREST_REACH) - q.y;
     const prev = out[out.length - 1];
-    if (prev?.kind === 'crest' && prev.x1 > p.x(q.ia)) continue; // the same hill
-    if (riseBefore >= CREST_MIN_PROMINENCE && fallAfter >= CREST_MIN_PROMINENCE) out.push({ kind: 'crest', x0: p.x(q.ia) - 4, x1: p.x(q.ib) + 4, at });
+    if (prev?.kind === 'crest' && prev.x1 > q.ta) continue; // the same hill
+    if (riseBefore >= CREST_MIN_PROMINENCE - EPS && fallAfter >= CREST_MIN_PROMINENCE - EPS) out.push({ kind: 'crest', x0: q.ta - 4, x1: q.tb + 4, at });
   }
 
   // drops: steep descending runs, not a lip's fall and not into a gap
   const gapRanges = out.filter((h) => h.kind === 'gap').map((h) => [h.x0, h.x1] as [number, number]);
   const overlaps = (a: number, b: number, rs: readonly [number, number][]) => rs.some(([c, d]) => c < b && d > a);
-  for (const [i, j] of runs(p, (s) => s >= DROP_MIN_SLOPE)) {
-    const h = p.y(j)! - p.y(i)!;
-    if (h >= DROP_MIN_HEIGHT && !overlaps(p.x(i), p.x(j), lipRanges) && !overlaps(p.x(i), p.x(j), gapRanges)) out.push({ kind: 'drop', x0: p.x(i) - 1, x1: p.x(j) + 1 });
+  for (const [xa, ya, xb, yb] of runs(S, (sl) => sl >= DROP_MIN_SLOPE - EPS)) {
+    if (yb - ya >= DROP_MIN_HEIGHT - EPS && !overlaps(xa, xb, lipRanges) && !overlaps(xa, xb, gapRanges)) out.push({ kind: 'drop', x0: xa - 1, x1: xb + 1 });
   }
 
   // steps: >= 2 same-direction risers
   const risers: { x: number; end: number; dir: number }[] = [];
-  for (const [i, j] of runs(p, (s, first) => Math.abs(s) >= 1 && Math.sign(s) === Math.sign(first))) {
-    const h = Math.abs(p.y(j)! - p.y(i)!);
-    if (h >= 0.25 && h <= 1.2 && (j - i) * STEP <= 0.75) risers.push({ x: p.x(i), end: p.x(j), dir: Math.sign(p.y(j)! - p.y(i)!) });
+  for (const [xa, ya, xb, yb] of runs(S, (sl, first) => Math.abs(sl) >= 1 - EPS && Math.sign(sl) === Math.sign(first))) {
+    const h = Math.abs(yb - ya);
+    if (h >= 0.25 - EPS && h <= 1.2 && xb - xa <= 0.75) risers.push({ x: xa, end: xb, dir: Math.sign(yb - ya) });
   }
   // consecutive risers separated by a tread (>= 1 m), not one steep face split in two
   const next = (a: { end: number; dir: number }, b: { x: number; dir: number }) => b.dir === a.dir && b.x - a.end >= 1 && b.x - a.end <= 6;
   for (let i = 0; i < risers.length; ) {
     let j = i;
     while (j + 1 < risers.length && next(risers[j]!, risers[j + 1]!)) j++;
-    if (j > i) out.push({ kind: 'steps', x0: risers[i]!.x - 0.5, x1: risers[j]!.x + 1 });
+    if (j > i) out.push({ kind: 'steps', x0: risers[i]!.x - 0.5, x1: risers[j]!.end + 1 });
     i = j + 1;
   }
 
@@ -356,7 +548,7 @@ function detect(p: Profile): Hazard[] {
 }
 
 /** First x past the lip where a point launched from (lipX, lipY) at `v` along slope `rise` (per m, up) meets the ground. */
-function landing(p: Profile, lipX: number, lipY: number, rise: number, v: number): number {
+function landing(S: Surface, lipX: number, lipY: number, rise: number, v: number): number {
   const n = Math.hypot(1, rise);
   let px = lipX;
   let py = lipY - 0.02;
@@ -367,37 +559,32 @@ function landing(p: Profile, lipX: number, lipY: number, rise: number, v: number
     vy += GRAVITY * dt;
     px += vx * dt;
     py += vy * dt;
-    if (px > p.x1) return Infinity;
-    const g = surfaceAt(p.level, px);
+    if (px > S.x1) return Infinity;
+    const g = S.y(px);
     if (g !== null && py >= g && px > lipX + 0.1) return px;
   }
   return Infinity;
 }
 
-function findShortcuts(p: Profile, hz: readonly Hazard[]): Shortcut[] {
+function findShortcuts(S: Surface, hz: readonly Hazard[]): Shortcut[] {
   const out: Shortcut[] = [];
   for (const lip of hz) {
     if ((lip.kind !== 'launchLip' && lip.kind !== 'kicker') || lip.at === undefined) continue;
     const lipX = lip.at;
-    const i = p.idx(lipX);
-    const y = p.y(i);
-    const before = p.y(i - samples(LIP_APPROACH));
+    const y = S.y(lipX);
+    const before = S.y(lipX - LIP_APPROACH);
     if (y === null || before === null) continue;
     const rise = (before - y) / LIP_APPROACH;
-    const landX = landing(p, lipX, y, rise, SHORTCUT_FAST_SPEED);
+    const landX = landing(S, lipX, y, rise, SHORTCUT_FAST_SPEED);
     if (!Number.isFinite(landX) || landX - lipX < SHORTCUT_MIN_SKIP) continue;
-    const a = i + 1;
-    const b = p.idx(landX);
-    const below = p.lowest(a, b);
-    if (!Number.isFinite(below)) continue; // a hole under the flight: the jump is mandatory, not a shortcut
-    const landY = surfaceAt(p.level, landX)!;
+    if (S.hasHole(lipX, landX)) continue; // a hole under the flight: the jump is mandatory, not a shortcut
+    const { maxY: below, maxX: deepX } = S.extremes(lipX, landX);
+    const landY = S.y(landX)!;
     const depth = below - Math.max(y, landY);
     if (depth < SHORTCUT_MIN_DEPTH) continue;
     const skipped = hz.find((h) => (h.kind === 'washboard' || h.kind === 'steps') && h.x0 >= lipX && h.x1 <= landX);
     if (!skipped) continue;
-    let deepX = lipX;
-    for (let j = a; j <= b; j++) if (p.y(j)! >= below - 1e-9) deepX = p.x(j);
-    const slowLandX = landing(p, lipX, y, rise, SHORTCUT_SLOW_SPEED);
+    const slowLandX = landing(S, lipX, y, rise, SHORTCUT_SLOW_SPEED);
     if (!(slowLandX < deepX)) continue;
     out.push({ lipX, landX, slowLandX, depth, skips: skipped.kind });
   }
@@ -417,8 +604,8 @@ export function census(
   opts: { labels?: readonly CensusLabel[]; keepSharp?: readonly { x0: number; x1: number }[] } = {},
 ): Census {
   // detect with context around the range; count hazards whose centre is inside it
-  const p = new Profile(level, range.x0 - 12, range.x1 + 12);
-  const all = detect(p);
+  const S = new Surface(level, range.x0 - 12, range.x1 + 12);
+  const all = detect(S);
   const centre = (h: Hazard) => h.at ?? (h.x0 + h.x1) / 2;
   const counted = all.filter((h) => centre(h) >= range.x0 && centre(h) < range.x1);
   const hazards: Partial<Record<HazardKind, number>> = {};
@@ -434,12 +621,13 @@ export function census(
   let runStart = range.x0;
   let runSeconds = 0;
   let best = { metres: 0, at: range.x0, seconds: 0 };
-  for (let x = range.x0; x < range.x1 - DULL_WINDOW; x += 0.5) {
+  for (let k = 0; range.x0 + k * DULL_SCAN < range.x1 - DULL_WINDOW; k++) {
+    const x = range.x0 + k * DULL_SCAN;
     const inHazard = all.some((h) => h.x0 < x + DULL_WINDOW && h.x1 > x);
-    if (!inHazard && windowIsDull(level, x)) {
+    if (!inHazard && windowIsDull(S, x)) {
       if (run === 0) runStart = x;
-      run += 0.5;
-      runSeconds += 0.5 / Math.max(0.5, speedAt(x));
+      run += DULL_SCAN;
+      runSeconds += DULL_SCAN / Math.max(0.5, speedAt(x));
       if (runSeconds > best.seconds) best = { metres: run, at: runStart, seconds: runSeconds };
     } else {
       run = 0;
@@ -463,7 +651,7 @@ export function census(
     hazardKinds: Object.keys(hazards).length,
     hazardsPer100m: (counted.length * 100) / length,
     detected: counted,
-    shortcuts: findShortcuts(p, all).filter((s) => s.lipX >= range.x0 && s.lipX < range.x1),
+    shortcuts: findShortcuts(S, all).filter((s) => s.lipX >= range.x0 && s.lipX < range.x1),
     unconfirmedLabels,
     longestDullMetres: best.metres,
     longestDullAt: best.at,
@@ -476,8 +664,10 @@ export function census(
  * Which detected kind confirms an authored label: the same kind, except that
  *   - launch lips and kickers are both lips (the detector splits them by the
  *     landing height, authors by intent);
- *   - a crest label is confirmed by a lip too: a lip IS a peak, one whose far
- *     side falls away abruptly (the generator's crest is "climb + steep drop");
+ *   - a crest label is confirmed by a lip or a drop too: a lip IS a peak,
+ *     one whose far side falls away abruptly, and the generator's crest is
+ *     "climb + steep drop" off a 2–4 m flat top, which is wider than
+ *     PEAK_MAX_TOP, so its hazard is the drop;
  *   - a drop label is confirmed by a launch lip (its far side is the drop).
  * Never by a gap, washboard or steps, and never by nothing.
  */
@@ -485,21 +675,20 @@ function confirms(detected: HazardKind, label: string): boolean {
   if (detected === label) return true;
   const lip = detected === 'launchLip' || detected === 'kicker';
   if ((label === 'launchLip' || label === 'kicker' || label === 'crest') && lip) return true;
+  if (label === 'crest' && detected === 'drop') return true;
   return label === 'drop' && detected === 'launchLip';
 }
 
-function windowIsDull(level: LevelDef, x: number): boolean {
-  const ys: number[] = [];
-  for (let u = 0; u <= DULL_WINDOW + 1e-9; u += 0.5) {
-    const y = surfaceAt(level, x + u);
-    if (y === null) return false;
-    ys.push(y);
-  }
-  const y0 = ys[0]!;
-  const y1 = ys[ys.length - 1]!;
+/** Is [x, x + DULL_WINDOW] dull? Exact: any hole, and the deviation from the chord at every vertex. */
+function windowIsDull(S: Surface, x: number): boolean {
+  const x1 = x + DULL_WINDOW;
+  if (S.hasHole(x, x1)) return false;
+  const y0 = S.y(x);
+  const y1 = S.y(x1);
+  if (y0 === null || y1 === null) return false;
   const slope = (y1 - y0) / DULL_WINDOW;
   if (Math.abs(slope) >= DULL_MAX_SLOPE) return false;
-  return ys.every((y, i) => Math.abs(y - (y0 + slope * i * 0.5)) <= DULL_STRAIGHTNESS);
+  return S.vertices(x, x1).every((v) => Math.abs(v.y - (y0 + slope * (v.x - x))) <= DULL_STRAIGHTNESS);
 }
 
 export function auditLevel(c: Census, rules: AuditRules): string[] {

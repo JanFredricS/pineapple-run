@@ -119,22 +119,39 @@ Headless playtest, example cart at a constant 5, 7 and 9 m/s for 150 s, over the
 
 ## Excitement audit (tools/levels/census.ts, test/levels/excitement.test.ts)
 
-Audit-1 #1: the census is derived from the TERRAIN GEOMETRY. Authoring labels (Track features, generator FeatureInstances) are only cross-checked; the census is identical with or without them. The census samples the driving surface every 0.25 m. That surface is the topmost ground; gap side walls are not ground, and where there is no ground the census records a hole. It then detects:
+Audit-1 #1: the census is derived from the TERRAIN GEOMETRY. Authoring labels (Track features, generator FeatureInstances) are only cross-checked; the census is identical with or without them. The driving surface is the topmost ground; gap side walls are not ground, and where there is no ground there is a hole.
+
+Audit-2: nothing with a threshold is sampled any more. The old 0.25 m grid measured a 0.5 m hole as 0.25 m and could measure a 2.05 m flat top as 2 m. `Surface` rebuilds the driving surface as an exact piecewise-linear function. Its breakpoints are every segment end point and every crossing of overlapping segments. Measurements on it:
+- Hole widths come from the exact hole end points.
+- Range extremes (tooth height, rise, fall, prominence, pool depth) are taken at piece end points, where a piecewise-linear function has its extremes.
+- A peak's top width runs to where the ground leaves a `PEAK_FLAT_TOL` = **1 mm** band around the top height. The crossing is interpolated exactly. The tolerance can only widen a top, so a plateau is never under-measured into a peak.
+- Drop and riser runs are runs of whole pieces.
+- Dull windows check holes and chord deviation exactly at every vertex.
+
+Minimum thresholds pass at the threshold minus 1e-9 (float slack in the hazard's favour). The only grid left is the 0.5 m spacing of dull-window starts. It only affects a dull stretch's length, by under one step at each end, which is well under the 6 s threshold.
+
+Boundary self-tests run at the old grid-aligned offset and at 3 misaligned ones (0.1, 0.137, 0.2 m). All 12 fail on the old sampled census:
+- a 0.5 m hole is a gap, a 0.3 m hole is a gap, a 0.29 m hole is not;
+- a 1.95 m hilltop is a crest and confirms a crest label; a 2.05 m hilltop is not, cannot confirm the label, and hides no dull window;
+- 0.12 m teeth make a washboard, 0.11 m teeth do not.
+
+It then detects:
 
 | Kind | Geometric definition |
 |---|---|
-| peak (shared by crest, launchLip and kicker) | A local top, highest within ±1 m, no wider than `PEAK_MAX_TOP` = **2 m**. A wider flat top is a plateau, whose edges can only be drops. This rule rejects audit-1's flat 5 m "crest". |
+| peak (shared by crest, launchLip and kicker) | A local top, with no ground higher within ±1 m, whose top (the connected ground within 1 mm of its height) is no wider than `PEAK_MAX_TOP` = **2 m**. A wider flat top is a plateau, whose edges can only be drops. This rule rejects audit-1's flat 5 m "crest". |
 | gap | A hole at least **0.3 m** wide. |
-| washboard | At least **4** teeth, each within **2 m** of the last. A tooth stands ≥ **0.12 m** above the ground within **0.75 m** on both sides. |
+| washboard | At least **4** teeth, each within **2 m** of the last. A tooth is a peak no wider than **0.5 m** that stands ≥ **0.12 m** above the lowest ground within **0.75 m** on both sides. |
 | launchLip / kicker | A peak with all three of: a rising approach (the last **1.5 m** before its far edge at slope ≥ **0.15**); ≥ 0.3 m of rise within 3 m; and ground that falls ≥ **0.5 m** within 2 m or into a hole. It is a launchLip if the fall within 4 m exceeds the rise by 0.3 m (the cart lands lower), else a kicker. |
 | crest | Any other peak with ≥ **0.8 m** of ground below it within **8 m** on both sides. Overlapping crest peaks count once. |
-| drop | A run of 0.25 m steps, each falling at slope ≥ **0.5**, totalling ≥ **0.8 m**, that is not a lip's far side and not into a gap. |
+| drop | A run of consecutive surface pieces, each falling at slope ≥ **0.5**, totalling ≥ **0.8 m**, that is not a lip's far side and not into a gap. |
 | steps | At least 2 same-direction risers (0.25–1.2 m high, slope ≥ 1, over ≤ 0.75 m), separated by treads of 1–6 m. |
 
 A label must be confirmed by an overlapping detected hazard of a compatible kind, or the audit fails with "unconfirmed label". Compatible kinds:
 - launchLip and kicker are both lips;
 - a lip also confirms a crest label (a lip is a peak with an abrupt far side);
-- a launchLip also confirms a drop label.
+- a launchLip also confirms a drop label;
+- a drop also confirms a crest label (audit-2). The generator's crest is a climb to a 2–4 m flat top ending in a steep drop. Once top widths were measured exactly, that top is a plateau, so its hazard is the drop.
 
 The rules count only detected hazards. Only detected hazards stop a window from being dull.
 
@@ -150,7 +167,7 @@ The pace driver then proves that the route is taken, faster and viable (see the 
 | Constant | Value | Why |
 |---|---|---|
 | `DULL_WINDOW` / `DULL_STRAIGHTNESS` / `DULL_MAX_SLOPE` | **4 m / 0.2 m / 0.25** | A window is dull when its ground is straight within 0.2 m, gentle, has no hole, and no DETECTED hazard overlaps it. |
-| `ENDLESS_RULES` | max dull **20 s**, ≥ **3** kinds, ≥ **1.2** hazards per 100 m, crest ≤ **0.6**, **0** shortcuts | The brief: more than 20 s of flat at typical speed is boring. Every seed must pass the dull and crest rules. The kind and density rules apply to the mean over 40 seeds at 3 depths. Generator labels: at least 99% must be confirmed by the geometry; measured 698/700. The two misses are a crest whose top is wider than `PEAK_MAX_TOP`, which is detected only as a drop, and a kicker too small to be a hazard. |
+| `ENDLESS_RULES` | max dull **20 s**, ≥ **3** kinds, ≥ **1.2** hazards per 100 m, crest ≤ **0.6**, **0** shortcuts | The brief: more than 20 s of flat at typical speed is boring. Every seed must pass the dull and crest rules. The kind and density rules apply to the mean over 40 seeds at 3 depths. Generator labels: at least 99% must be confirmed by the geometry. Measured 843 of 843 on the exact surface; it was 698 of 700 with sampling. |
 | `PREMADE_RULES` | max dull **6 s**, ≥ **5** kinds, ≥ **3** hazards per 100 m, crest ≤ **0.6**, ≥ **1** shortcut, every label confirmed | Handmade courses are held to a higher bar. |
 
 Results (geometry):
@@ -169,7 +186,7 @@ Self-tests:
 - A wrong-kind label fails.
 - The same lip over a gap is not a shortcut.
 
-Endless worst dull stretch at 7 m/s: 18.1 s in the opening, 11.9 s in the middle and 11.4 s deep. Detected gaps grow with depth.
+Endless worst dull stretch at 7 m/s: 17.9 s in the opening, 11.8 s in the middle and 11.4 s deep, on the exact surface. Mean kinds are 4.2, 4.5 and 4.7; mean hazards per 100 m are 2.3, 3.2 and 3.9. Detected gaps grow with depth. After audit-2 the premade results are unchanged (the table above), and no level needed a retune.
 
 ## Original course (levels/original-course.json)
 

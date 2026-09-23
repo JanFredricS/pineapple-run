@@ -9,6 +9,7 @@
  * terrain at three depths (typical speed 7 m/s).
  */
 import { describe, expect, it } from 'vitest';
+import type { Vec2 } from '../../src/model/geometry';
 import type { LevelDef } from '../../src/model/level';
 import { plateauRange } from '../../src/game/startArea';
 import { blockDifficulty, generateLevel, type FeatureInstance } from '../../src/terrain/generator';
@@ -99,6 +100,76 @@ describe('excitement audit: the auditor itself', () => {
   });
 });
 
+describe('excitement audit: minimum feature scales are measured exactly (S6T audit-2)', () => {
+  // Hand-built terrain on beach's LevelDef, censused over 20–80 m. Each case
+  // runs at a grid-aligned offset (0: every x a multiple of 0.25 m, the old
+  // sampling grid) and at misaligned ones.
+  const OFFSETS = [0, 0.1, 0.137, 0.2];
+  const Y = 10;
+  const levelWith = (spans: Vec2[][]): LevelDef => {
+    const level: LevelDef = JSON.parse(JSON.stringify(PREMADE.beach().level));
+    level.terrain.spans = spans.map((points, i) => ({ id: `t${i}`, points }));
+    return level;
+  };
+  const censusOf = (level: LevelDef, labels: CensusLabel[] = []) => census(level, { x0: 20, x1: 80 }, () => 7, { labels });
+
+  /** Flat ground with a hole of `w` at 40 + o; each edge has a gap wall down to killY, like Track.gap. */
+  const holed = (o: number, w: number) => {
+    const kill = PREMADE.beach().level.killY;
+    const a = 40 + o;
+    const b = a + w;
+    return levelWith([
+      [{ x: 0, y: Y }, { x: a, y: Y }, { x: a + 0.01, y: kill }],
+      [{ x: b - 0.01, y: kill }, { x: b, y: Y }, { x: 100, y: Y }],
+    ]);
+  };
+  for (const o of OFFSETS) {
+    it(`a 0.5 m hole IS a gap, a 0.29 m hole is NOT (offset ${o})`, () => {
+      const g = censusOf(holed(o, 0.5));
+      expect(g.hazards).toEqual({ gap: 1 });
+      expect(censusOf(holed(o, 0.29)).hazards).toEqual({});
+      expect(censusOf(holed(o, 0.3)).hazards).toEqual({ gap: 1 }); // exactly the threshold counts
+    });
+  }
+
+  /** A hill: up 1.5 m over 5 m, a flat top `top` wide at 40 + o, down 1.5 m over 8 m (too gentle for a lip). */
+  const hill = (o: number, top: number) => {
+    const a = 40 + o;
+    return {
+      level: levelWith([[{ x: 0, y: Y }, { x: a - 5, y: Y }, { x: a, y: Y - 1.5 }, { x: a + top, y: Y - 1.5 }, { x: a + top + 8, y: Y }, { x: 100, y: Y }]]),
+      label: { kind: 'crest', x0: a - 5, x1: a + top + 8 },
+    };
+  };
+  for (const o of OFFSETS) {
+    it(`a 1.95 m hilltop IS a crest; a 2.05 m one is NOT, and cannot confirm a crest label (offset ${o})`, () => {
+      const narrow = hill(o, 1.95);
+      const n = censusOf(narrow.level, [narrow.label]);
+      expect(n.hazards).toEqual({ crest: 1 });
+      expect(n.unconfirmedLabels).toEqual([]);
+      const wide = hill(o, 2.05);
+      const w = censusOf(wide.level, [wide.label]);
+      expect(w.hazards).toEqual({});
+      expect(w.unconfirmedLabels).toEqual([`crest@${wide.label.x0.toFixed(1)}`]);
+      // and the flat top cannot hide a dull stretch either: nothing detected overlaps it
+      expect(w.detected).toEqual([]);
+    });
+  }
+
+  /** Six teeth of height `h` (1 m pitch, 0.5 m up, 0.5 m down) starting at 40 + o. */
+  const teeth = (o: number, h: number) => {
+    const pts: Vec2[] = [{ x: 0, y: Y }];
+    for (let i = 0; i < 6; i++) pts.push({ x: 40 + o + i, y: Y }, { x: 40.5 + o + i, y: Y - h });
+    pts.push({ x: 46 + o, y: Y }, { x: 100, y: Y });
+    return levelWith([pts]);
+  };
+  for (const o of OFFSETS) {
+    it(`0.12 m teeth make a washboard, 0.11 m teeth do not (offset ${o})`, () => {
+      expect(censusOf(teeth(o, 0.12)).hazards).toEqual({ washboard: 1 });
+      expect(censusOf(teeth(o, 0.11)).hazards).toEqual({});
+    });
+  }
+});
+
 describe('excitement audit: premade courses', () => {
   const censuses = Object.fromEntries(ids.map((id) => [id, premadeCensus(PREMADE[id]())])) as Record<(typeof ids)[number], Census>;
 
@@ -165,8 +236,8 @@ describe('excitement audit: endless at three depths', () => {
   it('the generator labels its hazards honestly: >= 99% of hazard labels are confirmed by the geometry', () => {
     const hazardLabels = perDepth.reduce((n, d) => n + d.feats.length, 0);
     const unconfirmed = perDepth.flatMap((d) => d.cs.flatMap((c) => c.unconfirmedLabels));
-    // a generator crest with a wide flat top is a plateau with a drop (not a peak); a tiny kicker is no hazard
-    expect(unconfirmed.length / hazardLabels, `${unconfirmed.length} of ${hazardLabels}: ${unconfirmed.join(' ')}`).toBeLessThanOrEqual(0.01); // measured: 2 of 700
+    // a small tolerance for detector edge cases; measured (audit-2, exact surface): 0 of 843
+    expect(unconfirmed.length / hazardLabels, `${unconfirmed.length} of ${hazardLabels}: ${unconfirmed.join(' ')}`).toBeLessThanOrEqual(0.01);
   });
 
   it('it gets harder with depth: more gaps (in the geometry too), taller crests; the opening has short gaps and no launch lips before 120 m', () => {
