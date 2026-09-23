@@ -12,7 +12,7 @@
  * ground: the start plateau is y 278 px = 9.27 m, the "first hill" crest
  * y 160.8 px = 5.36 m is higher up, the lowest point y 443.15 px = 14.77 m.
  * x is kept as-is (no re-origin), so the original's x-positions quoted in
- * research/coconut-run-mechanics.md map 1:1 (goal line 7670 px = 255.67 m).
+ * research/coconut-run-mechanics.md map 1:1 (the 2008 goal line 7670 px = 255.67 m; see M1 below).
  *
  * The original extruded each vertex pair down into a solid column; our
  * one-sided chain (solid below) is the same surface. Additions that are NOT
@@ -37,6 +37,14 @@
  * by an added pit floor (PIT_FLOOR_M, flagged addition) with the SOLID
  * blender standing on it (position = box centre) and the goal sensor over
  * the floor's bottom 2.2 m, like the premade courses.
+ *
+ * M1 (TUNING.md "M1"): the pit is the Kitchen-style widened finish
+ * (ORIGINAL_FINISH: 20 m of floor before the blender, the goal line and the
+ * sensor's left edge 10.5 m before it) so long carts fit in it; before M1 it
+ * was 3.75 m of floor with the line at the 2008 lip (7670 px). The goal line
+ * is therefore at 7971.75 px, not the 2008 7670 px, which stays exported as
+ * ORIGINAL_GOAL_LINE_PX (the recovered course's datum). The recovered
+ * vertices are unchanged.
  */
 
 import { pxToM } from '../model/coords';
@@ -57,11 +65,28 @@ export function parseOriginalTerrain(text: string): Vec2[] {
     });
 }
 
+/**
+ * The 2008 goal line (px): the shredder lip. Kept as the historical datum
+ * (the recovered course's window, e.g. roughness, ends here); since M1 the
+ * game's counting line is ORIGINAL_FINISH.lineGap before the blender.
+ */
 export const ORIGINAL_GOAL_LINE_PX = 7670;
-/** Free pit floor in front of the blender (m; S6: centre 4.5 − half the 1.5 m S6 blender). */
-const ORIGINAL_BLENDER_FRONT_GAP = 3.75;
-/** Added pit floor after the last recovered vertex (m). UX1: grows with the shared blender, 7 -> 9.25 m. */
-export const PIT_FLOOR_M = blenderPitFloor(ORIGINAL_BLENDER_FRONT_GAP);
+/**
+ * The original's finish pit (M1, owner: "the original track goal zone is too
+ * small for large vehicles"), Kitchen-style (tools/levels/premade.ts
+ * KITCHEN_FINISH): `frontGap` m of free pit floor before the blender and the
+ * goal line + sensor's left edge `lineGap` m before the blender. Before M1
+ * the pit had 3.75 m before the blender and the line at the 2008 lip, so a
+ * long cart (the 17.5 m Kitchen Bridger) stopped nose-on against the blender
+ * with its bed still above the lip: its load never reached the sensor, the
+ * goal never fired, and the stuck hint showed. Measured, TUNING.md "M1".
+ * The 71 recovered vertices are untouched: the pit floor, blender, sensor
+ * and line are all flagged additions after the last recovered vertex.
+ */
+export const ORIGINAL_FINISH = { frontGap: 20, lineGap: 10.5 } as const;
+export type OriginalFinish = { readonly frontGap: number; readonly lineGap: number };
+/** Added pit floor after the last recovered vertex (m). UX1: 7 -> 9.25 m; M1: 9.25 -> 25.5 m (ORIGINAL_FINISH). */
+export const PIT_FLOOR_M = blenderPitFloor(ORIGINAL_FINISH.frontGap);
 /** Solid blender body (m): the shared goal blender (src/model/goal.ts), as on the premade courses. */
 export const ORIGINAL_BLENDER_SIZE = BLENDER_SIZE;
 /** The 2008 build area's left edge (design px): design x −20 sits just right of the first recovered vertex. */
@@ -72,7 +97,10 @@ const FUNNEL_OFFSET = { x: 115, y: -225 } as const;
 /** Added flat start plateau (UX1): reaches this far left of the build area's left edge (m). */
 const START_PLATEAU_MARGIN_M = 1.5;
 
-export function originalCourseLevel(pxVertices: readonly Vec2[]): LevelDef {
+/** `finish` overrides ORIGINAL_FINISH (measurement and tests only; the shipped level uses the default). */
+export function originalCourseLevel(pxVertices: readonly Vec2[], finish: OriginalFinish = ORIGINAL_FINISH): LevelDef {
+  if (!(finish.lineGap > 0 && finish.lineGap < finish.frontGap)) throw new Error(`originalCourseLevel: lineGap ${finish.lineGap} must be in (0, frontGap)`);
+  const pitFloor = blenderPitFloor(finish.frontGap);
   const pts = pxVertices.map((p) => ({ x: pxToM(p.x), y: pxToM(p.y) }));
   const first = pts[0]!;
   const last = pts[pts.length - 1]!;
@@ -82,7 +110,9 @@ export function originalCourseLevel(pxVertices: readonly Vec2[]): LevelDef {
   const plateauY = Math.min(...plateau.map((p) => p.y));
   const startX = first.x - pxToM(ORIGINAL_BUILD_MIN_X_PX) + 0.05;
   const wallX = Math.min(first.x, startX + pxToM(BUILD_MIN_X_PX) - START_PLATEAU_MARGIN_M);
-  const floorEnd = last.x + PIT_FLOOR_M;
+  const floorEnd = last.x + pitFloor;
+  // M1: the goal line and the sensor's left edge sit lineGap before the blender (Kitchen-style)
+  const lineX = last.x + finish.frontGap - finish.lineGap;
   return {
     version: LEVEL_DEF_VERSION,
     id: 'original',
@@ -100,15 +130,15 @@ export function originalCourseLevel(pxVertices: readonly Vec2[]): LevelDef {
     cartStart: { x: startX, y: plateauY },
     funnel: { x: startX + pxToM(FUNNEL_OFFSET.x), y: plateauY + pxToM(FUNNEL_OFFSET.y) },
     goal: {
-      sensor: { x: last.x, y: last.y - 2.2, width: PIT_FLOOR_M, height: 2.2 },
-      lineX: pxToM(ORIGINAL_GOAL_LINE_PX),
+      sensor: { x: lineX, y: last.y - 2.2, width: floorEnd - lineX, height: 2.2 },
+      lineX,
     },
     props: [
       {
         id: 'blender',
         art: 'blender',
         solid: true,
-        position: { x: last.x + ORIGINAL_BLENDER_FRONT_GAP + ORIGINAL_BLENDER_SIZE.x / 2, y: last.y - ORIGINAL_BLENDER_SIZE.y / 2 },
+        position: { x: last.x + finish.frontGap + ORIGINAL_BLENDER_SIZE.x / 2, y: last.y - ORIGINAL_BLENDER_SIZE.y / 2 },
         size: { ...ORIGINAL_BLENDER_SIZE },
       },
     ],

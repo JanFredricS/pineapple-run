@@ -288,6 +288,15 @@ async function mountRunOnce(
     });
     app.resizeTo = canvasHost;
     app.resize();
+    // M1: Pixi's resizeTo listens to window 'resize' only. The host tracks the dynamic
+    // viewport (index.html: 100dvh), so follow the HOST's size too: iOS Safari's toolbar
+    // collapsing / expanding (and safe-area or orientation changes) then always resize
+    // the canvas instead of leaving it stretched or letterboxed at the old size.
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => app.resize());
+      ro.observe(canvasHost);
+      cleanup.push(() => ro.disconnect());
+    }
     const renderer = new SceneRenderer(lib, { theme: level.theme });
     cleanup.push(() => renderer.destroy());
     renderer.setLevel(level);
@@ -381,7 +390,7 @@ async function mountRunOnce(
         const h = app.screen.height;
         const cart = cartBox();
         // ready phase: frame funnel + cart (tracks a cart driven before Release); then blend to follow
-        if (sinceRelease === null) readyView = readyFrame(funnelBox, cart, w, h, followZoom(w));
+        if (sinceRelease === null) readyView = readyFrame(funnelBox, cart, w, h, followZoom(w, h));
         // look-ahead follow, eased into the whole-blender finish frame near the goal (framing.ts)
         const view: Camera = runCamera({
           anchorX: look.interpolated(alpha),

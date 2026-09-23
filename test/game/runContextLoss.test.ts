@@ -343,3 +343,64 @@ describe('GL1: WebGL context loss on the run screen', () => {
     screen.destroy();
   });
 });
+
+// M1 (owner, iOS Safari: "if I don't minimize the toolbar it is a bit squished"): index.html now sizes
+// the page to the dynamic viewport (100dvh), and the run canvas follows its HOST's size, not only
+// window 'resize' (Pixi's resizeTo), so a toolbar collapse always re-sizes the canvas.
+describe('M1: the run canvas follows its host size', () => {
+  class FakeResizeObserver {
+    static all: FakeResizeObserver[] = [];
+    targets: unknown[] = [];
+    disconnected = false;
+    constructor(private readonly cb: () => void) {
+      FakeResizeObserver.all.push(this);
+    }
+    observe(t: unknown): void {
+      this.targets.push(t);
+    }
+    disconnect(): void {
+      this.disconnected = true;
+      this.targets = [];
+    }
+    /** The browser reports a size change of an observed element. */
+    fire(): void {
+      if (!this.disconnected) this.cb();
+    }
+  }
+
+  it('a host size change (e.g. the iOS toolbar collapsing) resizes the Pixi app; unmount disconnects the observer', async () => {
+    FakeResizeObserver.all = [];
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+    const host = new FakeEl('div');
+    const screen = await mount(host);
+    const app = apps[0]!;
+    expect(runningOn(host, app)).toBe(true);
+    const canvasHost = app.canvas.parent!;
+    expect(canvasHost.className === 'pr-run__canvas' || canvasHost.getAttribute('class') === 'pr-run__canvas').toBe(true);
+    const ro = FakeResizeObserver.all.find((o) => o.targets.includes(canvasHost));
+    expect(ro, 'the canvas host is observed').toBeDefined();
+    const resize = vi.spyOn(app, 'resize');
+    ro!.fire();
+    expect(resize).toHaveBeenCalledTimes(1);
+    screen.destroy();
+    expect(ro!.disconnected).toBe(true);
+    ro!.fire();
+    expect(resize).toHaveBeenCalledTimes(1); // the shared app outlives the mount: no resizes after unmount
+  });
+
+  it('index.html sizes html, body and #app to the dynamic viewport, with the 100% fallback first; viewport-fit=cover stays', async () => {
+    const { readFileSync } = await import('node:fs');
+    const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+    const rule = (sel: RegExp) => html.match(sel)?.[1] ?? '';
+    for (const [name, body] of [
+      ['html, body', rule(/html, body \{([^}]*)\}/)],
+      ['#app', rule(/#app \{([^}]*)\}/)],
+    ] as const) {
+      const fallback = body.indexOf('height: 100%;');
+      const dvh = body.indexOf('height: 100dvh;');
+      expect(fallback, `${name}: height 100% fallback`).toBeGreaterThanOrEqual(0);
+      expect(dvh, `${name}: height 100dvh`).toBeGreaterThan(fallback);
+    }
+    expect(html).toMatch(/<meta name="viewport" content="[^"]*viewport-fit=cover/);
+  });
+});

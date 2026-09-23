@@ -9,7 +9,10 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { validateLevelDef } from '../../src/model/validate';
 import { LevelChunkSource } from '../../src/terrain/chunks';
-import { originalCourseLevel, parseOriginalTerrain } from '../../src/terrain/originalCourse';
+import { ORIGINAL_FINISH, ORIGINAL_GOAL_LINE_PX, originalCourseLevel, parseOriginalTerrain, PIT_FLOOR_M } from '../../src/terrain/originalCourse';
+import { goalBlenderBox } from '../../src/game/framing';
+import { pxToM } from '../../src/model/coords';
+import { BLENDER_BACK_GAP, BLENDER_SIZE } from '../../src/model/goal';
 
 const root = join(__dirname, '..', '..');
 const txt = readFileSync(join(root, 'research/original-game-files/terrain.txt'), 'utf8');
@@ -60,13 +63,37 @@ describe('original course port', () => {
     for (const p of peaks) expect(297.15 - p.y * 30).toBeCloseTo(15.65, 6);
   });
 
-  it('goal line is the original x 7670 px and the level chunks cleanly', () => {
-    expect(expected.goal.lineX * 30).toBeCloseTo(7670, 9);
+  it('M1 finish: the 2008 goal line (7670 px, the lip) is the datum; the pit, sensor and line are the widened Kitchen-style finish after the last recovered vertex; the level chunks cleanly', () => {
+    // the 2008 line is kept as the recovered course's datum (the lip)...
+    expect(ORIGINAL_GOAL_LINE_PX).toBe(7670);
+    const course = expected.terrain.spans.find((s) => s.id === 'course')!.points;
+    const last = course[course.length - 1]!;
+    expect(pxToM(ORIGINAL_GOAL_LINE_PX)).toBeLessThan(last.x); // between the lip and the chasm floor
+    // ...and since M1 the pit is ORIGINAL_FINISH: 20 m of floor before the blender, line + sensor 10.5 m before it
+    expect(ORIGINAL_FINISH).toEqual({ frontGap: 20, lineGap: 10.5 });
+    expect(PIT_FLOOR_M).toBeCloseTo(20 + BLENDER_SIZE.x + BLENDER_BACK_GAP, 12); // 25.5 m (was 9.25)
+    const pit = expected.terrain.spans.find((s) => s.id === 'pit-floor')!.points;
+    expect(pit[0]).toEqual(last); // starts on the last recovered vertex
+    expect(pit[1]!.x - last.x).toBeCloseTo(PIT_FLOOR_M, 12);
+    expect(pit[1]!.y).toBe(last.y);
+    const blender = goalBlenderBox(expected);
+    expect(blender.minX - last.x).toBeCloseTo(20, 12);
+    expect(blender.maxY).toBeCloseTo(last.y, 12); // stands on the pit floor
+    expect(blender.minX - expected.goal.lineX).toBeCloseTo(10.5, 12);
+    expect(expected.goal.sensor.x).toBe(expected.goal.lineX);
+    expect(expected.goal.sensor.x + expected.goal.sensor.width).toBeCloseTo(pit[1]!.x, 12); // to the back wall
+    expect(expected.goal.sensor.y + expected.goal.sensor.height).toBeCloseTo(last.y, 12); // the bottom 2.2 m of the pit
+    expect(expected.goal.lineX * 30).toBeCloseTo(7971.75, 6); // 7670 px before M1
+    // a custom finish is honoured (the recovered span unchanged) and a line outside the pit is refused
+    const alt = originalCourseLevel(parseOriginalTerrain(txt), { frontGap: 12, lineGap: 6 });
+    expect(goalBlenderBox(alt).minX - alt.goal.lineX).toBeCloseTo(6, 12);
+    expect(alt.terrain.spans.find((s) => s.id === 'course')).toEqual(expected.terrain.spans.find((s) => s.id === 'course'));
+    expect(() => originalCourseLevel(parseOriginalTerrain(txt), { frontGap: 10, lineGap: 10 })).toThrow(/lineGap/);
     // B1: the recovered course ships in the Blueprint theme (pinned again in test/render/blueprint.test.ts)
     expect(expected.theme).toBe('blueprint');
     const src = new LevelChunkSource(expected.terrain);
     expect(src.firstChunk).toBe(-1);
-    expect(src.lastChunk).toBe(6);
+    expect(src.lastChunk).toBe(7); // M1: the 16 m longer pit floor reaches one more chunk (was 6)
     let n = 0;
     for (let k = src.firstChunk; k <= src.lastChunk; k++) n += src.chunk(k).pieces.length;
     expect(n).toBeGreaterThanOrEqual(8);

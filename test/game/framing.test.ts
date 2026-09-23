@@ -20,6 +20,8 @@ import {
   FINISH_MIN_ZOOM_RATIO,
   FINISH_PAD,
   finishFrame,
+  FOLLOW_ZOOM_MAX,
+  FOLLOW_ZOOM_MIN,
   finishWeight,
   followCamera,
   followZoom,
@@ -33,6 +35,8 @@ import {
   runCamera,
   withFinish,
   goalBlenderBox,
+  VIEW_HEIGHT_M,
+  VIEW_WIDTH_M,
   type Box,
 } from '../../src/game/framing';
 import { BLENDER_SIZE } from '../../src/model/goal';
@@ -52,6 +56,7 @@ const VIEWPORTS: [number, number][] = [
   [1280, 760],
   [800, 600],
   [844, 390], // phone landscape
+  [844, 320], // M1: phone landscape, iOS Safari toolbar open
 ];
 
 /** Every world point of every cart shape (polygon vertices, 8 points on each circle). */
@@ -112,10 +117,10 @@ describe('ready-phase framing', () => {
             expect(Math.min(...cartPts.map((p) => p.y))).toBeLessThan(origins.minY - 1 - 1);
           }
           for (const [w, h] of VIEWPORTS) {
-            const followZoom = Math.min(1.5, Math.max(0.5, w / (24 * 30)));
-            const fr = readyFrame(boxOf(funnelPts), cartBox, w, h, followZoom);
+            const fz = followZoom(w, h);
+            const fr = readyFrame(boxOf(funnelPts), cartBox, w, h, fz);
             expect(fr.framed).toBe('both');
-            expect(fr.zoom).toBeLessThanOrEqual(followZoom);
+            expect(fr.zoom).toBeLessThanOrEqual(fz);
             expectOnScreen([...funnelPts, ...cartPts], { center: fr.center, zoom: fr.zoom, viewportWidth: w, viewportHeight: h }, `${id} ${cartName} ${w}x${h}`);
           }
         } finally {
@@ -144,10 +149,10 @@ describe('ready-phase framing', () => {
     const funnel: Box = { minX: 0, minY: -8, maxX: 3, maxY: -2 };
     const cartAt = (x: number): Box => ({ minX: x, minY: -2.5, maxX: x + 6, maxY: 0 });
     for (const [w, h] of VIEWPORTS) {
-      const followZoom = Math.min(1.5, Math.max(0.5, w / (24 * 30)));
-      const near = readyFrame(funnel, cartAt(2), w, h, followZoom);
+      const fz = followZoom(w, h);
+      const near = readyFrame(funnel, cartAt(2), w, h, fz);
       expect(near.framed).toBe('both');
-      const far = readyFrame(funnel, cartAt(300), w, h, followZoom);
+      const far = readyFrame(funnel, cartAt(300), w, h, fz);
       expect(far.framed).toBe('cart');
       expect(far.zoom).toBeGreaterThanOrEqual(READY_MIN_ZOOM);
       const c = cartAt(300);
@@ -155,7 +160,7 @@ describe('ready-phase framing', () => {
       expectOnScreen([{ x: c.minX, y: c.minY }, { x: c.maxX, y: c.maxY }], cam, `far ${w}x${h}`);
       // a cart bigger than READY_MIN_ZOOM allows is still fitted whole (zoom goes below the floor)
       const huge: Box = { minX: 300, minY: -60, maxX: 400, maxY: 0 };
-      const hf = readyFrame(funnel, huge, w, h, followZoom);
+      const hf = readyFrame(funnel, huge, w, h, fz);
       expect(hf.zoom).toBeLessThan(READY_MIN_ZOOM);
       expectOnScreen([{ x: huge.minX, y: huge.minY }, { x: huge.maxX, y: huge.maxY }], { center: hf.center, zoom: hf.zoom, viewportWidth: w, viewportHeight: h }, `huge ${w}x${h}`);
     }
@@ -177,6 +182,64 @@ describe('ready-phase framing', () => {
   });
 });
 
+describe('M1: height-aware follow zoom (phones see more world)', () => {
+  // [w, h, old width-only zoom, new zoom]; measured / derived in TUNING.md "M1"
+  const TABLE: [number, number, number, number][] = [
+    [1280, 760, 1.5, 1.5], // desktop: unchanged
+    [1280, 720, 1.5, 1.5],
+    [800, 600, 800 / 720, 800 / 720],
+    [844, 390, 844 / 720, 390 / 420], // iPhone landscape, toolbar hidden: 1.172 -> 0.929
+    [844, 320, 844 / 720, 320 / 420], // iPhone landscape, toolbar open: 1.172 -> 0.762
+    [932, 430, 932 / 720, 430 / 420], // big iPhone landscape: 1.294 -> 1.024
+    [667, 375, 667 / 720, 375 / 420], // small iPhone landscape: 0.926 -> 0.893
+    [200, 120, 0.5, 0.5], // the 0.5 floor still wins
+  ];
+  it('pins the zoom per viewport: VIEW_WIDTH_M across, capped so at least VIEW_HEIGHT_M of height shows, clamped 0.5-1.5', () => {
+    expect(VIEW_WIDTH_M).toBe(24);
+    expect(VIEW_HEIGHT_M).toBe(14);
+    expect([FOLLOW_ZOOM_MIN, FOLLOW_ZOOM_MAX]).toEqual([0.5, 1.5]);
+    for (const [w, h, old, now] of TABLE) {
+      expect(Math.min(1.5, Math.max(0.5, w / (24 * 30))), `old ${w}x${h}`).toBeCloseTo(old, 9);
+      expect(followZoom(w, h), `${w}x${h}`).toBeCloseTo(now, 9);
+    }
+  });
+
+  it('a phone landscape view shows more world than before in both axes, and at least VIEW_HEIGHT_M of height (unless at the 0.5 floor)', () => {
+    for (const [w, h] of [[844, 390], [844, 320], [932, 430], [667, 375], [1280, 760], [800, 600]] as const) {
+      const z = followZoom(w, h);
+      const old = Math.min(1.5, Math.max(0.5, w / 720));
+      expect(z, `${w}x${h} never zooms IN`).toBeLessThanOrEqual(old + 1e-12);
+      expect(h / (z * PX_PER_M), `${w}x${h} height shown`).toBeGreaterThanOrEqual(VIEW_HEIGHT_M - 1e-9);
+    }
+    // the owner's phone: ~30 m x 14 m instead of 24 m x 11.1 m
+    const z = followZoom(844, 390);
+    expect(844 / (z * PX_PER_M)).toBeCloseTo(30.3, 2);
+    expect(390 / (z * PX_PER_M)).toBeCloseTo(14, 9);
+    expect(390 / ((844 / 720) * PX_PER_M)).toBeCloseTo(11.09, 2); // before M1
+  });
+
+  it('the run camera and the ready frame use the height-aware zoom (the render path, not just the helper)', () => {
+    const cam = runCamera({ anchorX: 50, followY: 0, viewportWidth: 844, viewportHeight: 390, blender: null, cart: null, ready: null, sinceRelease: null });
+    expect(cam.zoom).toBeCloseTo(390 / 420, 9);
+    const tall = runCamera({ anchorX: 50, followY: 0, viewportWidth: 1280, viewportHeight: 760, blender: null, cart: null, ready: null, sinceRelease: null });
+    expect(tall.zoom).toBe(1.5);
+    // the ready frame's cap is the follow zoom: a small box near the funnel is framed no closer than it
+    const fr = readyFrame({ minX: 0, minY: -2, maxX: 1, maxY: 0 }, { minX: 0, minY: -1, maxX: 1, maxY: 0 }, 844, 390, followZoom(844, 390));
+    expect(fr.zoom).toBeCloseTo(390 / 420, 9);
+  });
+
+  it('on a phone the whole 9 m blender (plus finish margins) fits between the HUD pads at the follow zoom: no finish zoom-out needed', () => {
+    for (const [w, h] of [[844, 390], [844, 320]] as const) {
+      const z = followZoom(w, h);
+      const need = (BLENDER_SIZE.y + 2 * FINISH_MARGIN_M) * PX_PER_M * z;
+      expect(need, `${w}x${h}`).toBeLessThanOrEqual(h - FINISH_PAD.top - FINISH_PAD.bottom);
+      const blender: Box = { minX: 100, maxX: 103.75, minY: -9, maxY: 0 };
+      const f = finishFrame(followCamera(95, -3, z, w, h), 95, blender, { minX: 92, maxX: 98, minY: -2, maxY: -0.2 });
+      expect(f.zoom, `${w}x${h}: only the look point moves`).toBe(z);
+    }
+  });
+});
+
 describe('UX1 look-ahead follow camera', () => {
   it('LookAheadFollow has no steady-state lag at constant speed, eases to a stop, and holds without a cart', () => {
     const f = new LookAheadFollow(0);
@@ -193,7 +256,7 @@ describe('UX1 look-ahead follow camera', () => {
 
   it('lookahead: the anchor lands at LOOK_AHEAD_FRACTION of the width at every follow zoom', () => {
     for (const [w, h] of VIEWPORTS) {
-      const cam = followCamera(100, 5, followZoom(w), w, h);
+      const cam = followCamera(100, 5, followZoom(w, h), w, h);
       expect(worldToScreen({ x: 100, y: 5 }, cam).x / w).toBeCloseTo(LOOK_AHEAD_FRACTION, 9);
       expect(worldToScreen({ x: 100, y: 5 }, cam).y).toBeCloseTo(h / 2, 9); // vertical follow unchanged
     }
@@ -281,7 +344,7 @@ describe('UX1 look-ahead follow camera', () => {
 
   // audit-1 #2: the 9 m blender on a short landscape phone
   const PIT_COURSES = ['beach', 'kitchen', 'workbench', 'original', 'tikibar'] as const;
-  const PIT_VIEWPORTS = [[844, 390], [1280, 720]] as const;
+  const PIT_VIEWPORTS = [[844, 390], [844, 320], [1280, 720]] as const;
 
   /**
    * Drive `line` into the finish pit and check, at every step with the cart's
@@ -334,8 +397,8 @@ describe('UX1 look-ahead follow camera', () => {
           const followY = s.controller.camera.position.y;
           const cam = framed
             ? runCamera({ anchorX: look.x, followY, viewportWidth: w, viewportHeight: vh, blender, cart: box, ready: null, sinceRelease: null })
-            : followCamera(look.x, followY, followZoom(w), w, vh);
-          minZoomSeen = Math.min(minZoomSeen, cam.zoom / followZoom(w));
+            : followCamera(look.x, followY, followZoom(w, vh), w, vh);
+          minZoomSeen = Math.min(minZoomSeen, cam.zoom / followZoom(w, vh));
           const where = `${id} ${w}x${vh} step ${n}`;
           if (long) {
             rearClipM = Math.max(rearClipM, -worldToScreen({ x: box.minX, y: box.minY }, cam).x / (PX_PER_M * cam.zoom));
@@ -424,7 +487,7 @@ describe('UX1 look-ahead follow camera', () => {
     }, 120_000);
   }
 
-  it('kitchen, the 17.5 m Kitchen Bridger (R30): over its final 4.75 m the WHOLE blender and the cart front half are on screen; through the whole pit its front stays on screen and its rear overhangs the left edge by at most 2 m', async () => {
+  it('kitchen, the 17.5 m Kitchen Bridger (R30): over its final 4.75 m the WHOLE blender and the cart front half are on screen; through the whole pit its front stays on screen and its rear overhangs the left edge by at most 1 m (M1; 2 m before)', async () => {
     const r = await finishPitRun(courseFor('kitchen')!, kitchenBridger(), PREMADE.kitchen().pace, true, true);
     // measured: 61 steps past the goal line, 29 of them in the final stretch
     expect(r.inPit).toBeGreaterThan(40);
@@ -432,9 +495,29 @@ describe('UX1 look-ahead follow camera', () => {
     expect(r.violations, 'blender / cart front half off screen in the final stretch').toEqual([]);
     expect(r.frontOff, 'the bridger front off screen').toBe(0);
     expect(r.minZoomSeen).toBeGreaterThan(0.75);
-    // measured 1.64 m: the camera's 30% look-ahead cannot show the rear of a > ~14.4 m cart (R30)
-    expect(r.rearClipM).toBeLessThanOrEqual(2);
+    // R30: the camera's 30% look-ahead cannot show the rear of a cart longer than its rear allowance.
+    // Measured 1.64 m with the width-only zoom (at 844x390); M1's height-aware zoom shows ~30 m on that
+    // phone, so the worst case is now 1280x720 (unchanged, 0.75 m) and the phone 0.19 m (0 at 844x320).
+    expect(r.rearClipM).toBeLessThanOrEqual(1);
   }, 120_000);
+
+  // M1: the original's widened finish (ORIGINAL_FINISH) takes the bridger into the pit, so its framing is
+  // checked like Kitchen's (R30 long mode). Measured rear clip (max over 844x390, 844x320, 1280x720):
+  // 10 m/s 0.64 m, holding right 0.92 m (both at 1280x720; 0.08 / 0.37 m at 844x390, 0 at 844x320).
+  for (const [name, line] of [
+    ['10 m/s', [{ x: 0, speed: 10 }]],
+    ['holding right', FLOOR_IT],
+  ] as [string, readonly PaceNote[]][]) {
+    it(`original, the 17.5 m Kitchen Bridger at ${name} (M1): the WHOLE blender and the cart front half on screen in the final stretch; front always on screen; rear clip <= 1 m`, async () => {
+      const r = await finishPitRun(courseFor('original')!, kitchenBridger(), line, true, true);
+      expect(r.inPit).toBeGreaterThan(40);
+      expect(r.finalStretch).toBeGreaterThan(20);
+      expect(r.violations, 'blender / cart front half off screen in the final stretch').toEqual([]);
+      expect(r.frontOff, 'the bridger front off screen').toBe(0);
+      expect(r.minZoomSeen).toBeGreaterThan(0.75);
+      expect(r.rearClipM).toBeLessThanOrEqual(1);
+    }, 120_000);
+  }
 
   // audit-2 #3: negative control — the same runs with finish framing bypassed must FAIL the criterion
   it('control: with finish framing disabled, every one of those courses clips the blender or cart', async () => {
@@ -453,14 +536,15 @@ describe('UX1 look-ahead follow camera', () => {
     // a tall cart flung high above the finish pit: blender + cart span ~20 m
     const cart: Box = { minX: 92, maxX: 96, minY: -20, maxY: -16 };
     const [w, h] = [844, 390];
-    const follow = followCamera(94, -12, followZoom(w), w, h);
-    expect(follow.zoom).toBeCloseTo(844 / 720, 9);
+    const follow = followCamera(94, -12, followZoom(w, h), w, h);
+    // M1: the phone's follow zoom is height-capped (VIEW_HEIGHT_M of world height), not 844 / 720
+    expect(follow.zoom).toBeCloseTo(h / (VIEW_HEIGHT_M * 30), 9);
     const top = cart.minY - FINISH_MARGIN_M;
     const bottom = blender.maxY + FINISH_MARGIN_M;
     const unclamped = (h - FINISH_PAD.top - FINISH_PAD.bottom) / ((bottom - top) * 30);
     const floor = follow.zoom * FINISH_MIN_ZOOM_RATIO;
     expect(FINISH_MIN_ZOOM_RATIO).toBe(0.75);
-    expect(floor).toBeCloseTo(0.879, 3);
+    expect(floor).toBeCloseTo((0.75 * h) / (VIEW_HEIGHT_M * 30), 9);
     expect(unclamped).toBeLessThan(floor); // the fit alone would go below the floor...
     const f = finishFrame(follow, 94, blender, cart);
     expect(f.zoom).toBeCloseTo(floor, 12); // ...and the clamp engages
@@ -468,10 +552,10 @@ describe('UX1 look-ahead follow camera', () => {
     expect(worldToScreen({ x: 94, y: 0 }, f).x / w).toBeCloseTo(LOOK_AHEAD_FRACTION, 9); // cart still at 30%
     // a fit above the floor is untouched by it
     const small: Box = { minX: 92, maxX: 96, minY: -2, maxY: -0.2 };
-    const g = finishFrame(followCamera(94, -1, followZoom(w), w, h), 94, blender, small);
+    const g = finishFrame(followCamera(94, -1, followZoom(w, h), w, h), 94, blender, small);
     expect(g.zoom).toBeGreaterThan(floor);
     // and the floor never goes under READY_MIN_ZOOM on a tiny viewport
-    const tiny = followCamera(94, -12, followZoom(200), 200, 120);
+    const tiny = followCamera(94, -12, followZoom(200, 120), 200, 120);
     expect(finishFrame(tiny, 94, blender, cart).zoom).toBeGreaterThanOrEqual(READY_MIN_ZOOM);
   });
 
@@ -479,10 +563,10 @@ describe('UX1 look-ahead follow camera', () => {
     const blender: Box = { minX: 100, maxX: 103.75, minY: -9, maxY: 0 };
     const cart: Box = { minX: 90, maxX: 94, minY: -2, maxY: -0.2 };
     for (const [w, h] of [[844, 390], [1280, 720], [800, 600]] as const) {
-      const far = followCamera(40, -1, followZoom(w), w, h);
+      const far = followCamera(40, -1, followZoom(w, h), w, h);
       expect(withFinish(far, 40, blender, cart)).toEqual(far);
       expect(finishWeight(far, blender)).toBe(0);
-      const near = followCamera(92, -1, followZoom(w), w, h);
+      const near = followCamera(92, -1, followZoom(w, h), w, h);
       expect(finishWeight(near, blender)).toBe(1);
       const f = withFinish(near, 92, blender, cart);
       expect(worldToScreen({ x: 92, y: 0 }, f).x / w).toBeCloseTo(LOOK_AHEAD_FRACTION, 9);
@@ -493,7 +577,7 @@ describe('UX1 look-ahead follow camera', () => {
       // monotone ease-in as the cart approaches
       let last = 0;
       for (let x = 60; x <= 92; x += 1) {
-        const e = finishWeight(followCamera(x, -1, followZoom(w), w, h), blender);
+        const e = finishWeight(followCamera(x, -1, followZoom(w, h), w, h), blender);
         expect(e).toBeGreaterThanOrEqual(last);
         last = e;
       }
