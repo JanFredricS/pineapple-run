@@ -5,7 +5,9 @@
  * dull stretch at the level's typical speed, too few hazards or too little
  * hazard variety, an unrounded sharp crest, a label the geometry does not
  * back up, or (premade) no risk/reward shortcut (audit-1 #4). Run on the
- * three premade courses (typical speed = their pace notes) and on endless
+ * premade courses (typical speed = their pace notes), on the original course
+ * (typical speed = ORIGINAL_EXPERT_LINE; measured and pinned, not held to the
+ * authoring rules: it is the 2008 terrain, M1 audit #1) and on endless
  * terrain at three depths (typical speed 7 m/s).
  */
 import { describe, expect, it } from 'vitest';
@@ -13,10 +15,13 @@ import type { Vec2 } from '../../src/model/geometry';
 import type { LevelDef } from '../../src/model/level';
 import { plateauRange } from '../../src/game/startArea';
 import { blockDifficulty, generateLevel, type FeatureInstance } from '../../src/terrain/generator';
-import { auditLevel, census, ENDLESS_RULES, PREMADE_RULES, type Census, type CensusLabel } from '../../tools/levels/census';
+import { auditLevel, census, ENDLESS_RULES, finishLipX, PREMADE_RULES, type Census, type CensusLabel } from '../../tools/levels/census';
+import { levelById } from '../../src/game/courses';
+import { pxToM } from '../../src/model/coords';
+import { ORIGINAL_GOAL_LINE_PX } from '../../src/terrain/originalCourse';
 import { PREMADE } from '../../tools/levels/premade';
 import { Track, type AuthoredLevel } from '../../tools/levels/track';
-import { targetSpeed } from '../integration/driver';
+import { ORIGINAL_EXPERT_LINE, targetSpeed } from '../integration/driver';
 
 const ids = ['beach', 'kitchen', 'workbench', 'tikibar'] as const;
 
@@ -252,6 +257,67 @@ describe('excitement audit: premade courses', () => {
     // the worst dull stretch stays inside the rule, and below its pre-K1 1.94 s
     expect(k.longestDullSeconds).toBeLessThanOrEqual(PREMADE_RULES.maxDullSeconds);
     expect(k.longestDullSeconds).toBeLessThan(1.94);
+  });
+});
+
+/**
+ * M1 audit #1: the original course, censused like the premades: from the
+ * start plateau to its goal line (since M1 10.5 m before the blender, so the
+ * ~10.3 m of pit floor past the 2008 lip is in the window), at the expert
+ * line's speed. The finish geometry from the lip on is kept sharp (the
+ * premades' `finish` feature starts at the same lip, finishLipX). No labels:
+ * the 2008 terrain has no authored features.
+ */
+function originalCensus(x1?: number): Census {
+  const l = levelById('original')!;
+  return census(l, { x0: plateauRange(l.cartStart).maxX, x1: x1 ?? l.goal.lineX }, (x) => targetSpeed(ORIGINAL_EXPERT_LINE, x), {
+    keepSharp: [{ x0: finishLipX(l), x1: Infinity }],
+  });
+}
+
+describe('excitement audit: the original course (M1 audit #1)', () => {
+  const l = levelById('original')!;
+  const c = originalCensus();
+  const lip = originalCensus(pxToM(ORIGINAL_GOAL_LINE_PX)); // the pre-M1 window, to the 2008 line at the lip
+
+  it('the window reaches the M1 goal line (the landing counter is inside it) and the lip rule finds the 2008 lip', () => {
+    expect(c.length).toBeCloseTo(l.goal.lineX - plateauRange(l.cartStart).maxX, 6);
+    expect(c.length - lip.length).toBeCloseTo(l.goal.lineX - pxToM(ORIGINAL_GOAL_LINE_PX), 6); // 10.06 m more than before M1
+    expect(finishLipX(l) * 30).toBeCloseTo(7662.25, 6);
+  });
+
+  // measured: 13 hazards (drop 4, crest 3, launchLip 5, washboard 1), 5.14 / 100 m over 253.1 m; the worst dull
+  // stretch 13.5 m at x 53.6 (1.45 s at the expert line's 9.3 m/s); sharpest crest 3.76 (unrounded 2008 terrain)
+  it('counts pinned', () => {
+    expect(c.hazards).toEqual({ drop: 4, crest: 3, launchLip: 5, washboard: 1 });
+    expect(c.hazardCount).toBe(13);
+    expect(c.hazardKinds).toBe(4);
+    expect(c.hazardsPer100m).toBeCloseTo(5.136, 2);
+    expect(c.longestDullMetres).toBeCloseTo(13.5, 6);
+    expect(c.longestDullAt).toBeCloseTo(53.6, 1);
+    expect(c.longestDullSeconds).toBeCloseTo(1.452, 2);
+    expect(c.sharpestCrest).toBeCloseTo(3.763, 2);
+    expect(c.shortcuts).toEqual([]);
+    expect(c.unconfirmedLabels).toEqual([]);
+  });
+
+  it('the landing counter adds no hazard and no dull stretch longer than the course already had (the same counts as the pre-M1 window)', () => {
+    expect(c.hazards).toEqual(lip.hazards);
+    expect(c.detected).toEqual(lip.detected);
+    expect(c.longestDullSeconds).toBe(lip.longestDullSeconds);
+    expect(c.sharpestCrest).toBe(lip.sharpestCrest);
+    // the last hazard is the lip into the pit; nothing is centred on the floor between the lip and the line
+    expect(c.detected.filter((h) => (h.at ?? (h.x0 + h.x1) / 2) > finishLipX(l))).toEqual([]);
+  });
+
+  // The original is the 2008 course, not authored to PREMADE_RULES: it fails three of them, and that is pinned (the
+  // audit sees it, M1 changes none of it). It passes the dull rule, the one the landing counter could have broken.
+  it('audited against the premade rules: exactly the three known 2008 misses (4 hazard kinds, unrounded crests, no shortcut)', () => {
+    expect(auditLevel(c, PREMADE_RULES)).toEqual([
+      'only 4 hazard kinds (< 5)',
+      'sharp crest: slope jump 3.76 (> 0.6)',
+      'only 0 risk/reward shortcuts (< 1)',
+    ]);
   });
 });
 

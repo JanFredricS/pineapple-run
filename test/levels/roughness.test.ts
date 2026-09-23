@@ -2,8 +2,12 @@
  * K1 audit #5: "more bumpy, more in line with the original map", measured
  * (TUNING.md "K1: Kitchen difficulty", the bumps table). On the driving
  * surface (gap holes and walls excluded) from the end of the start plateau
- * to 1 m before the goal line (Kitchen: before where its line was until K1
- * audit #4 moved it into the long pit, PIT.lineAfterLip past the lip):
+ * to 1 m before the finish: the goal line, or PIT.lineAfterLip past the pit's
+ * lip where the line sits further on, in a long pit (Kitchen since K1 audit
+ * #4, the original since M1). One rule on every course (M1 audit #1): the lip
+ * is found in the geometry (finishLipX, tools/levels/census.ts). The pit and
+ * its landing counter are finish geometry, not terrain roughness; the
+ * excitement census covers them to the real goal line.
  *   - travel/m: sum of |dy| per metre driven (0.25 m steps);
  *   - 1 m slope: |y(x+1) - y(x)| every 0.5 m, mean and 90th percentile;
  *   - relief: RMS of the height minus its +-10 m moving average;
@@ -18,8 +22,7 @@ import { plateauRange } from '../../src/game/startArea';
 import type { LevelDef } from '../../src/model/level';
 import { groundAt, PREMADE } from '../../tools/levels/premade';
 import { PIT } from '../../tools/levels/track';
-import { pxToM } from '../../src/model/coords';
-import { ORIGINAL_GOAL_LINE_PX } from '../../src/terrain/originalCourse';
+import { finishLipX } from '../../tools/levels/census';
 
 interface Roughness {
   travelPerM: number;
@@ -86,20 +89,26 @@ function roughness(level: LevelDef, endX: number): Roughness {
   };
 }
 
-const premade = (id: 'beach' | 'kitchen' | 'workbench' | 'tikibar') => {
-  const a = PREMADE[id]();
-  return roughness(a.level, Math.min(a.level.goal.lineX, a.features.find((f) => f.kind === 'finish')!.x0 + PIT.lineAfterLip));
-};
-const original = () => {
-  const l = levelById('original')!;
-  // the recovered course up to the 2008 goal line (the lip), as the premade windows stop at their lip:
-  // M1 moved the counting line 10.5 m before the blender, deep in the added pit, which is not terrain roughness
-  return roughness(l, Math.min(l.goal.lineX, pxToM(ORIGINAL_GOAL_LINE_PX)));
-};
+/** Where the roughness window ends (1 m before this): the same lip rule on every course. */
+const finishEnd = (l: LevelDef) => Math.min(l.goal.lineX, finishLipX(l) + PIT.lineAfterLip);
+const premade = (id: 'beach' | 'kitchen' | 'workbench' | 'tikibar') => roughness(PREMADE[id]().level, finishEnd(PREMADE[id]().level));
+const original = () => roughness(levelById('original')!, finishEnd(levelById('original')!));
 
 describe('K1 audit #5: Kitchen is bumpy, in line with the original', () => {
   const k = premade('kitchen');
   const o = original();
+
+  it('M1 audit #1: one window rule on every course; the lip found in the geometry is the authored lip on the premades and the 2008 lip on the original', () => {
+    for (const id of ['beach', 'kitchen', 'workbench', 'tikibar'] as const) {
+      const a = PREMADE[id]();
+      expect(finishLipX(a.level), id).toBeCloseTo(a.features.find((f) => f.kind === 'finish')!.x0, 9);
+    }
+    const l = levelById('original')!;
+    expect(finishLipX(l) * 30).toBeCloseTo(7662.25, 6); // the 2008 shredder lip (7670 px, the 2008 goal line, is 0.26 m past it)
+    // the original's window ends at the lip, not at its M1 goal line 10.3 m further into the pit
+    expect(finishEnd(l)).toBeCloseTo(finishLipX(l) + PIT.lineAfterLip, 9);
+    expect(l.goal.lineX - finishEnd(l)).toBeGreaterThan(10);
+  });
 
   it("the original course's roughness (the reference; measured 0.385 travel/m, slope 0.356 / p90 0.859, relief 1.10, 6.6 bumps / 100 m)", () => {
     expect(o.travelPerM).toBeCloseTo(0.385, 2);

@@ -650,6 +650,24 @@ function findShortcuts(S: Surface, hz: readonly Hazard[]): Shortcut[] {
 }
 
 /**
+ * The goal pit's lip, from the geometry alone, the same rule on every course
+ * (M1 audit #1): the right-most terrain vertex at or before the goal line
+ * that stands at least 1 m above the pit floor (the goal sensor's bottom).
+ * On the premades it is exactly the `finish` feature's x0 (pinned in
+ * test/levels/excitement.test.ts); on the original it is the 2008 shredder
+ * lip (x 255.408, 7662.25 px). Everything from here on is finish geometry:
+ * the drop into the pit and, where the line sits in the pit (Kitchen, the
+ * original), the landing counter before it.
+ */
+export function finishLipX(level: LevelDef): number {
+  const floorY = level.goal.sensor.y + level.goal.sensor.height;
+  let lip = -Infinity;
+  for (const s of level.terrain.spans) for (const q of s.points) if (q.x <= level.goal.lineX && q.y <= floorY - 1 && q.x > lip) lip = q.x;
+  if (!Number.isFinite(lip)) throw new Error(`finishLipX: no lip before the goal line in ${level.id}`);
+  return lip;
+}
+
+/**
  * Census of `level` over [x0, x1]. `speedAt(x)` = typical speed (m/s) there
  * (the pace notes of a premade course, a constant for endless). `labels`
  * are authored annotations, only cross-checked. `keepSharp` ranges are left
