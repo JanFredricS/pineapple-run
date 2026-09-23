@@ -195,3 +195,30 @@ Endless difficulty ramp, from the three runs plus a census of features in the ge
 | Level run with 0 aboard | Never ends (item 16). |
 | Endless results label | Misleading (item 12). |
 | Kitchen end-wall rendering | Thin line and void (item 17). |
+
+## 4. Dispositions (S6T, branch `slice-s6t`)
+
+Every constant changed is listed in `TUNING.md` as old → new → why.
+
+| # | Item | Disposition | Where / notes |
+|---|---|---|---|
+| 1 | Gaps have no side walls | **Fixed** | 3ef4441. Every gap edge gets a wall down to killY, in the Track DSL and in the endless generator. A wheel that drops in can only fall, or be dragged out. |
+| 2 | The goal rule cuts delivery short | **Fixed** | 77a418f. `GOAL_SETTLE_SECONDS` = 2 s after the cart reaches the goal. |
+| 3 | Beach is beaten by holding → | **Tuned** | d12ea4b. The dune jump at about 175–190 m (a launch lip, a dip, then a 0.8-slope face) punishes more than 10 m/s. The washboard is 0.3 m / 1.0 m. With the example cart, the pace line scores 89 (15/15) and flooring it 75. Acceptance requires pace ≥ floor + 5. |
+| 4 | Shock-hung wheels fold under the bed | **Tuned** | 35c4bc2. Shocks are now 8 Hz / 0.7, with emulated 0.8–1.15× bump stops in compound.ts. The fold cannot happen inside these limits. Residual: the articulated cart, whose two halves are joined only by shocks, can still sag into a V and belly on a washboard tooth. This is chaotic; it was seen at workbench 42 m. Real joint limits need engine.ts. |
+| 5 | Being stuck gives no feedback | **Fixed** | ad7d977. The stuck detector (5 s / 0.3 m) shows a "Stuck?" hint with Retry. The R key retries on the run and results screens. |
+| 6 | The original course cannot be finished | **Tuned (presentation); geometry deferred to the user** | 17558bb. All 71 vertices are untouched. The course is labelled "Bonus · Expert" with an expert blurb. The reference expert line (9 m/s, then 6 m/s from x = 200) reaches the goal with 10/15 in 38.3 s, and an acceptance test checks it. The course is a knife edge: a constant 8.5 or 9.5 m/s gets stuck. Any geometry compromise is the user's call. |
+| 7 | Endless spikes in the first 100 m | **Tuned** | ef13db6. No launch lips before 120 m. Crests are 0.8–1.8 m with drops no steeper than 0.8 while d < 0.15. Early lips are gentle. |
+| 8 | Endless too easy and flat from 100 to 600 m | **Tuned** | ef13db6. The ramp runs 40 → 1000 m. Gaps start at about 90 m, 1.0–1.5 m wide until d = 0.3. Crests are capped at 2 + 1.5d. Plain blocks are rarer, and there are never three in a row. The excitement audit checks 40 seeds at 3 depths. |
+| 9 | Pineapples lock wheels | **Deferred** | Needs a wheel–pineapple friction override, meaning a contact or friction callback in `src/physics/engine.ts`, which is frozen in S6T. The stiffer shocks reduce how often it happens. |
+| 10 | Sharp crests high-centre carts | **Fixed** | d12ea4b and ef13db6. `src/terrain/rounding.ts`: every crest with a slope jump over 0.6 becomes an arc of about 1.5 m radius with 3–16 segments, leaving no jump over 0.5. It is applied in the Track DSL and the generator, and the excitement audit fails on any crest left over 0.6. |
+| 11 | The minimal cart carries 14 with no walls | **Deferred (left as is, as suggested)** | Not harmful. The minimal cart now delivers 1–3 on the pace lines. A density experiment (×1, ×2, ×3) showed no reason to change parts; see TUNING.md. |
+| 12 | Misleading endless results equation | **Fixed** | 77a418f. The results now read "m + carry bonus N (k aboard) = total". |
+| 13 | Funnel off-screen; Release covers it | **Fixed** | ee8b98f. The ready-phase camera frames the funnel and the cart, then blends to follow after Release. Release moved to bottom centre. |
+| 14 | You can drive before releasing | **Deferred (by design)** | Placing the cart under the funnel before Release is part of play, and it matters for odd builds. The clock starts at Release. Driving away from the funnel only means catching fewer pineapples, so it punishes itself. |
+| 15 | Audio not wired in | **Fixed upstream (S6V)** | b7c4c59 (S6V, on this branch's base) wires S7 audio into the app, with a HUD and title mute toggle. There is no M-key shortcut yet. The hidden-tab test with real audio was not repeated in S6T. |
+| 16 | A level run with 0 aboard never ends | **Fixed** | 77a418f. `LEVEL_ALL_LOST_SECONDS` = 2 s, then the run ends as `allLost`. |
+| 17 | Rendering past the Kitchen end | **Fixed** | 1fb099d. A 30 m flat shelf continues from the top of the goal wall on all premade courses, so the far side renders as solid ground. The goal and pit are unchanged. |
+| 18 | Workbench barely rewards pacing | **Tuned** | d12ea4b. The saw-horse jump at about 160–178 m replaces the last hump and descent. With the example cart, the pace line scores 90 (15/15) and flooring it 81. |
+
+Spring art (a user decision, not a backlog item): the umbrella shock is replaced by a Hawthorne-strainer coil spring with compressed, rest and stretched frames and a steel guide rod. It is art only (41d6192); the builder label is now "Coil spring".
