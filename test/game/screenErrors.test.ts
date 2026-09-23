@@ -9,9 +9,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../src/ui/chrome', () => ({ installChrome: () => () => {} }));
 
 import { App, type AppState, type MountContext, type Screen } from '../../src/app';
-import type { BuilderHandle } from '../../src/builder/builder';
+import type { BuilderHandle, BuilderOptions } from '../../src/builder/builder';
 import { mountBuildScreen } from '../../src/game/buildScreen';
-import { resetCartState } from '../../src/game/cartState';
+import { draftDesign, resetCartState, setTestedDesign, testedDesign } from '../../src/game/cartState';
+import { exampleCart } from '../../src/builder/exampleCart';
+import type { CartDesign } from '../../src/model/cart';
 import { mountRunScreen } from '../../src/game/runScreen';
 import { RunSession } from '../../src/game/session';
 
@@ -236,6 +238,51 @@ describe('build screen: a failed builder mount shows an error with recovery', ()
     screen.destroy();
     expect(handle.destroy).toHaveBeenCalledTimes(1);
     expect(host.children).toHaveLength(0);
+  });
+});
+
+describe('UX1: the builder opens EMPTY on a fresh entry and keeps the current design afterwards', () => {
+  async function enter(levelId: string): Promise<{ initial: CartDesign; opts: BuilderOptions; screen: Screen; dispatched: string[] }> {
+    const captured: BuilderOptions[] = [];
+    const mountBuilder = async (_host: HTMLElement, o: BuilderOptions = {}): Promise<BuilderHandle> => {
+      captured.push(o);
+      return { destroy() {} } as unknown as BuilderHandle;
+    };
+    const dispatched: string[] = [];
+    const screen = await mountBuildScreen(new FakeEl('div') as unknown as HTMLElement, { name: 'build', levelId }, (a) => void dispatched.push(a.type), { isCurrent: () => true }, { mountBuilder });
+    const opts = captured[0];
+    if (!opts?.initialDesign) throw new Error('builder not mounted');
+    return { initial: opts.initialDesign, opts, screen, dispatched };
+  }
+
+  it('fresh entry: no parts (the Example Cart button loads the demo); later entries restore the draft / tested cart', async () => {
+    const first = await enter('beach');
+    expect(first.initial.parts).toEqual([]);
+    // the player loads the example and edits it: the draft follows every change
+    const edited: CartDesign = { ...exampleCart(), parts: exampleCart().parts.slice(0, 3) };
+    first.opts.onChange!(edited);
+    first.screen.destroy();
+    // back to levels -> another course: the same cart is carried over
+    const other = await enter('kitchen');
+    expect(other.initial).toEqual(edited);
+    // Test Cart -> run -> back to the builder: the tested cart is restored, and Retry replays it
+    other.opts.onTestCart!(exampleCart(), undefined as never);
+    expect(other.dispatched).toEqual(['startRun']);
+    other.screen.destroy();
+    expect(testedDesign()).toEqual(exampleCart());
+    const back = await enter('kitchen');
+    expect(back.initial).toEqual(exampleCart());
+    // an emptied builder stays empty (Clear all is the player's choice)
+    back.opts.onChange!({ version: 1, parts: [] });
+    back.screen.destroy();
+    expect((await enter('kitchen')).initial.parts).toEqual([]);
+  });
+
+  it('cartState: nothing set -> empty draft; the run-only fallback stays the example cart', () => {
+    expect(draftDesign().parts).toEqual([]);
+    expect(testedDesign()).toEqual(exampleCart());
+    setTestedDesign(exampleCart());
+    expect(draftDesign()).toEqual(exampleCart());
   });
 });
 
