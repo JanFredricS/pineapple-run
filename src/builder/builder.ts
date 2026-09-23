@@ -20,10 +20,11 @@ import { BUILD_AREA, HIT_TOLERANCE_SCREEN_PX, MOCK_FUNNEL } from './constants';
 import { DRAW_TOOLS, kindName, type Tool } from './edits';
 import { initialEditorState, reduceEditor, type EditorAction, type EditorState } from './editor';
 import { InputRouter, type DraftView } from './input';
+import { LOUPE, LoupeTracker, loupeAllowed, loupeLayout } from './loupe';
 import { PressRegistry } from './pressRegistry';
 import { highlightMap } from './messages';
 import { buildPreview, type PreviewModel } from './preview';
-import { BuilderRenderer, themeFromCss, type StartAreaPx } from './render';
+import { BuilderLoupe, BuilderRenderer, themeFromCss, type StartAreaPx } from './render';
 import { browserCartStore, type CartStore } from './storage';
 import { fitArea, fitView, zoomAbout, type BuilderView } from './view';
 
@@ -203,6 +204,14 @@ async function mountBuilderInto(
   renderer.setStartArea(options.startArea ?? null);
   app.stage.addChild(renderer.view);
   cleanups.push(() => app.stage.removeChild(renderer.view));
+  // UX1 #5: touch loupe, drawn above the scene (display-only; see loupe.ts)
+  const loupe = new BuilderLoupe();
+  cleanups.push(() => loupe.destroy());
+  loupe.setTheme(themeFromCss(root));
+  loupe.setStartArea(options.startArea ?? null);
+  app.stage.addChild(loupe.view);
+  cleanups.push(() => app.stage.removeChild(loupe.view));
+  const loupeTouch = new LoupeTracker();
 
   // ---------------------------------------------------------------- state
   let editor: EditorState = initialEditorState(options.initialDesign ?? undefined);
@@ -485,13 +494,13 @@ async function mountBuilderInto(
     frame = requestAnimationFrame(() => {
       frame = 0;
       const model = draft?.preview ?? committed;
-      renderer.draw(
-        model,
-        { draftId: draft ? draft.draft.part.id : null, draftTooSmall: draft?.draft.tooSmall ?? false, hoverId, highlight },
-        view,
-        stageW(),
-        stageH(),
-      );
+      const overlay = { draftId: draft ? draft.draft.part.id : null, draftTooSmall: draft?.draft.tooSmall ?? false, hoverId, highlight };
+      renderer.draw(model, overlay, view, stageW(), stageH());
+      const tip = loupeTouch.position;
+      if (tip && loupeAllowed(router.gestureState.name)) {
+        const at = loupeLayout(tip, { left: 0, top: 0, right: stageW() - paletteReserve(), bottom: stageH() });
+        loupe.show(model, overlay, view, tip, at, LOUPE.zoom, LOUPE.radius);
+      } else if (loupe.visible) loupe.hide();
     });
   }
   const setView = (v: BuilderView) => {
@@ -600,6 +609,18 @@ async function mountBuilderInto(
     }
   }) as EventListener);
   listen(canvas, 'contextmenu', (e) => e.preventDefault());
+  // UX1 #5 touch loupe: its OWN listeners, registered after the router's, that
+  // only move the magnifier (nothing here reaches the router or the editor).
+  const loupeListen = (type: string, fn: (e: PointerEvent) => void) =>
+    listen(canvas, type, ((e: PointerEvent) => {
+      fn(e);
+      requestDraw();
+    }) as EventListener);
+  loupeListen('pointerdown', (e) => loupeTouch.down(e.pointerId, e.pointerType, localPos(e)));
+  loupeListen('pointermove', (e) => loupeTouch.move(e.pointerId, localPos(e)));
+  loupeListen('pointerup', (e) => loupeTouch.up(e.pointerId));
+  loupeListen('lostpointercapture', (e) => loupeTouch.up(e.pointerId));
+  loupeListen('pointercancel', () => loupeTouch.reset());
   listen(
     canvas,
     'wheel',
@@ -621,6 +642,7 @@ async function mountBuilderInto(
   /** Clear ALL input state: gestures, draft, hover, highlighted palette presses. */
   function resetInput() {
     router.reset();
+    loupeTouch.reset();
     draft = null;
     draftLabel.hidden = true;
     hoverId = null;
