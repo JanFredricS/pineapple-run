@@ -2,7 +2,7 @@
  "version": 1,
  "id": "s0-spike",
  "name": "S0 washboard test",
- "theme": "test",
+ "theme": "blueprint",
  "terrain": {
   "spans": [
    {

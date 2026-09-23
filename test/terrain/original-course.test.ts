@@ -62,7 +62,8 @@ describe('original course port', () => {
 
   it('goal line is the original x 7670 px and the level chunks cleanly', () => {
     expect(expected.goal.lineX * 30).toBeCloseTo(7670, 9);
-    expect(expected.theme).toBe('workbench');
+    // B1: the recovered course ships in the Blueprint theme (pinned again in test/render/blueprint.test.ts)
+    expect(expected.theme).toBe('blueprint');
     const src = new LevelChunkSource(expected.terrain);
     expect(src.firstChunk).toBe(-1);
     expect(src.lastChunk).toBe(6);

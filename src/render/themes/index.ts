@@ -6,16 +6,16 @@ import { THEME_IDS, type ThemeId } from '../../model/level';
 import type { SvgAssetDef } from '../assets';
 import { skyAssetDef } from '../textures';
 import { beach } from './beach';
+import { blueprint } from './blueprint';
 import { kitchen } from './kitchen';
 import { PALETTE_KEYS, type Theme, type ThemePalette } from './types';
-import { test } from './test';
 import { tiki } from './tiki';
 import { workbench } from './workbench';
 
 export * from './types';
 
 /** Exhaustive over the model's ThemeId: a new id without a theme fails to compile. */
-export const THEMES: { readonly [K in ThemeId]: Theme } = { beach, kitchen, workbench, tiki, test };
+export const THEMES: { readonly [K in ThemeId]: Theme } = { beach, kitchen, workbench, tiki, blueprint };
 
 export function getTheme(id: ThemeId): Theme {
   return THEMES[id];

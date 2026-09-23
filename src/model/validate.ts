@@ -30,6 +30,7 @@ import {
   MAX_ZONE_FORCE,
   PropDef,
   Rect,
+  LEGACY_THEME_IDS,
   THEME_IDS,
   TerrainSpan,
   ThemeId,
@@ -309,7 +310,8 @@ export function validateLevelDef(raw: unknown): ValidationResult<LevelDef> {
   if (!m.ok) return m;
   const doc = m.value;
   return wrap(() => {
-    const theme = doc.theme;
+    const rawTheme = doc.theme;
+    const theme = typeof rawTheme === 'string' && Object.hasOwn(LEGACY_THEME_IDS, rawTheme) ? LEGACY_THEME_IDS[rawTheme] : rawTheme;
     if (typeof theme !== 'string' || !THEME_IDS.includes(theme as ThemeId)) fail('theme', 'unknown theme');
     const t = obj(doc.terrain, 'terrain');
     const rawSpans = arr(t.spans, 'terrain.spans', MAX_TERRAIN_SPANS);
