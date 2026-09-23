@@ -23,3 +23,5 @@ agents. Revisit at S8 (hardening) or when they block a later slice.
 | R16 | S6V | No contact-event SFX (bounce/impact sounds): the physics layer exposes no contact event stream to hook audio to. | low | Needs a physics-layer event surface; consider at S8/S9 |
 | R17 | S6V | Saved/share-code cart designs are not re-checked against the build area, so an oversized circle could bypass the builder's clamp. | low | Builder drag is clamped; add load-time validation at S8 |
 | R18 | S6V | Dev-only window.__prAudio handle is not cleared on teardown (DEV builds only). | low | Cosmetic dev affordance |
+| R19 | S6T | Pineapple-wheel friction (~0.3 to stop wheel-lock) and real shock joint limits (V-sag on washboard teeth) both need additions to the frozen engine.ts wrapper (friction callback, joint limit API). | medium | Engine wrapper frozen through S6T; open it deliberately at S8 |
+| R20 | S6T | Shortcut risk (losing cargo on a fast pool jump) is real but chaotic, so unasserted; minimal cart delivers only 1-3; no M-key mute shortcut; endless opening worst dull stretch 17.9 s vs the 20 s rule. | low | Playfeel margins; revisit if playtests complain |
