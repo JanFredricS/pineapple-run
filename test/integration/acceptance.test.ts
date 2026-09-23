@@ -17,7 +17,7 @@ import { buildResults, type LevelResults } from '../../src/ui/resultsModel';
 import { ScoreStore } from '../../src/ui/scoreStore';
 import { PREMADE } from '../../tools/levels/premade';
 import { GAP_WALL_LEAN } from '../../tools/levels/track';
-import { runWithPace } from './driver';
+import { FLOOR_IT, runWithPace } from './driver';
 
 const LEVELS = ['beach', 'kitchen', 'workbench'] as const;
 const pace = (id: (typeof LEVELS)[number]) => PREMADE[id]().pace;
@@ -109,6 +109,34 @@ describe('example cart completes every premade level (pace-note scripted driver)
         expect(s.controller.cartLost).toBe(false);
       } finally {
         s.destroy();
+      }
+    }, 60_000);
+  }
+});
+
+describe('S6T: pacing beats flooring it (every premade level)', () => {
+  // The pace notes are a skilled line: fast, braking for the level's
+  // hazards (beach: the dune jump; kitchen: the gaps/stairs; workbench: the
+  // saw-horse jump). Holding → the whole way must score clearly less.
+  const rated = (s: RunSession) => {
+    const last = s.events.at(-1)!;
+    return last.type === 'goalReached' ? { rating: efficiencyRating(last.simTime, last.delivered), delivered: last.delivered } : { rating: 0, delivered: 0 };
+  };
+  for (const id of LEVELS) {
+    it(`${id}: the pace-note line out-scores holding → by >= 5 points`, async () => {
+      const a = await session(exampleCart(), id);
+      const b = await session(exampleCart(), id);
+      try {
+        runWithPace(a, pace(id));
+        runWithPace(b, FLOOR_IT);
+        const paced = rated(a);
+        const floored = rated(b);
+        expect(paced.delivered).toBe(TOTAL_PINEAPPLES);
+        expect(floored.delivered).toBeLessThan(TOTAL_PINEAPPLES);
+        expect(paced.rating - floored.rating, `paced ${paced.rating} vs floored ${floored.rating}`).toBeGreaterThanOrEqual(5);
+      } finally {
+        a.destroy();
+        b.destroy();
       }
     }, 60_000);
   }

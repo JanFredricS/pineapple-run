@@ -30,6 +30,9 @@ export interface DriveResult {
   maxX: number;
 }
 
+/** "Flooring it": a pace plan that never brakes (the player who just holds →). */
+export const FLOOR_IT: readonly PaceNote[] = [{ x: -Infinity, speed: Infinity }];
+
 /** Start, settle 1 s, Release, let the load drop 3 s, then drive by pace notes until the run ends. */
 export function runWithPace(s: RunSession, pace: readonly PaceNote[], maxSeconds = 150): DriveResult {
   s.start();

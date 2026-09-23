@@ -26,6 +26,7 @@ import {
   type ThemeId,
 } from '../../src/model/level';
 import { funnelFor } from '../../src/game/startArea';
+import { roundCrests } from '../../src/terrain/rounding';
 
 export type FeatureKind = 'plateau' | 'valley' | 'crest' | 'drop' | 'ramp' | 'launchLip' | 'washboard' | 'kicker' | 'gap' | 'steps' | 'finish';
 
@@ -114,6 +115,12 @@ export class Track {
   /** Target speed (m/s) for the scripted driver from here on. */
   speed(v: number): this {
     this.pace.push({ x: this.x, speed: v });
+    return this;
+  }
+
+  /** Target speed from an explicit x (braking points inside a long feature); notes are sorted in build(). */
+  speedAt(x: number, v: number): this {
+    this.pace.push({ x, speed: v });
     return this;
   }
 
@@ -254,6 +261,11 @@ export class Track {
   build(meta: { id: string; name: string; theme: ThemeId }): AuthoredLevel {
     if (!this.goal) throw new Error('Track: call finish() before build()');
     this.endSpan();
+    // S6T #10: round every sharp crest (src/terrain/rounding.ts), except the
+    // washboard's teeth (the texture IS the feature) and the goal pit's lip.
+    const sharp = this.features.filter((f) => f.kind === 'washboard' || f.kind === 'finish');
+    const keep = (p: Vec2) => sharp.some((f) => p.x >= f.x0 - 1e-6 && p.x <= f.x1 + 1e-6);
+    this.spans = this.spans.map((s) => ({ id: s.id, points: roundCrests(s.points, { keep, snap: (p) => ({ x: r3(p.x), y: r3(p.y) }) }) }));
     let maxY = -Infinity;
     for (const s of this.spans) for (const p of s.points) maxY = Math.max(maxY, p.y);
     const killY = Math.ceil(maxY + 15);
@@ -277,6 +289,7 @@ export class Track {
       zones: [],
       killY,
     };
-    return { level, features: this.features, pace: this.pace };
+    const pace = [...this.pace].sort((a, b) => a.x - b.x);
+    return { level, features: this.features, pace };
   }
 }
