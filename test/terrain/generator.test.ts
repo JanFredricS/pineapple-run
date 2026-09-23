@@ -9,6 +9,7 @@ import {
   blockDifficulty,
   ENDLESS_KILL_Y,
   GAP_MAX,
+  GAP_WALL_LEAN,
   GAP_MIN,
   generateBlock,
   generateLevel,
@@ -28,7 +29,10 @@ import {
 } from '../../src/terrain/generator';
 import { maxSlopeViolation } from '../../src/terrain/slope';
 
-const groundSpans = (level: LevelDef) => level.terrain.spans.filter((s) => !s.id.endsWith('-wall'));
+/** Gap side walls (S6T #1) run from a gap edge down to ENDLESS_KILL_Y: not driving surface. */
+const isWallPoint = (p: Vec2) => p.y >= ENDLESS_KILL_Y - 1e-9;
+const groundSpans = (level: LevelDef) =>
+  level.terrain.spans.filter((s) => !s.id.endsWith('-wall')).map((s) => ({ ...s, points: s.points.filter((p) => !isWallPoint(p)) }));
 const pointsIn = (level: LevelDef, x0: number, x1: number): Vec2[] =>
   groundSpans(level).flatMap((s) => s.points.filter((p) => p.x >= x0 - 1e-9 && p.x <= x1 + 1e-9));
 
@@ -231,6 +235,10 @@ describe('feature grammar', () => {
       expect(right).toBeDefined();
       expect(pointsIn(level, f.gapX0! + 1e-6, f.gapX1! - 1e-6)).toEqual([]);
       expect(right!.points[0]!.y).toBeGreaterThanOrEqual(left!.points.at(-1)!.y - 1e-9);
+      // S6T #1: both edges carry a side wall down to the kill plane, leaning into the hole
+      const raw = (id: string) => level.terrain.spans.find((s) => s.id === id)!.points;
+      expect(raw(left!.id).at(-1)).toEqual({ x: f.gapX0! + GAP_WALL_LEAN, y: ENDLESS_KILL_Y });
+      expect(raw(right!.id)[0]).toEqual({ x: f.gapX1! - GAP_WALL_LEAN, y: ENDLESS_KILL_Y });
       expect(f.x0).toBeGreaterThan(200); // no gaps in the easy opening
     }
   });

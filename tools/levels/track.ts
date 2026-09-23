@@ -55,6 +55,16 @@ export const PIT = { depth: 2.5, floor: 9, dropRun: 1.5, sensor: 2.2, lineAfterL
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
 
+/**
+ * Gap side walls (S6T backlog #1): every span end at a gap gets a wall
+ * from the edge straight down to the level's killY, leaning GAP_WALL_LEAN m
+ * into the hole over its whole depth (span x must strictly increase, and the
+ * one-sided chain's solid side then faces the gap). Without them a wheel
+ * that drops in slides sideways under the far span's surface and is trapped
+ * for good; with them it can only fall (and die cleanly) or be dragged out.
+ */
+export const GAP_WALL_LEAN = 0.05;
+
 export class Track {
   private spans: TerrainSpan[] = [];
   private pts: Vec2[] = [];
@@ -66,6 +76,9 @@ export class Track {
   readonly cartStart: Vec2;
   private goal: LevelDef['goal'] | null = null;
   private spanNo = 0;
+  /** Span ids whose end / start borders a gap (walls are added in build(), once killY is known). */
+  private wallAfter = new Set<string>();
+  private wallBefore = new Set<string>();
 
   /**
    * Start wall at `x0`, ground at `groundY`; the cart starts `cartOffset`
@@ -186,7 +199,9 @@ export class Track {
    */
   gap(width: number, dy = 0): this {
     return this.feature('gap', () => {
+      this.wallAfter.add(`span-${this.spanNo}`);
       this.endSpan();
+      this.wallBefore.add(`span-${this.spanNo}`);
       const x = this.x + width;
       const y = this.y + dy;
       this.pts = [{ x: r3(x), y: r3(y + 0.25) }, { x: r3(x + 0.35), y: r3(y) }];
@@ -241,19 +256,26 @@ export class Track {
     this.endSpan();
     let maxY = -Infinity;
     for (const s of this.spans) for (const p of s.points) maxY = Math.max(maxY, p.y);
+    const killY = Math.ceil(maxY + 15);
+    const spans = this.spans.map((s) => {
+      const points = [...s.points];
+      if (this.wallBefore.has(s.id)) points.unshift({ x: r3(points[0]!.x - GAP_WALL_LEAN), y: killY });
+      if (this.wallAfter.has(s.id)) points.push({ x: r3(points[points.length - 1]!.x + GAP_WALL_LEAN), y: killY });
+      return { id: s.id, points };
+    });
     const funnel = funnelFor(this.cartStart);
     const level: LevelDef = {
       version: LEVEL_DEF_VERSION,
       id: meta.id,
       name: meta.name,
       theme: meta.theme,
-      terrain: { spans: this.spans, friction: DEFAULT_TERRAIN_FRICTION, restitution: DEFAULT_TERRAIN_RESTITUTION },
+      terrain: { spans, friction: DEFAULT_TERRAIN_FRICTION, restitution: DEFAULT_TERRAIN_RESTITUTION },
       cartStart: { ...this.cartStart },
       funnel: { x: r3(funnel.x), y: r3(funnel.y) },
       goal: this.goal,
       props: this.props,
       zones: [],
-      killY: Math.ceil(maxY + 15),
+      killY,
     };
     return { level, features: this.features, pace: this.pace };
   }

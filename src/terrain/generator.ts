@@ -402,7 +402,29 @@ export interface BlockGeometry {
   lines: Vec2[][];
   /** Block 0 only: the steep backstop left of the start plateau (its own span). */
   wallBefore?: Vec2[];
+  /**
+   * Gap blocks only: the bottoms of the two gap side walls (S6T backlog #1).
+   * `lines` stay the driving surface; `blockLines()` attaches the walls (the
+   * take-off line ends at `[0]`, the landing line starts at `[1]`).
+   */
+  gapWalls?: [Vec2, Vec2];
   feature: FeatureInstance | null;
+}
+
+/** Gap side walls lean this far into the hole over their depth (span x must strictly increase). */
+export const GAP_WALL_LEAN = 0.05;
+
+/**
+ * A block's terrain polylines as they go to physics / rendering: `lines`
+ * with the gap side walls attached (down to ENDLESS_KILL_Y), so a wheel that
+ * drops into a gap cannot slide under the landing edge and get trapped.
+ */
+export function blockLines(g: BlockGeometry): Vec2[][] {
+  if (!g.gapWalls || g.lines.length !== 2) return g.lines.map((l) => [...l]);
+  return [
+    [...g.lines[0]!, { ...g.gapWalls[0] }],
+    [{ ...g.gapWalls[1] }, ...g.lines[1]!],
+  ];
 }
 
 /** Start-wall geometry: a near-vertical 2-point span like the S0 spike's walls. */
@@ -534,6 +556,12 @@ export function generateBlock(seedIn: TerrainSeed, k: number, forceNone = false)
 
   const out: BlockGeometry = { index: k, lines, feature };
   if (k === 0) out.wallBefore = START_WALL.map((p) => ({ ...p }));
+  if (lines.length === 2) {
+    out.gapWalls = [
+      { x: lines[0]!.at(-1)!.x + GAP_WALL_LEAN, y: ENDLESS_KILL_Y },
+      { x: lines[1]![0]!.x - GAP_WALL_LEAN, y: ENDLESS_KILL_Y },
+    ];
+  }
   return out;
 }
 
@@ -650,7 +678,7 @@ export function generateLevel(seedIn: TerrainSeed, length: number, opts: Generat
     const g = generateBlock(seed, k);
     if (g.wallBefore) spans.push({ id: 'start-wall', points: g.wallBefore });
     if (g.feature) features.push(g.feature);
-    g.lines.forEach((line, i) => {
+    blockLines(g).forEach((line, i) => {
       if (i === 0 && current) current.push(...line);
       else {
         flush();
@@ -690,7 +718,9 @@ export function generateLevel(seedIn: TerrainSeed, length: number, opts: Generat
     goal: fin.goal,
     props: [{ id: 'blender', art: 'blender', position: fin.blenderAt }],
     zones: [],
-    killY: maxY + 20,
+    // Gap walls reach down to ENDLESS_KILL_Y, which is below every surface
+    // point by construction, so it is the kill plane here too.
+    killY: Math.max(ENDLESS_KILL_Y, maxY),
   };
   return { level, features, blocks };
 }
@@ -719,10 +749,11 @@ export class ProceduralChunkSource implements TerrainSource {
     const g = generateBlock(this.seed, index);
     const local: Vec2[][] = [];
     if (g.wallBefore) local.push(g.wallBefore);
-    g.lines.forEach((line, i) => {
+    const lines = blockLines(g);
+    lines.forEach((line, i) => {
       const l = [...line];
       if (i === 0 && index > 0) l.unshift(connectorPoints(this.seed, index)[0]);
-      if (i === g.lines.length - 1) l.push(connectorPoints(this.seed, index + 1)[1]);
+      if (i === lines.length - 1) l.push(connectorPoints(this.seed, index + 1)[1]);
       local.push(l);
     });
     return makeChunk(index, chunkSpans(local, this.chunkWidth).get(index) ?? [], this.chunkWidth);

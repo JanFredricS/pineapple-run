@@ -26,9 +26,10 @@ if (process.env.UPDATE_FIXTURES) {
   for (const id of ids) writeFileSync(join(root, `levels/${id}.json`), JSON.stringify(authored[id].level, null, 1) + '\n');
 }
 
+/** Deepest SURFACE point (gap side walls, S6T #1, run down to killY by design). */
 function maxTerrainY(level: LevelDef): number {
   let m = -Infinity;
-  for (const s of level.terrain.spans) for (const p of s.points) m = Math.max(m, p.y);
+  for (const s of level.terrain.spans) for (const p of s.points) if (p.y < level.killY) m = Math.max(m, p.y);
   return m;
 }
 

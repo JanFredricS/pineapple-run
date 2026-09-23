@@ -16,6 +16,7 @@ import { isUnlocked } from '../../src/ui/catalog';
 import { buildResults, type LevelResults } from '../../src/ui/resultsModel';
 import { ScoreStore } from '../../src/ui/scoreStore';
 import { PREMADE } from '../../tools/levels/premade';
+import { GAP_WALL_LEAN } from '../../tools/levels/track';
 import { runWithPace } from './driver';
 
 const LEVELS = ['beach', 'kitchen', 'workbench'] as const;
@@ -205,8 +206,9 @@ describe('gap levels have no invisible bridges', () => {
       const s = await session(exampleCart(), id);
       try {
         for (const g of gaps) {
-          const x0 = g.x0 + 0.05;
-          const x1 = g.x1 - 0.35 - 0.05; // the landing bevel starts at x1 - 0.35
+          // the side walls (S6T #1) lean GAP_WALL_LEAN into the hole; the landing bevel starts at x1 - 0.35
+          const x0 = g.x0 + GAP_WALL_LEAN + 0.05;
+          const x1 = g.x1 - 0.35 - GAP_WALL_LEAN - 0.05;
           expect(x1 - x0).toBeGreaterThan(1);
           // 1. source data: no surface at any x in the gap
           for (let x = x0; x <= x1; x += 0.05) expect(surfaceYAt(src.chunk(chunkIndexAt(x)), x), `${id} gap @${x.toFixed(2)}`).toBeNull();
