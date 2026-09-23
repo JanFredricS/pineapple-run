@@ -92,23 +92,23 @@ describe('M1: the original course has a finish long carts can score in', () => {
     }
   }, 240_000);
 
-  // Measured (deterministic), bridger on the shipped original: 7 -> 13/15 46, 9 -> 12/15 51, 10 -> 13/15 63,
-  // 11 -> 13/15 65, 12 -> 15/15 76, floored -> 14/15 77. (Before M1: no goal at 7, 9, 10 and floored; 4/15 at 11 and 12.)
+  // Bridger on the shipped original, pinned exactly (deterministic, like the expert line's 10/15 at 52): delivered/15 and
+  // rating. Before M1: no goal at 7, 9, 10 and floored (the control above); 4/15 at 11 and 12.
   // Steady 6 and 8 m/s stall on the course itself, long before the finish (the original's terrain, not its pit).
-  for (const [name, line, min] of [
-    ['steady 7 m/s', steady(7), 13],
-    ['steady 9 m/s', steady(9), 12],
-    ['steady 10 m/s', steady(10), 13],
-    ['steady 11 m/s', steady(11), 13],
-    ['steady 12 m/s', steady(12), 15],
-    ['holding right', FLOOR_IT, 14],
+  for (const [name, line, delivered, rating] of [
+    ['steady 7 m/s', steady(7), 13, 46],
+    ['steady 9 m/s', steady(9), 12, 51],
+    ['steady 10 m/s', steady(10), 13, 63],
+    ['steady 11 m/s', steady(11), 13, 65],
+    ['steady 12 m/s', steady(12), 15, 76],
+    ['holding right', FLOOR_IT, 14, 77],
   ] as const) {
-    it(`the bridger ${name} reaches the goal with >= ${min - 1}/15 and rating >= 40`, async () => {
+    it(`the bridger ${name} reaches the goal with exactly ${delivered}/15, rating ${rating}`, async () => {
       const r = await attempt(kitchenBridger(), shipped(), line);
       expect(r.last.type).toBe('goalReached');
       if (r.last.type !== 'goalReached') return;
-      expect(r.last.delivered).toBeGreaterThanOrEqual(min - 1);
-      expect(efficiencyRating(r.last.simTime, r.last.delivered)).toBeGreaterThanOrEqual(40);
+      expect(r.last.delivered).toBe(delivered);
+      expect(efficiencyRating(r.last.simTime, r.last.delivered)).toBe(rating);
       expect(r.cartLost).toBe(false);
     }, 120_000);
   }
@@ -148,7 +148,7 @@ describe('M1: the original course has a finish long carts can score in', () => {
       const arrived = states.filter((p) => !p.alive && !p.lost).length;
       expect(last.delivered).toBe(past.length + arrived);
       expect(last.delivered).toBe(s.controller.pastGoalLine());
-      expect(last.delivered).toBeGreaterThanOrEqual(13); // measured 14 (13 in the pit + 1 arrived)
+      expect(last.delivered).toBe(14); // 13 in the pit + 1 arrived (the holding-right pin above)
       for (const x of past) expect(x).toBeLessThan(blenderX);
     } finally {
       s.destroy();

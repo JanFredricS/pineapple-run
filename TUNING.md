@@ -875,7 +875,7 @@ The follow zoom was width-only (`clamp(w / 720, 0.5, 1.5)`: 24 m of world across
 | `followZoom(w, h)` | `clamp(w/720, 0.5, 1.5)` → **`clamp(min(w/720, h/420), 0.5, 1.5)`** | The view always shows at least 24 m across AND 14 m of height (until the 0.5 floor). |
 | `VIEW_HEIGHT_M` | new: **14 m** | Holds the 9 m blender plus margins, so on phones finish framing never has to zoom out: it only moves the look point. The width term alone binds for any aspect narrower than 24:14 (≈1.71) and height ≥ 630 px. |
 | `FOLLOW_ZOOM_MIN` / `FOLLOW_ZOOM_MAX` | new names: **0.5 / 1.5** | Unchanged values, now named. |
-| Users of it | `runCamera` (follow, finish floor 0.75× follow) and the ready frame's cap (`readyFrame` in src/game/runScreen.ts) | One formula everywhere in the game. The spike (src/run/harness.ts, still width-only) and the styleguide (fixed zooms) are dev pages and keep their own framing. |
+| Users of it | `runCamera` (follow, finish floor 0.75× follow) and the ready frame's cap (`readyFrame` in src/game/runScreen.ts) | One formula everywhere in the game. The run harness (src/run/harness.ts) and the S0 spike (src/spike/page.ts) keep the width-only zoom, and the styleguide uses fixed zooms; they are dev pages (R31). |
 
 Zoom before → after (pinned in test/game/framing.test.ts "M1: height-aware follow zoom"):
 
@@ -908,7 +908,7 @@ So the `lineGap` bound (goal never fires before the camera can show the whole bl
 | Original, 12 m/s | 1.35 → **0 m** | 1.35 → **0 m** | 0.25 m |
 | Original, holding right | 1.81 → **0.37 m** | 1.63 → **0 m** | 0.92 m |
 
-The bridger's front was on screen at every step in every case. On a phone the whole blender is now on screen once its front is within ~9 m (Kitchen: 5.5 → 9.0 m); desktop is unchanged (~7.5–7.9 m).
+The bridger's front was on screen at every step in every case. The whole blender is on screen once the bridger's front is within ~9.0 m on 844×390 (K1 quoted ~4.3 m), for the whole pit window on 844×320, and within 7.6–7.9 m on 1280×720 (unchanged, now the worst case). R30 has the details.
 
 ### 2. Dynamic viewport (index.html, src/game/runScreen.ts)
 
@@ -930,7 +930,7 @@ Before M1 the original ended as the 2008 game did: the goal line at the lip (767
 | Pit floor (`PIT_FLOOR_M` = `blenderPitFloor(frontGap)`) | 9.25 → **25.5 m** (x 256.225 → 281.725) | 20 m before the blender + blender 3.75 m + back gap 1.75 m. |
 | Blender front | 3.75 → **20 m** past the last recovered vertex (x 276.225) | |
 | Goal line and sensor left edge | the lip, x 255.667 (7670 px), sensor over the whole floor → **x 265.725 (7971.75 px), sensor 16 m wide to the back wall** | The Kitchen scoring rule: the first ~9.5 m of the floor is a landing strip where pineapples don't count, so a normal cart scores only where the camera shows the whole blender. |
-| `ORIGINAL_GOAL_LINE_PX` | 7670, kept | Now the recovered course's datum, not the goal line. The roughness reference (test/levels/roughness.test.ts) is still measured up to it, so K1's bumps table is unchanged. |
+| `ORIGINAL_GOAL_LINE_PX` | 7670, kept | Now the recovered course's datum, not the goal line. (Round-1 audit: the roughness window no longer uses it; see below.) |
 
 The recovered `course` span is byte-identical (71 points), and the vertex and washboard tests were not touched. The fixture was regenerated with `UPDATE_FIXTURES=1`, and its diff is the pit floor, the goal and the blender position only. The level now reaches one more terrain chunk (lastChunk 6 → 7).
 
@@ -974,10 +974,26 @@ Browser pane check, bridger holding right on the original: the whole cart is in 
 - **test/terrain/original-course.test.ts:**
   - The goal-line test became the M1 finish test: the 7670 px datum, ORIGINAL_FINISH, the pit, blender, sensor and line geometry, a custom finish, and bad-lineGap rejection.
   - lastChunk 6 → 7.
-- **test/levels/roughness.test.ts:** the original's reference window ends at the 2008 lip (min of the line and 7670 px), so the K1 bumps table is unchanged.
+- **test/levels/roughness.test.ts:** one window rule on every course, `min(line, finishLipX + PIT.lineAfterLip)` (round-1 audit #1).
+- **test/levels/excitement.test.ts:** the original is censused to its real goal line (round-1 audit #1).
 - **New test/integration/originalFinish.test.ts:**
   - The pre-M1 finish, rebuilt from the level, as a control: the bridger jams at 7, 9 and 10 m/s and holding right.
-  - The bridger band on the new finish.
+  - The bridger band on the new finish, each delivered count and rating pinned exactly (round-1 audit #2).
   - The scoring contract.
   - The expert line: 10/15 at 52, before and after.
+
+### M1 round-1 audit (fixes)
+
+1. **The landing counter was invisible to both terrain audits.** The roughness window stopped at a stale 7670 px constant, and the excitement census skipped the original.
+   - New `finishLipX(level)` (tools/levels/census.ts) finds the pit's lip in the geometry: the right-most vertex at or before the goal line that stands at least 1 m above the pit floor (the sensor's bottom). On every premade it equals the authored `finish` feature's x0 (pinned). On the original it is the 2008 shredder lip, x 255.408 (7662.25 px).
+   - **Roughness:** every course's window now ends at `min(goal line, lip + PIT.lineAfterLip)`, one rule instead of the premade feature lookup and a 7670 px cap. The original's window end moves 0.04 m (from 7670 px to lip + 0.3 m). Its values are unchanged at the pinned precision and to four places: 0.3846 travel/m, slope 0.3562 / p90 0.8587, relief 1.103, 6.61 bumps / 100 m. Kitchen is unchanged too.
+   - **Census:** the original is now censused like the premades, from the start plateau to its M1 goal line, at the expert line's speed, with the finish geometry kept sharp from the lip.
+     - Measured over 253.1 m: 13 hazards (drop 4, crest 3, launch lip 5, washboard 1), 4 kinds, 5.14 / 100 m.
+     - Worst dull stretch: 13.5 m at x 53.6, 1.45 s at 9.3 m/s.
+     - Sharpest crest: 3.76 (the unrounded 2008 terrain). No shortcut.
+     - The 2008-line window (243.0 m) finds the same hazards, the same dull stretch and the same crest, so the ~10 m landing counter adds length and nothing else: no hazard is centred past the lip.
+     - Against PREMADE_RULES it misses exactly three rules (4 kinds < 5, crest 3.76 > 0.6, 0 shortcuts < 1), all properties of the 2008 terrain that M1 does not touch. It passes the dull rule, the one the landing counter could have broken. All of this is pinned.
+2. **The bridger band was pinned at minimum − 1 with a generic rating ≥ 40.** Each speed is now pinned exactly, since the runs are deterministic like the expert line: 7 m/s 13 · 46, 9 m/s 12 · 51, 10 m/s 13 · 63, 11 m/s 13 · 65, 12 m/s 15 · 76, holding right 14 · 77. The scoring-contract test pins delivered 14.
+3. **R30's camera figures were K1's.** They were re-measured with the M1 camera (see R30 and above).
+4. **R31 named only src/run/harness.ts** as a page that kept the width-only zoom. src/spike/page.ts keeps it too, and is now listed. Both stay as dev pages.
 
