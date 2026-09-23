@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { PINEAPPLE_MATERIAL, PINEAPPLE_RADIUS, spawnPineapple } from '../../src/physics/cargo';
 import { FIXED_DT } from '../../src/physics/clock';
 import { DRIVE_MAX_SPEED, DRIVE_TORQUE_PER_MASS, PART_MATERIAL, WHEEL_ANGULAR_DAMPING, WHEEL_MATERIAL } from '../../src/physics/compound';
-import { PhysicsWorld, type BodyHandle, type MaterialDef } from '../../src/physics/engine';
+import { frictionTagsForTests, PhysicsWorld, type BodyHandle, type MaterialDef } from '../../src/physics/engine';
 import { PINEAPPLE_WHEEL_FRICTION, SURFACE } from '../../src/physics/surfaces';
 
 let worlds: PhysicsWorld[] = [];
@@ -192,5 +192,67 @@ describe('pineapple–wheel pair friction (S8a, backlog #9)', () => {
     gone.w.destroy();
     for (let i = 0; i < 300; i++) keep.step();
     expect(keep.mean()).toBeGreaterThan(0.9 * DRIVE_MAX_SPEED);
+  });
+
+  /**
+   * World tags live in the 44 bits above the 20 surface bits of the 64-bit
+   * userMaterialId, so the allocator is bounded: it counts to 2^44 − 1, then
+   * reuses the lowest tag no live world holds, and throws (never truncates)
+   * if every tag is live. The real bound cannot be exhausted in a test, so the
+   * seam moves the counter and lowers the bound.
+   */
+  describe('world-tag allocator (bounded, reuses freed tags)', () => {
+    afterEach(() => {
+      worlds.forEach((w) => w.destroy());
+      worlds = [];
+      frictionTagsForTests.reset();
+    });
+
+    it('the top 44-bit tag round-trips exactly, and past the bound a freed tag is reused with correct dispatch', async () => {
+      const MAX = frictionTagsForTests.MAX_FRICTION_TAG;
+      expect(MAX).toBe(2 ** 44 - 1);
+      frictionTagsForTests.set({ next: MAX });
+      const top = await pinchRig(0.9, 3); // tag 2^44 − 1: (tag << 20) | surface uses all 64 bits
+      expect(frictionTagsForTests.tagOf(top.w)).toBe(MAX);
+      const lowestFree = (): number => {
+        const live = new Set(frictionTagsForTests.live());
+        let t = 1;
+        while (live.has(t)) t++;
+        return t;
+      };
+      const expectReuse = lowestFree();
+      const reused = await pinchRig(0.3, 3); // counter is past the bound: reuse
+      expect(frictionTagsForTests.tagOf(reused.w)).toBe(expectReuse);
+      for (let i = 0; i < 300; i++) {
+        top.step();
+        reused.step();
+      }
+      expect(Math.abs(top.mean()), 'top tag keeps its 0.9').toBeLessThan(0.5);
+      expect(reused.mean(), 'reused tag gets its own 0.3').toBeGreaterThan(0.9 * DRIVE_MAX_SPEED);
+      // a destroyed world's tag goes back to the pool, and the next world gets it with a fresh table
+      const t = frictionTagsForTests.tagOf(reused.w);
+      reused.w.destroy();
+      const again = await pinchRig(0.9, 3);
+      expect(frictionTagsForTests.tagOf(again.w)).toBe(t);
+      for (let i = 0; i < 300; i++) again.step();
+      expect(Math.abs(again.mean()), 'no stale 0.3 from the destroyed world').toBeLessThan(0.5);
+    });
+
+    it('throws a clear error, rather than truncating, when every tag is live', async () => {
+      // tags 1..bound, counter already past the bound: only free tags can be handed out
+      const live = frictionTagsForTests.live();
+      const bound = (live.at(-1) ?? 0) + 3;
+      frictionTagsForTests.set({ next: bound + 1, bound });
+      const made: PhysicsWorld[] = [];
+      for (let i = 0; i < bound - live.length; i++) made.push(await world());
+      expect(new Set(made.map((w) => frictionTagsForTests.tagOf(w))).size).toBe(made.length);
+      expect(frictionTagsForTests.live()).toEqual(Array.from({ length: bound }, (_, i) => i + 1));
+      await expect(PhysicsWorld.create()).rejects.toThrow(/friction world tags are live/);
+      // one freed tag makes creation work again, with that tag
+      const freed = frictionTagsForTests.tagOf(made[0]!);
+      made[0]!.destroy();
+      const w = await world();
+      expect(frictionTagsForTests.tagOf(w)).toBe(freed);
+    });
   });
 });

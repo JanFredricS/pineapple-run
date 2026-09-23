@@ -161,7 +161,7 @@ export class PhysicsWorld implements SnapshotSource {
   private readonly pairFriction = new Map<number, number>();
   private frictionCallbackInstalled = false;
   /** This world's tag in the high bits of every shape's userMaterialId (see frictionDispatch). */
-  private readonly frictionTag = nextFrictionTag++;
+  private readonly frictionTag: number;
 
   static async create(options: WorldOptions = {}): Promise<PhysicsWorld> {
     return new PhysicsWorld(await loadPhysics(), options);
@@ -171,6 +171,7 @@ export class PhysicsWorld implements SnapshotSource {
     private readonly b2: MainModule,
     options: WorldOptions,
   ) {
+    this.frictionTag = allocateFrictionTag(); // first: it may throw, and nothing is allocated yet
     this.v1 = new b2.b2Vec2(0, 0);
     this.v2 = new b2.b2Vec2(0, 0);
     const def = b2.b2DefaultWorldDef();
@@ -213,6 +214,7 @@ export class PhysicsWorld implements SnapshotSource {
     if (this.destroyed) return;
     this.b2.b2DestroyWorld(this.worldId);
     frictionTables.delete(this.frictionTag); // release this world's override table
+    liveFrictionTags.delete(this.frictionTag); // and its tag, for reuse
     this.v1.delete();
     this.v2.delete();
     this.bodies.clear();
@@ -694,9 +696,59 @@ export class PhysicsWorld implements SnapshotSource {
 /** Surface ids live in the low 20 bits of userMaterialId; the world's tag above them. */
 const SURFACE_BITS = 20n;
 const SURFACE_MASK = (1n << SURFACE_BITS) - 1n;
+/** Tags must fit in the 44 bits above the surface: (tag << 20) | surface < 2^64. */
+const MAX_FRICTION_TAG = 2 ** 44 - 1;
+let frictionTagBound = MAX_FRICTION_TAG;
 let nextFrictionTag = 1;
+/**
+ * Tags held by live (not destroyed) worlds. A tag is reusable only once its
+ * world is destroyed — not merely when it has no table, because a live world
+ * that installs its first override later must still own a unique tag.
+ */
+const liveFrictionTags = new Set<number>();
 /** Live worlds' override tables by world tag (entries removed on destroy). */
 const frictionTables = new Map<number, Map<number, number>>();
+
+/**
+ * Bounded tag allocator: counts up to the 44-bit bound, then reuses the
+ * lowest tag no live world holds (found within liveFrictionTags.size + 1
+ * probes). Throws — never truncates — if every tag is live.
+ */
+function allocateFrictionTag(): number {
+  let tag: number;
+  while (nextFrictionTag <= frictionTagBound && liveFrictionTags.has(nextFrictionTag)) nextFrictionTag++;
+  if (nextFrictionTag <= frictionTagBound) {
+    tag = nextFrictionTag++;
+  } else {
+    tag = 1;
+    while (liveFrictionTags.has(tag)) tag++;
+    if (tag > frictionTagBound) throw new Error(`PhysicsWorld: all ${frictionTagBound} friction world tags are live`);
+  }
+  liveFrictionTags.add(tag);
+  return tag;
+}
+
+/**
+ * Test seam for the tag allocator (the real bound, 2^44 − 1, cannot be
+ * reached in a test). `set` moves the counter and/or lowers the bound;
+ * `reset` restores the 44-bit bound. Not for game code.
+ */
+export const frictionTagsForTests = {
+  MAX_FRICTION_TAG,
+  set(opts: { next?: number; bound?: number }): void {
+    if (opts.bound !== undefined) frictionTagBound = Math.min(opts.bound, MAX_FRICTION_TAG);
+    if (opts.next !== undefined) nextFrictionTag = opts.next;
+  },
+  reset(): void {
+    frictionTagBound = MAX_FRICTION_TAG;
+  },
+  tagOf(w: PhysicsWorld): number {
+    return (w as unknown as { frictionTag: number }).frictionTag;
+  },
+  live(): number[] {
+    return [...liveFrictionTags].sort((a, b) => a - b);
+  },
+};
 
 /**
  * The single friction callback shared by every world (see setPairFriction).
