@@ -87,7 +87,9 @@ const { loupes, FakeApp, FakeRenderer, FakeLoupe } = vi.hoisted(() => {
   class FakeApp {
     renderer: object | undefined;
     canvas = document.createElement('canvas');
-    stage = { addChild() {}, removeChild() {} };
+    stage = { addChild() {}, removeChild() {}, removeChildren() {} };
+    ticker = { start() {}, stop() {} };
+    resizeTo: unknown = null;
     screen = { width: 800, height: 600 };
     async init(): Promise<void> {
       this.renderer = {};
@@ -136,7 +138,7 @@ vi.mock('../../src/builder/render', async (orig) => ({
   themeFromCss: () => ({}),
 }));
 
-import { mountBuilder, type BuilderHandle } from '../../src/builder/builder';
+import { builderPixi, mountBuilder, type BuilderHandle } from '../../src/builder/builder';
 import { LOUPE, loupeLayout } from '../../src/builder/loupe';
 
 let frames = new Map<number, () => void>();
@@ -151,6 +153,7 @@ function flush(): void {
 }
 
 beforeEach(() => {
+  builderPixi.discard(); // GL1: the builder's app is a page singleton; isolate each test
   loupes.length = 0;
   frames = new Map();
   const storage = new Map<string, string>();

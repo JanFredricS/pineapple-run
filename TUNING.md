@@ -531,3 +531,45 @@ The loupe is purely visual:
 - It is display-only (`eventMode 'none'`).
 - It reads the gesture state only to hide during two-finger navigation.
 - Hit-testing, snapping, edit semantics and the multi-touch and cancel rules are unchanged. test/builder/loupeMount.test.ts draws the same stroke with a finger and with a mouse and gets identical designs.
+
+## GL1: WebGL context loss recovery
+
+**Bug (Jan, Safari on macOS).** Mid-run, or when entering a run with Test Cart, the whole world went blank dark navy (`#1d2330`, the run host's CSS background in src/game/game.css). The DOM HUD stayed alive: pineapple count, timer, Give Up and "Hold ←/→ to drive". A reload sometimes fixed it, and it came back after switching course and testing a cart.
+
+**Mechanism.** The browser reaps a WebGL context and fires `webglcontextlost` on its canvas. Safari does this readily when a page keeps creating contexts. The builder created a new Pixi `Application` (a new WebGL context) on every mount and destroyed it on unmount, so every course visit and every return from a run churned a context. The run screen's Application was a page singleton that was never recreated. Pixi v8's GlContextSystem only calls `preventDefault()` on the loss and waits for a `webglcontextrestored` that Safari may never send. Nothing in src/ handled the loss, so once the run's context died, every later run drew nothing until a page reload.
+
+**Design (src/render/sharedPixi.ts).**
+- One long-lived Application per role, from `createSharedPixi(label, create)`:
+  - `runPixi` (runScreen.ts) replaces the old ad-hoc `pixi` promise.
+  - `builderPixi` (builder.ts) is new. The builder no longer creates or destroys an Application per mount.
+- The page now holds at most two WebGL contexts, no matter how many courses or runs the player goes through.
+- Per mount, the builder:
+  - clears the shared stage (`removeChildren`);
+  - reparents `app.canvas`;
+  - re-targets `resizeTo` to its stage element;
+  - starts the ticker.
+- On unmount the builder stops the ticker, sets `resizeTo = null` and removes the canvas. It never destroys the app. The run screen also clears `resizeTo` on unmount now.
+- The builder's other cleanups are unchanged, including its scene and loupe removal/destroy and every listener.
+- Loss detection uses the DOM `webglcontextlost` event on `app.canvas`, because Pixi v8 has no public renderer signal. On a loss of the live app, handled once:
+  1. The singleton is forgotten, so the next `acquire()` builds a fresh Application.
+  2. The mounted screen's `onLost` subscriber runs. The screen tears its mount down and removes its views from the stage.
+  3. The dead Application is destroyed with `{ removeView: true }, { children: false }`. Textures are not destroyed: Pixi v8 texture sources are renderer-independent, keep only per-renderer GPU data, and re-upload to the next renderer. So the page-cached `AssetLibrary` survives.
+- `acquire()` also replaces a live app whose `gl.isContextLost()` is already true, in case the event never arrived.
+- Re-entrancy guards:
+  - A second lost event does nothing.
+  - A `webglcontextrestored` for a discarded app does nothing.
+  - The loss Pixi's own `destroy()` triggers on the old canvas does nothing. The listeners are detached before destroy.
+  - An app discarded mid-init is destroyed and never handed out.
+- **Run screen.** On a loss, the current attempt is torn down (loop stopped, scene destroyed, session destroyed) and the run re-mounts onto a fresh app through the existing attempt/generation path. The run restarts from the funnel (R28). After `MAX_CONTEXT_RECOVERIES` = **2** automatic re-mounts per screen, the existing error screen appears ("The graphics were interrupted"). Its Try again mounts a fresh app without a page reload and re-arms the automatic recovery.
+- **Builder.** On a loss, `mountBuilder` captures its live `editor.design`, tears its own mount down, and calls the new `onContextLost(design)` option. This keeps every committed edit, including a save-renamed name that never went through `onChange`. The build screen stores the design as the draft (`setDraftDesign`) and re-mounts in place, which opens with that design on a fresh app. After the same 2 automatic re-mounts, it shows its error screen ("Your cart is kept"), and Try again re-mounts with the design. The dev builder harness re-mounts itself the same way.
+
+**Tests.**
+- test/render/sharedPixi.test.ts: singleton, loss ordering, re-entrancy, found-dead-at-acquire, discard during init.
+- test/game/runContextLoss.test.ts: the real run screen and real `runPixi`, covering re-mount on a fresh app, the error screen with a working retry, and an idle loss.
+- test/builder/contextLoss.test.ts: covers:
+  - ONE app across mounts (one init);
+  - unmount detaches without destroying;
+  - the design is preserved through recovery;
+  - the error screen and its retry.
+- test/builder/mountFailure.test.ts: now asserts "detached, never destroyed, never more than one app" instead of "destroyed per mount".
+- Every loss is dispatched as the real DOM event on the canvas. With the listener removed, all 10 loss-dependent tests fail (checked).

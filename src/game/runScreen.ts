@@ -43,6 +43,7 @@ import { courseFor } from './courses';
 import { acquireRunResources } from './runResources';
 import { deviceBeadStorage, detectDeviceInfo, resolveBeadCount, type BeadCountStorage, type DeviceInfo } from './deviceTier';
 import { RunSession, type RunSessionOptions } from './session';
+import { createSharedPixi, initApplication, MAX_CONTEXT_RECOVERIES, type SharedPixi } from '../render/sharedPixi';
 import './game.css';
 
 type Dispatch = (action: AppAction) => Promise<void> | void;
@@ -61,6 +62,8 @@ export interface RunScreenDeps {
   };
   /** Bead-ocean count override (S9; default: this device's pinned count, see deviceTier.ts). Never pinned. */
   beadCount?: number;
+  /** The shared Pixi app + context-loss watch (tests; default: the page's runPixi). */
+  pixi?: SharedPixi;
   /** Device report for the bead tier (tests; default: navigator). */
   deviceInfo?: DeviceInfo;
   /** Where the device's bead count is pinned (tests; default: localStorage; null = no pinning). */
@@ -106,18 +109,18 @@ export function assetsFor(theme: ThemeId): Promise<AssetLibrary> {
   return p;
 }
 
-/** One Pixi Application for the page: its canvas moves into each run mount. */
-let pixi: Promise<Application> | null = null;
-function pixiApp(): Promise<Application> {
-  pixi ??= (async () => {
-    const app = new Application();
-    await app.init({ background: 0x1d2330, antialias: true, autoDensity: true, resolution: Math.min(window.devicePixelRatio || 1, 2) });
-    app.ticker.stop(); // the FrameLoop drives rendering
-    return app;
-  })();
-  pixi.catch(() => (pixi = null));
-  return pixi;
-}
+/**
+ * One Pixi Application for the page: its canvas moves into each run mount.
+ * GL1: on a WebGL context loss it is discarded and the next acquire() builds
+ * a fresh one (sharedPixi.ts); the mounted run remounts onto it.
+ */
+export const runPixi: SharedPixi = createSharedPixi('run', async () => {
+  const app = new Application();
+  // a partially initialised app is destroyed if init rejects (no context leaked per retry)
+  await initApplication(app, { background: 0x1d2330, antialias: true, autoDensity: true, resolution: Math.min(window.devicePixelRatio || 1, 2) });
+  app.ticker.stop(); // the FrameLoop drives rendering
+  return app;
+});
 
 // ------------------------------------------------------------------- screen
 
@@ -136,7 +139,10 @@ declare global {
 /**
  * Mount the run. Never leaves a blank host: if loading or setup fails, every
  * resource acquired so far is released and a visible error screen offers
- * "Try again" (re-mounts in place) and "Back to builder".
+ * "Try again" (re-mounts in place) and "Back to builder". GL1: if the WebGL
+ * context is lost mid-run, the mount is torn down and re-mounted onto a fresh
+ * Pixi app (the run restarts; RESIDUALS R28), up to MAX_CONTEXT_RECOVERIES
+ * times, then the same error screen — whose retry gets a fresh app too.
  */
 export async function mountRunScreen(
   host: HTMLElement,
@@ -153,18 +159,14 @@ export async function mountRunScreen(
   // button, is a no-op, and a superseded/destroyed attempt releases its own
   // resources instead of overwriting `current`.
   let generation = 0;
+  // GL1: automatic remounts after WebGL context losses (a manual retry resets it).
+  let recoveries = 0;
   const attempt = async (): Promise<void> => {
     const gen = ++generation;
     const live = () => !dead && gen === generation;
     const attemptCtx: MountContext = { isCurrent: () => live() && ctx.isCurrent() };
-    try {
-      const screen = await mountRunOnce(host, state, dispatch, attemptCtx, deps);
-      if (live()) current = screen;
-      else screen.destroy();
-    } catch (err) {
-      console.error('[run] failed to start', err);
-      if (!attemptCtx.isCurrent()) return;
-      current = mountScreenError(host, 'Could not start the run', err, [
+    const showError = (title: string, err: unknown) => {
+      current = mountScreenError(host, title, err, [
         {
           label: 'Try again',
           primary: true,
@@ -173,11 +175,37 @@ export async function mountRunScreen(
             if (!live()) return; // destroyed, or a retry already started
             current?.destroy();
             current = null;
-            void attempt();
+            recoveries = 0;
+            void attempt(); // a fresh attempt acquires a fresh Pixi app if the old one was lost
           },
         },
         { label: 'Back to builder', testId: 'run-error-back', onClick: () => void dispatch({ type: 'backToBuild' }) },
       ]);
+    };
+    // GL1: the run's WebGL context died (the shared app is already discarded):
+    // tear this attempt down — never keep rendering into a dead context — and
+    // remount onto a fresh Application, or show the error UI once the
+    // automatic remounts are spent.
+    const onContextLost = () => {
+      if (!attemptCtx.isCurrent()) return;
+      current?.destroy();
+      current = null;
+      if (recoveries < MAX_CONTEXT_RECOVERIES) {
+        recoveries++;
+        console.warn(`[run] WebGL context lost; remounting the run (${recoveries}/${MAX_CONTEXT_RECOVERIES})`);
+        void attempt();
+      } else {
+        showError('The graphics were interrupted', new Error('The browser reset the WebGL graphics context.'));
+      }
+    };
+    try {
+      const screen = await mountRunOnce(host, state, dispatch, attemptCtx, deps, onContextLost);
+      if (live()) current = screen;
+      else screen.destroy();
+    } catch (err) {
+      console.error('[run] failed to start', err);
+      if (!attemptCtx.isCurrent()) return;
+      showError('Could not start the run', err);
     }
   };
   await attempt();
@@ -197,6 +225,7 @@ async function mountRunOnce(
   dispatch: Dispatch,
   ctx: MountContext,
   deps: RunScreenDeps,
+  onContextLost: () => void,
 ): Promise<Screen> {
   const course = courseFor(state.levelId);
   if (!course) return mountMissingCourse(host, state.levelId, 'Back', () => void dispatch({ type: 'backToBuild' }));
@@ -226,8 +255,9 @@ async function mountRunOnce(
 
   try {
     // A failure in any loader destroys a session that did get created.
+    const shared = deps.pixi ?? runPixi;
     const { app, lib, session: s } = await acquireRunResources({
-      app: deps.loaders?.app ?? pixiApp,
+      app: deps.loaders?.app ?? (() => shared.acquire()),
       lib: () => (deps.loaders?.assets ?? assetsFor)(level.theme),
       // S9: a bead level's count is fixed here, at level load: this device's pinned count (deviceTier.ts)
       session: () => RunSession.create(design, course, runSessionOptions(course.level, deps)),
@@ -247,8 +277,15 @@ async function mountRunOnce(
     loading.remove();
 
     // -------------------------------------------------------------- render
+    // GL1: context loss -> the screen tears this mount down and recovers.
+    // Subscribed first so it is released last (after every stage child).
+    cleanup.push(shared.onLost(app, onContextLost));
     canvasHost.appendChild(app.canvas);
-    cleanup.push(() => app.canvas.remove());
+    cleanup.push(() => {
+      // the shared app outlives this mount: detach it, never destroy it
+      app.resizeTo = null as unknown as HTMLElement;
+      app.canvas.remove();
+    });
     app.resizeTo = canvasHost;
     app.resize();
     const renderer = new SceneRenderer(lib, { theme: level.theme });

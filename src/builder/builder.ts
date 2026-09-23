@@ -26,6 +26,7 @@ import { highlightMap } from './messages';
 import { buildPreview, type PreviewModel } from './preview';
 import { BuilderLoupe, BuilderRenderer, themeFromCss, type StartAreaPx } from './render';
 import { browserCartStore, type CartStore } from './storage';
+import { createSharedPixi, initApplication, type SharedPixi } from '../render/sharedPixi';
 import { fitArea, fitView, zoomAbout, type BuilderView } from './view';
 
 export interface BuilderOptions {
@@ -41,6 +42,16 @@ export interface BuilderOptions {
    * it the builder shows its mock start area (flat ground + MOCK_FUNNEL).
    */
   startArea?: StartAreaPx;
+  /**
+   * GL1: the builder's WebGL context was lost. The mount has already torn
+   * itself down (it never keeps drawing into a dead context); `design` is the
+   * design as it stood (every in-progress committed edit, including a saved
+   * name). The caller re-mounts with it (buildScreen does) — the next mount
+   * gets a fresh Pixi app.
+   */
+  onContextLost?: (design: CartDesign) => void;
+  /** The shared Pixi app + context-loss watch (tests; default: the page's builderPixi). */
+  pixi?: SharedPixi;
 }
 
 export interface BuilderHandle {
@@ -53,6 +64,26 @@ export interface BuilderHandle {
 }
 
 export const TEST_CART_EVENT = 'pineapple:testcart';
+
+/**
+ * GL1: ONE Pixi Application for every builder mount on the page (creating +
+ * destroying one per mount churned WebGL contexts, which Safari answers by
+ * reaping them). Each mount reparents its canvas, re-targets `resizeTo`,
+ * starts its ticker, and on unmount detaches all three WITHOUT destroying it.
+ * On a context loss it is discarded and the next mount gets a fresh one.
+ */
+export const builderPixi: SharedPixi = createSharedPixi('builder', async () => {
+  const app = new Application();
+  // a rejected init that produced a renderer still owns a context: initApplication releases it
+  await initApplication(app, {
+    backgroundAlpha: 0,
+    antialias: true,
+    autoDensity: true,
+    resolution: Math.min(window.devicePixelRatio || 1, 2),
+  });
+  app.ticker.stop(); // runs only while a builder is mounted
+  return app;
+});
 
 const TOOL_LABEL: Record<Tool, string> = {
   straw: 'Straw',
@@ -139,10 +170,12 @@ function pressable(button: HTMLButtonElement, onActivate: () => void, registry: 
 }
 
 /**
- * Mount the builder. Every acquisition (DOM root, Pixi application, renderer,
- * listeners, observer, animation frames) pushes its release onto one stack;
- * `destroy()` unwinds it in reverse order, and so does a failure anywhere in
- * the mount (then the error is rethrown), so a failed mount leaks nothing.
+ * Mount the builder. Every acquisition (DOM root, the shared Pixi app's
+ * canvas/resize/ticker attachment, renderer, listeners, observer, animation
+ * frames) pushes its release onto one stack; `destroy()` unwinds it in
+ * reverse order, and so does a failure anywhere in the mount (then the error
+ * is rethrown), so a failed mount leaks nothing. The shared Application
+ * itself outlives the mount (GL1, `builderPixi`) unless its context is lost.
  */
 export async function mountBuilder(host: HTMLElement, options: BuilderOptions = {}): Promise<BuilderHandle> {
   const cleanups: Array<() => void> = [];
@@ -183,18 +216,30 @@ async function mountBuilderInto(
   host.append(root);
   cleanups.push(() => root.remove());
 
-  const app = new Application();
-  // Pushed before init: a rejected init that produced no renderer has nothing to release.
+  const shared = options.pixi ?? builderPixi;
+  const app = await shared.acquire();
+  // GL1: context lost -> tear this mount down (never keep drawing into a dead
+  // context) and hand the current design to the caller to re-mount with.
+  // Subscribed first so it is released last.
+  cleanups.push(
+    shared.onLost(app, () => {
+      const design = structuredClone(editor.design);
+      teardown();
+      options.onContextLost?.(design);
+    }),
+  );
+  // The shared app outlives this mount: detach it here, never destroy it.
   cleanups.push(() => {
-    if (app.renderer) app.destroy(true, { children: true });
+    if (shared.isLive(app)) {
+      app.ticker.stop();
+      app.resizeTo = null as unknown as HTMLElement;
+    }
+    app.canvas.remove();
   });
-  await app.init({
-    resizeTo: stage,
-    backgroundAlpha: 0,
-    antialias: true,
-    autoDensity: true,
-    resolution: Math.min(window.devicePixelRatio || 1, 2),
-  });
+  // Per-mount state on the reused app: an empty stage, our resize target, a running ticker.
+  app.stage.removeChildren();
+  app.resizeTo = stage;
+  app.ticker.start();
   const canvas = app.canvas;
   canvas.setAttribute('aria-label', 'Cart drawing area');
   stage.append(canvas);

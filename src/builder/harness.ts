@@ -4,6 +4,7 @@
  * offers it as a download (S6 wires the hook to the run phase instead).
  */
 
+import type { CartDesign } from '../model/cart';
 import { mountBuilder } from './builder';
 
 const host = document.getElementById('builder');
@@ -27,19 +28,25 @@ close.addEventListener('click', () => {
   output.hidden = true;
 });
 
-mountBuilder(host, {
-  onTestCart(design, spec) {
-    lastJson = JSON.stringify(design, null, 1);
-    json.textContent = lastJson;
-    output.hidden = false;
-    console.info('[builder] Test Cart', { design, bodies: spec.bodies.length, joints: spec.joints.length });
-  },
-})
-  .then((builder) => {
-    // handy for poking at the builder from devtools
-    (window as unknown as { builder: typeof builder }).builder = builder;
+const start = (initialDesign?: CartDesign): void => {
+  mountBuilder(host, {
+    ...(initialDesign ? { initialDesign } : {}),
+    onTestCart(design, spec) {
+      lastJson = JSON.stringify(design, null, 1);
+      json.textContent = lastJson;
+      output.hidden = false;
+      console.info('[builder] Test Cart', { design, bodies: spec.bodies.length, joints: spec.joints.length });
+    },
+    // GL1: the builder tore itself down after a WebGL context loss: re-mount with its design
+    onContextLost: (design) => start(design),
   })
-  .catch((err: unknown) => {
-    console.error(err);
-    host.textContent = `Failed to start: ${err instanceof Error ? err.message : String(err)}`;
-  });
+    .then((builder) => {
+      // handy for poking at the builder from devtools
+      (window as unknown as { builder: typeof builder }).builder = builder;
+    })
+    .catch((err: unknown) => {
+      console.error(err);
+      host.textContent = `Failed to start: ${err instanceof Error ? err.message : String(err)}`;
+    });
+};
+start();
