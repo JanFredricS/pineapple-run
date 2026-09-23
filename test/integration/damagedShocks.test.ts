@@ -25,6 +25,7 @@ import { exampleCart } from '../../src/builder/exampleCart';
 import { courseFor } from '../../src/game/courses';
 import { RunSession } from '../../src/game/session';
 import { SHOCK_MAX_RATIO, SHOCK_MIN_RATIO } from '../../src/physics/compound';
+import type { DistanceJointSpec } from '../../src/model/attach';
 import type { BodyHandle, PhysicsWorld } from '../../src/physics/engine';
 
 /** Test-only teleport through the raw binding (PhysicsWorld has no setTransform by design). */
@@ -63,7 +64,7 @@ async function damagedRun(stopsOn: boolean): Promise<Outcome> {
     const lost = bodyOf('wheel-l');
     const kept = bodyOf('wheel-r');
     const chassis = c.cart.bodies.get(c.chassisId)!;
-    const survivors = c.spec.joints.filter((j) => j.type === 'distance' && (j.partId === 'shock-r1' || j.partId === 'shock-r2'));
+    const survivors = c.spec.joints.filter((j): j is DistanceJointSpec => j.type === 'distance' && (j.partId === 'shock-r1' || j.partId === 'shock-r2'));
     expect(survivors).toHaveLength(2);
     const ratios = () =>
       survivors.map((j) => {
