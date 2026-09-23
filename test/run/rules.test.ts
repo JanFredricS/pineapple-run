@@ -11,7 +11,7 @@ import type { RunEvent } from '../../src/model/runEvents';
 import { PINEAPPLE_RADIUS } from '../../src/physics/cargo';
 import type { DriveDirection } from '../../src/physics/compound';
 import { PhysicsWorld } from '../../src/physics/engine';
-import { RunController } from '../../src/run/controller';
+import { GOAL_SETTLE_SECONDS, RunController } from '../../src/run/controller';
 import { loadFixtureCart, loadFlatGoalLevel } from '../../src/run/fixtures';
 import { circleTouchesRect } from '../../src/run/shapes';
 
@@ -130,12 +130,17 @@ describe('goal: base sensor, swept', () => {
       const shot = rightmostPineapple(w, rc);
       w.setLinearVelocity(shot.handle, { x: 80, y: 0 });
       const path: Array<{ x: number; y: number }> = [];
-      for (let n = 0; n < 60 && rc.phase !== 'ended'; n++) {
+      // index in `path` of the step whose sweep touched the sensor (starts the settle window)
+      let touch: number | null = null;
+      for (let n = 0; n < 60; n++) {
         rc.step();
         const t = w.getTransform(shot.handle);
         path.push({ x: t.x, y: t.y });
+        if (touch === null && rc.goalSettling) touch = path.length - 1;
       }
-      return { events, path };
+      // S6T #2: the goal ends the run after the settle window
+      for (let n = 0; n < 5 * 60 && rc.phase !== 'ended'; n++) rc.step();
+      return { events, path, touch };
     };
     const away: Rect = { x: -500, y: 0, width: 0.02, height: 1 };
     const { path } = await run(away);
@@ -158,13 +163,68 @@ describe('goal: base sensor, swept', () => {
     // no sampled pose ever overlaps the strip: a point-in-time check would miss it
     expect(path.some((p) => circleTouchesRect(p, r, sensor))).toBe(false);
     const second = await run(sensor);
-    expect(second.path.slice(0, second.path.length)).toEqual(path.slice(0, second.path.length));
+    expect(second.path).toEqual(path);
     const goal = second.events.at(-1) as Goal;
     expect(goal.type).toBe('goalReached');
     expect(goal.delivered).toBe(1);
     // detected on the step that crossed it
-    expect(second.path.at(-1)!.x).toBeCloseTo(b.x, 9);
+    expect(second.touch).not.toBeNull();
+    expect(second.path[second.touch!]!.x).toBeCloseTo(b.x, 9);
     console.info(`[S1 swept] ${(b.x - a.x).toFixed(3)} m per step across a ${width} m strip at x ${sensor.x.toFixed(2)}`);
+  });
+});
+
+describe('goal settle window (S6T #2)', () => {
+  /** Shoot the rightmost pineapple into the pit and step until the first goal touch. */
+  async function toFirstTouch() {
+    const w = await world();
+    const level = cartBeyondPit();
+    const rc = new RunController(w, loadFixtureCart(), level);
+    const events = record(rc);
+    startAndRelease(rc, 120);
+    const first = rightmostPineapple(w, rc);
+    w.setLinearVelocity(first.handle, { x: 15, y: 0 });
+    for (let n = 0; n < 10 * 60 && !rc.goalSettling; n++) rc.step();
+    expect(rc.goalSettling).toBe(true);
+    return { w, rc, events, level, first };
+  }
+
+  it('the clock freezes at the first touch; pineapples arriving within the window count; the event carries the first-touch time', async () => {
+    const { w, rc, events, first } = await toFirstTouch();
+    const t0 = rc.simTime();
+    const pastAtTouch = rc.pastGoalLine();
+    // a second pineapple follows while the window runs
+    const alive = rc.pineappleStates().filter((p) => p.alive && p.id !== first.id);
+    const second = alive.reduce((a, b) => (w.getTransform(b.handle).x > w.getTransform(a.handle).x ? b : a));
+    const gap = rc.level.goal.lineX - w.getTransform(second.handle).x;
+    w.setLinearVelocity(second.handle, { x: Math.max(15, gap * 2), y: -3 });
+    let settleSteps = 0;
+    const ended = () => rc.phase === 'ended';
+    while (!ended() && settleSteps < 10 * 60) {
+      rc.step();
+      settleSteps++;
+      if (!ended()) expect(rc.simTime()).toBe(t0);
+    }
+    const goal = events.at(-1) as Goal;
+    expect(goal.type).toBe('goalReached');
+    expect(goal.simTime).toBe(t0);
+    expect(rc.simTime()).toBe(t0);
+    // the rest of the load is still in the funnel area: the window ran its full length
+    expect(settleSteps).toBe(Math.round(GOAL_SETTLE_SECONDS * 60));
+    expect(goal.delivered).toBeGreaterThan(pastAtTouch);
+    expect(goal.delivered).toBe(2);
+  });
+
+  it('Give Up during the window finishes the goal (scored) instead of abandoning the run', async () => {
+    const { rc, events } = await toFirstTouch();
+    const t0 = rc.simTime();
+    for (let i = 0; i < 20; i++) rc.step();
+    expect(rc.giveUp()).toBe(true);
+    const goal = events.at(-1) as Goal;
+    expect(goal.type).toBe('goalReached');
+    expect(goal.simTime).toBe(t0);
+    expect(events.some((e) => e.type === 'gaveUp')).toBe(false);
+    expect(goal.delivered).toBeGreaterThanOrEqual(1);
   });
 });
 

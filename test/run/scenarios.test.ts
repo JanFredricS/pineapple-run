@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { LevelDef } from '../../src/model/level';
 import type { RunEvent } from '../../src/model/runEvents';
 import { PhysicsWorld } from '../../src/physics/engine';
-import { RunController } from '../../src/run/controller';
+import { LEVEL_ALL_LOST_SECONDS, RunController } from '../../src/run/controller';
 import { loadFixtureCart, loadFlatGoalLevel, loadOpenBedCart } from '../../src/run/fixtures';
 import { loadSpikeLevel } from '../../src/spike/data';
 import type { DriveDirection } from '../../src/physics/compound';
@@ -159,13 +159,12 @@ describe('S1 run scenarios', () => {
     expect(rc.pineappleStates().every((p) => p.alive && w.hasBody(p.handle))).toBe(true);
   });
 
-  it('kill-plane: pineapples dropped through a gap are removed and lost; a cart driven into it is removed without breaking the run', async () => {
-    const w = await world();
+  const holeUnderFunnel = (): LevelDef => {
     const base = loadFlatGoalLevel();
     const main = base.terrain.spans.find((s) => s.id === 'main')!;
     // cut an 8 m hole (x 1..9, longer than the 6 m cart) under the funnel;
     // the cart starts right of it
-    const level: LevelDef = {
+    return {
       ...base,
       cartStart: { x: 12, y: 8.2 },
       terrain: {
@@ -177,18 +176,34 @@ describe('S1 run scenarios', () => {
         ],
       },
     };
-    const rc = new RunController(w, loadFixtureCart(), level);
+  };
+
+  it('kill-plane: pineapples dropped through a gap are removed and lost; with nothing left to deliver the level run ends with allLost (S6T #16)', async () => {
+    const w = await world();
+    const rc = new RunController(w, loadFixtureCart(), holeUnderFunnel());
     const events = record(rc);
     startAndLoad(rc);
-    for (let i = 0; i < 60; i++) rc.step();
+    for (let i = 0; i < 60 && rc.phase !== 'ended'; i++) rc.step();
     const lost = events.filter((e): e is Extract<RunEvent, { type: 'pineappleLost' }> => e.type === 'pineappleLost');
     expect(lost).toHaveLength(15);
+    const lastRemovedAt = lost.at(-1)!.simTime;
     // falling 20 m to killY 30 takes ~2.5 s: most are removed by the kill-plane
     // before the 3 s grounded rule could apply (a few graze the gap's edge first)
     expect(lost.filter((e) => e.simTime < 3).length).toBeGreaterThanOrEqual(10);
     expect(rc.pineappleStates().every((p) => !p.alive && !w.hasBody(p.handle))).toBe(true);
+    for (let i = 0; i < 5 * 60 && rc.phase !== 'ended'; i++) rc.step();
+    const end = events.at(-1)!;
+    expect(end.type).toBe('allLost');
+    expect(end.simTime).toBeCloseTo(lastRemovedAt + LEVEL_ALL_LOST_SECONDS, 6);
+    expect(rc.phase).toBe('ended');
+  });
 
-    // now drive the cart left into the hole
+  it('kill-plane: a cart driven into a hole is removed without breaking the run', async () => {
+    const w = await world();
+    const rc = new RunController(w, loadFixtureCart(), holeUnderFunnel());
+    const events = record(rc);
+    rc.start(); // no Release: the load stays in the funnel
+    for (let i = 0; i < 60; i++) rc.step();
     const bodiesBefore = w.bodyHandles().length;
     for (let n = 0; n < 60 * 10 && !rc.cartLost; n++) {
       rc.setDrive(-1);
@@ -200,7 +215,8 @@ describe('S1 run scenarios', () => {
     const cam = rc.camera.position;
     for (let i = 0; i < 60; i++) rc.step(); // stepping without a cart is fine; camera holds
     expect(rc.camera.position).toEqual(cam);
-    expect(rc.phase).toBe('released');
+    expect(rc.phase).toBe('started');
+    expect(events.map((e) => e.type)).toEqual(['started']);
     expect(rc.giveUp()).toBe(true);
   });
 

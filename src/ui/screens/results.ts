@@ -31,7 +31,8 @@ function levelPanel(m: LevelResults): HTMLElement[] {
     }),
   ]);
   const meta = el('div', { class: 'pr-results__meta' });
-  if (m.gaveUp) meta.append(el('span', { text: 'You gave up — no score recorded.' }));
+  if (m.allLost) meta.append(el('span', { text: 'All pineapples lost — no score recorded.' }));
+  else if (m.gaveUp) meta.append(el('span', { text: 'You gave up — no score recorded.' }));
   else if (m.newBest) {
     meta.append(newBest());
     if (m.previousBest) meta.append(el('span', { text: `Previous best ${ratingViewOf(m.previousBest.bestRating).text}` }));
@@ -46,7 +47,7 @@ function endlessPanel(m: EndlessResults): HTMLElement[] {
   const eq = el('div', { class: 'pr-eq', 'data-testid': 'endless-equation' }, [
     el('span', { class: 'pr-eq__term', 'aria-label': `Distance ${m.view.distanceText}` }, [icon(DISTANCE_SVG), m.view.distanceText]),
     op('+'),
-    el('span', { class: 'pr-eq__term', 'aria-label': `Carry bonus ${m.view.bonus}, ${m.view.aboard} aboard` }, [icon(PINEAPPLE_SVG), `${m.view.aboard} aboard`]),
+    el('span', { class: 'pr-eq__term', 'aria-label': `Carry bonus ${m.view.bonus}, ${m.view.aboard} aboard` }, [icon(PINEAPPLE_SVG), `carry bonus ${formatInt(m.view.bonus)} (${m.view.aboard} aboard)`]),
     op('='),
     el('span', { class: 'pr-score pr-score--neutral', 'data-testid': 'endless-score', text: formatInt(m.view.score) }),
   ]);

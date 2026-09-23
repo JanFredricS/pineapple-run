@@ -14,16 +14,21 @@
  *   - release(): pulls the plug; emits `released`; the sim clock (seconds
  *                since Release = steps × 1/60) starts from 0.
  *   - ended:     exactly one terminal event — `goalReached(delivered)` (level
- *                mode), `allLost` (endless mode) or `gaveUp`. Physics keeps
+ *                mode), `allLost` (endless mode, or a level run with every
+ *                pineapple lost) or `gaveUp`. Physics keeps
  *                stepping (for visuals) with the drive off; nothing further is
  *                emitted, even from listeners re-entering the controller.
  *
  * Modes (S1 audit ruling, INTEGRATION.md):
- *   - "level":   the goal ends the run. The lost flag is ADVISORY (HUD /
- *                `remaining` / pineappleLost events): it never stops a
- *                pineapple from triggering the goal or counting as delivered —
- *                recovered or catapulted cargo counts, as in the original.
- *                Losing every pineapple does NOT end the run.
+ *   - "level":   the goal ends the run (after its settle window). The lost
+ *                flag is ADVISORY (HUD / `remaining` / pineappleLost events):
+ *                it never stops a pineapple from triggering the goal or
+ *                counting as delivered — recovered or catapulted cargo
+ *                counts, as in the original. When nothing can be delivered
+ *                any more (all lost AND all fallen out of the world, or the
+ *                cart gone) the run ends with `allLost` after
+ *                LEVEL_ALL_LOST_SECONDS (S6T #16; before, it went on until
+ *                Give Up).
  *   - "endless": no goal (the LevelDef goal is ignored). Lost is final; the
  *                last loss ends the run with `allLost`.
  *
@@ -37,8 +42,14 @@
  *   2. ground tracking for pineapples currently outside the cart.
  *   3. every ABOARD_CHECK_STEPS (1 s): the aboard check / lost rule.
  *   4. goal (level mode): a pineapple whose path this step (previous ->
- *      current centre, swept circle) touched the goal sensor ends the run;
- *      delivered = pineapples past goal.lineX.
+ *      current centre, swept circle) touches the goal sensor starts the
+ *      SETTLE WINDOW (S6T backlog #2): the clock freezes at that moment (the
+ *      rating's time is the first touch), but physics, drive and the
+ *      lost/kill rules keep running for GOAL_SETTLE_SECONDS so a carried
+ *      load can tip in; then the run ends with `goalReached`, delivered =
+ *      pineapples past goal.lineX at that moment. It ends early once every
+ *      live pineapple is past the line (nothing left to wait for), and Give
+ *      Up during the window finishes the goal instead of abandoning it.
  *
  * Lost rule (PLAN.md "Endless mode rules"): "aboard" = centre inside the
  * cart's world AABB + margin and not touching the terrain, re-checked each
@@ -87,6 +98,20 @@ export const LOST_GROUNDED_SECONDS = 3;
 export const RESTING_SPEED = 0.5;
 /** Contact tolerance for the geometric support test, metres. */
 export const SUPPORT_SLOP = 0.05;
+/**
+ * Settle window after the first goal touch (S6T backlog #2), sim seconds.
+ * Before: the run ended on the first touch, so pineapples still in the cart
+ * behind the line never counted and careful driving scored worse than
+ * flooring it. 2 s is about the time a cart at walking pace needs to roll
+ * over the lip and tip its bed into the pit.
+ */
+export const GOAL_SETTLE_SECONDS = 2;
+/**
+ * Level runs: once nothing can be delivered any more (every pineapple lost,
+ * and none left in the world or no cart left) for this long, the run ends
+ * with `allLost` (S6T backlog #16). Before, it went on until Give Up.
+ */
+export const LEVEL_ALL_LOST_SECONDS = 2;
 /** Cart bounds + this margin = the aboard box. */
 export const ABOARD_MARGIN: AboardMargin = {
   side: PINEAPPLE_RADIUS,
@@ -182,6 +207,10 @@ export class RunController implements RunEventSource {
   private _lastAboardBox: AABB | null = null;
   private _events: RunEvent[] = [];
   private supportCache: { step: number; set: Set<PineappleState> } | null = null;
+  /** Level mode: step and sim time of the first goal touch (settle window running), else null. */
+  private goalTouch: { step: number; simTime: number } | null = null;
+  /** Level mode: step at which `remaining` reached 0 (all-lost grace running), else null. */
+  private allLostSince: number | null = null;
   /** Chassis x at construction (distance origin for furthestMetres). */
   private readonly startX: number;
   private _furthest = 0;
@@ -268,6 +297,7 @@ export class RunController implements RunEventSource {
    */
   simTime(): number {
     if (this.endSimTime !== null) return this.endSimTime;
+    if (this.goalTouch !== null) return this.goalTouch.simTime;
     return this.releaseStep === null ? 0 : (this._steps - this.releaseStep) * FIXED_DT;
   }
 
@@ -291,6 +321,17 @@ export class RunController implements RunEventSource {
 
   get delivered(): number | null {
     return this._delivered;
+  }
+
+  /** Level mode: a pineapple has touched the goal and the settle window is running (the clock is frozen). */
+  get goalSettling(): boolean {
+    return this.goalTouch !== null && this._phase === 'released';
+  }
+
+  /** Pineapples past the goal line right now (arrived ones included). */
+  pastGoalLine(): number {
+    const lineX = this.level.goal.lineX;
+    return this.pineapples.filter((p) => p.arrived || (p.alive && this.world.getTransform(p.handle).x > lineX)).length;
   }
 
   get cartLost(): boolean {
@@ -370,6 +411,11 @@ export class RunController implements RunEventSource {
   /** Give up: ends the run (any phase before ended). */
   giveUp(): boolean {
     if (this._phase === 'ended') return false;
+    if (this.goalSettling) {
+      // the goal was already reached: Give Up just skips the rest of the window
+      this.finishGoal();
+      return true;
+    }
     const t = this.simTime();
     this.end();
     this.emit({ type: 'gaveUp', simTime: t });
@@ -393,6 +439,7 @@ export class RunController implements RunEventSource {
       if (this.isOpen()) this.trackGround();
       if (this.isOpen() && (this._steps - this.releaseStep!) % ABOARD_CHECK_STEPS === 0) this.aboardCheck();
       if (this.isOpen()) this.checkGoal();
+      if (this.isOpen()) this.checkLevelAllLost();
       if (this.isOpen()) this.trackDistance();
       this.recordPositions();
     } else {
@@ -657,6 +704,12 @@ export class RunController implements RunEventSource {
 
   private checkGoal(): void {
     if (this.mode !== 'level' || !this.isOpen()) return;
+    if (this.goalTouch !== null) {
+      const settled = this._steps - this.goalTouch.step >= Math.round(GOAL_SETTLE_SECONDS / FIXED_DT);
+      const allIn = this.pineapples.every((p) => !p.alive || p.arrived || this.world.getTransform(p.handle).x > this.level.goal.lineX);
+      if (settled || allIn) this.finishGoal();
+      return;
+    }
     const sensor = this.level.goal.sensor;
     // lost is advisory in level runs: any live pineapple can end it; the
     // swept test catches one that crosses a thin sensor between two steps
@@ -664,12 +717,41 @@ export class RunController implements RunEventSource {
       (p) => p.alive && sweptCircleTouchesRect(p.prev, this.world.getTransform(p.handle), PINEAPPLE_RADIUS, sensor),
     );
     if (!touching) return;
-    const lineX = this.level.goal.lineX;
-    const delivered = this.pineapples.filter((p) => p.arrived || (p.alive && this.world.getTransform(p.handle).x > lineX)).length;
-    const t = this.simTime();
+    this.goalTouch = { step: this._steps, simTime: this.simTime() };
+    this.allLostSince = null;
+  }
+
+  /** End the settle window: delivered = pineapples past the line now; time = the first touch. */
+  private finishGoal(): void {
+    if (this.goalTouch === null || this._phase !== 'released') return;
+    const delivered = this.pastGoalLine();
+    const t = this.goalTouch.simTime;
     this._delivered = delivered;
     this.end();
     this.emit({ type: 'goalReached', simTime: t, delivered });
+  }
+
+  /**
+   * Level mode (S6T #16): the run ends with `allLost` once NOTHING can be
+   * delivered any more, for LEVEL_ALL_LOST_SECONDS: every pineapple lost
+   * (none past the line — those are never lost) AND either none is still a
+   * body in the world (all fell out) or the cart is gone. Lost stays
+   * advisory otherwise (INTEGRATION S1 ruling): a lost pile on the ground
+   * can still be bulldozed into the blender, so while it and a cart exist
+   * the run goes on (the HUD nudges Give Up / Retry instead).
+   */
+  private checkLevelAllLost(): void {
+    if (this.mode !== 'level' || this.goalTouch !== null) return;
+    const recoverable = !this._cartLost && this.pineapples.some((p) => p.alive);
+    if (this.remaining > 0 || recoverable) {
+      this.allLostSince = null;
+      return;
+    }
+    this.allLostSince ??= this._steps;
+    if (this._steps - this.allLostSince < Math.round(LEVEL_ALL_LOST_SECONDS / FIXED_DT)) return;
+    const t = this.simTime();
+    this.end();
+    this.emit({ type: 'allLost', simTime: t });
   }
 
   private trackDistance(): void {

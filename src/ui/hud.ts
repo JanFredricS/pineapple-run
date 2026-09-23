@@ -5,6 +5,7 @@
  *      \______________________released (any pre-run phase)_____________________/
  *   running/any --goalReached | gaveUp--> ended
  *   endless: running --pineappleLost(remaining 0)--> ended
+ *   any --allLost--> ended (endless, and level runs with nothing recoverable)
  *
  * The HUD owns NO simulation and NO clock: phase changes come only from S1's
  * run-lifecycle events (model/runEvents) and the player's intents. Intents
@@ -82,6 +83,8 @@ export function hudReduce(s: HudState, a: HudAction): HudState {
           return end(s, e, { delivered: clampCount(e.delivered) });
         case 'gaveUp':
           return end(s, e);
+        case 'allLost':
+          return end(s, e, { remaining: 0, allLost: true });
       }
     }
   }
@@ -139,6 +142,6 @@ export function endBanner(s: HudState): string {
   if (!e) return '';
   if (e.type === 'goalReached') return s.delivered === 1 ? '1 pineapple delivered!' : `${s.delivered ?? 0} pineapples delivered!`;
   if (e.type === 'gaveUp') return 'Run abandoned';
-  if (e.type === 'pineappleLost') return 'Last pineapple lost!';
+  if (e.type === 'pineappleLost' || e.type === 'allLost') return 'All pineapples lost!';
   return '';
 }

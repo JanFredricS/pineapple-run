@@ -87,7 +87,17 @@ describe('HUD run-phase machine', () => {
     expect(s).toMatchObject({ phase: 'ended', endTime: 90, remaining: 0 });
     expect(s.outcome?.type).toBe('pineappleLost');
     expect(giveUpButton(s).attention).toBe(false);
-    expect(endBanner(s)).toBe('Last pineapple lost!');
+    expect(endBanner(s)).toBe('All pineapples lost!');
+  });
+
+  it('allLost ends the run in either mode (S6T #16: level runs with nothing recoverable)', () => {
+    for (const mode of ['level', 'endless'] as const) {
+      let s = run(initialHud(mode), ev({ type: 'released', simTime: 0 }));
+      s = hudReduce(s, ev({ type: 'allLost', simTime: 42 }));
+      expect(s).toMatchObject({ phase: 'ended', endTime: 42, remaining: 0, allLost: true });
+      expect(endBanner(s)).toBe('All pineapples lost!');
+      expect(giveUpButton(s).visible).toBe(false);
+    }
   });
 
   it('ended is terminal: later events are ignored', () => {
