@@ -32,6 +32,24 @@ work. S6 works through this list; each item is a plan-owner ruling.
   (event + mock + docs). S5's remaining===0 inference is replaced by this
   event at S6 wiring.
 
+## S6T playability refinements (implementer, 2026-09-23 — for plan-owner review)
+
+- **Goal settle window** (backlog #2): the first base-sensor touch freezes the
+  clock (rating time = first touch, as before) and starts a
+  `GOAL_SETTLE_SECONDS` = 2 s window. `goalReached` fires at the end of the
+  window, or early once every live pineapple is past `lineX`, with delivered
+  counted at that point. Give Up during the window finalises the goal. The
+  event's shape is unchanged; only the moment it fires has moved.
+- **Level `allLost`** (backlog #16): this refines the "lost is advisory"
+  ruling and does not break it. A level run ends with `allLost` only when
+  nothing is recoverable for `LEVEL_ALL_LOST_SECONDS` = 2 s: every pineapple
+  is lost AND either the cart is gone or no pineapple body is left. A lost
+  pile with a live cart still keeps the run going, because bulldozing it in
+  counts. Results show "All pineapples lost — no score recorded" (unscored,
+  like Give Up).
+- **Retry mid-run** (backlog #5): AppState gains 'run' + startRun → a fresh
+  run (R key, and the Retry button of the stuck hint).
+
 ## Conventions to reconcile
 
 3. **Y-origin**: S2 builder assumes design y = 0 is the ground line;

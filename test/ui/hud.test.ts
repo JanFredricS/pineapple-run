@@ -100,6 +100,23 @@ describe('HUD run-phase machine', () => {
     }
   });
 
+  it('stuck (S6T #5): only while running; pulses Give Up; cleared by the end', async () => {
+    const { stuckHint } = await import('../../src/ui/hud');
+    let s = initialHud('endless');
+    s = hudReduce(s, { type: 'stuck', stuck: true });
+    expect(s.stuck).toBe(false);
+    s = run(s, ev({ type: 'released', simTime: 0 }), { type: 'stuck', stuck: true });
+    expect(s.stuck).toBe(true);
+    expect(stuckHint(s)).toBe('Stuck?');
+    expect(giveUpButton(s).attention).toBe(true);
+    expect(hudReduce(s, { type: 'stuck', stuck: true })).toBe(s);
+    const moved = hudReduce(s, { type: 'stuck', stuck: false });
+    expect(giveUpButton(moved).attention).toBe(false);
+    const ended = hudReduce(s, ev({ type: 'gaveUp', simTime: 9 }));
+    expect(ended.stuck).toBe(false);
+    expect(stuckHint(ended)).toBe('');
+  });
+
   it('ended is terminal: later events are ignored', () => {
     const s = run(initialHud('level'), ev({ type: 'released', simTime: 0 }), ev({ type: 'gaveUp', simTime: 3 }));
     expect(hudReduce(s, ev({ type: 'goalReached', simTime: 4, delivered: 15 }))).toBe(s);

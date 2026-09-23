@@ -75,6 +75,12 @@ describe('app transitions added by S5', () => {
     expect(s).toEqual({ name: 'results', levelId: 'endless:ABC', outcome, endless: { furthestMetres: 80, aboard: 3 } });
     expect('endless' in transition(run, { type: 'runEnded', outcome })).toBe(false);
   });
+  it('S6T #5: run -> startRun (R / Stuck? Retry) is a NEW run state, so the App remounts a fresh run', () => {
+    const run: AppState = { name: 'run', levelId: 'beach' };
+    const next = transition(run, { type: 'startRun' });
+    expect(next).toEqual(run);
+    expect(next).not.toBe(run);
+  });
   it('results -> next level / new seed goes straight to build', () => {
     const r: AppState = { name: 'results', levelId: 'beach', outcome: null };
     expect(transition(r, { type: 'selectLevel', levelId: 'kitchen' })).toEqual({ name: 'build', levelId: 'kitchen' });

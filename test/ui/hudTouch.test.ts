@@ -193,3 +193,65 @@ describe('HUD touch drive buttons: cancellation is a full clear', () => {
     hud.destroy();
   });
 });
+
+describe('S6T #5: "Stuck?" hint, Retry button and R key', () => {
+  let keydown: Listener[] = [];
+  let frames: (() => void)[] = [];
+  beforeEach(() => {
+    keydown = [];
+    frames = [];
+    vi.stubGlobal('document', {
+      createElement: (t: string) => new FakeEl(t),
+      createTextNode: (t: string) => Object.assign(new FakeEl('#text'), { textContent: t }),
+      addEventListener() {},
+      removeEventListener() {},
+      hidden: false,
+    });
+    vi.stubGlobal('window', {
+      addEventListener: (t: string, f: Listener) => void (t === 'keydown' && keydown.push(f)),
+      removeEventListener() {},
+    });
+    vi.stubGlobal('requestAnimationFrame', (f: () => void) => frames.push(f));
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const frame = () => frames.splice(0).forEach((f) => f());
+  const key = (code: string, extra: Record<string, unknown> = {}) => keydown.forEach((f) => f({ code, key: code, repeat: false, preventDefault() {}, ...extra }));
+
+  it('telemetry.stuck shows the hint + Retry and pulses Give Up only while running; Retry and R call controls.retry', async () => {
+    const { mountRunHud } = await import('../../src/ui/screens/runHud');
+    const host = new FakeEl();
+    const source = new Source();
+    const stuck = { v: false };
+    const retry = vi.fn();
+    const hud = mountRunHud(host as unknown as HTMLElement, {
+      mode: 'level',
+      source,
+      controls: { release() {}, giveUp() {}, setDrive() {}, retry },
+      telemetry: { furthestMetres: () => 0, aboard: () => 15, stuck: () => stuck.v },
+      onEnded() {},
+    });
+    const hint = host.find((e) => e.attrs.get('data-testid') === 'stuck-hint')!;
+    source.emit({ type: 'started', simTime: 0 });
+    stuck.v = true;
+    frame();
+    expect(hud.state.stuck).toBe(false); // not running yet
+    expect(hint.hidden).toBe(true);
+    source.emit({ type: 'released', simTime: 0 });
+    frame();
+    expect(hud.state.stuck).toBe(true);
+    expect(hint.hidden).toBe(false);
+    host.find((e) => e.attrs.get('data-testid') === 'stuck-retry')!.click();
+    expect(retry).toHaveBeenCalledTimes(1);
+    stuck.v = false;
+    frame();
+    expect(hint.hidden).toBe(true);
+    key('KeyR');
+    expect(retry).toHaveBeenCalledTimes(2);
+    key('KeyR', { repeat: true });
+    key('KeyR', { metaKey: true });
+    expect(retry).toHaveBeenCalledTimes(2);
+    hud.destroy();
+  });
+});

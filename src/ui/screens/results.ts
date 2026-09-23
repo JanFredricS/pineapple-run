@@ -87,8 +87,14 @@ export function mountResultsScreen(host: HTMLElement, model: ResultsModel, actio
   const root = el('section', { class: 'pr-screen pr-results', 'aria-label': 'Results' }, [panel, actionsPanel]);
   host.appendChild(root);
   d.listen(window, 'keydown', (e) => {
-    const k = (e as KeyboardEvent).key;
+    const ke = e as KeyboardEvent;
+    const k = ke.key;
     if (k === 'Escape') actions.levels();
+    // S6T #5: R = Retry, as on the run screen
+    if (ke.code === 'KeyR' && !ke.repeat && !ke.ctrlKey && !ke.metaKey && !ke.altKey) {
+      ke.preventDefault();
+      actions.retry();
+    }
   });
   queueMicrotask(() => retry.focus({ preventScroll: true }));
   return {

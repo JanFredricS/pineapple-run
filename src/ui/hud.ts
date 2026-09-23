@@ -30,13 +30,19 @@ export interface HudState {
   givingUp: boolean;
   /** Level mode: every pineapple is gone, so the run can't score — nudge Give Up. */
   allLost: boolean;
+  /** S6T #5: the cart has barely moved for a while (telemetry) — show "Stuck?" + Retry, pulse Give Up. */
+  stuck: boolean;
   /** The event that ended the run. */
   outcome: RunEvent | null;
   /** Sim time the run ended at (frozen timer). */
   endTime: number | null;
 }
 
-export type HudAction = { type: 'event'; event: RunEvent } | { type: 'releaseRequested' } | { type: 'giveUpRequested' };
+export type HudAction =
+  | { type: 'event'; event: RunEvent }
+  | { type: 'releaseRequested' }
+  | { type: 'giveUpRequested' }
+  | { type: 'stuck'; stuck: boolean };
 
 export function initialHud(mode: RunMode): HudState {
   return {
@@ -46,6 +52,7 @@ export function initialHud(mode: RunMode): HudState {
     delivered: null,
     givingUp: false,
     allLost: false,
+    stuck: false,
     outcome: null,
     endTime: null,
   };
@@ -55,7 +62,7 @@ const clampCount = (n: number) => (Number.isFinite(n) ? Math.min(TOTAL_PINEAPPLE
 const safeTime = (t: number) => (Number.isFinite(t) && t > 0 ? t : 0);
 
 function end(s: HudState, event: RunEvent, patch: Partial<HudState> = {}): HudState {
-  return { ...s, ...patch, phase: 'ended', givingUp: false, outcome: event, endTime: safeTime(event.simTime) };
+  return { ...s, ...patch, phase: 'ended', givingUp: false, stuck: false, outcome: event, endTime: safeTime(event.simTime) };
 }
 
 export function hudReduce(s: HudState, a: HudAction): HudState {
@@ -65,6 +72,10 @@ export function hudReduce(s: HudState, a: HudAction): HudState {
       return s.phase === 'ready' ? { ...s, phase: 'releasing' } : s;
     case 'giveUpRequested':
       return s.phase !== 'waiting' && !s.givingUp ? { ...s, givingUp: true } : s;
+    case 'stuck': {
+      const stuck = a.stuck && s.phase === 'running';
+      return stuck === s.stuck ? s : { ...s, stuck };
+    }
     case 'event': {
       const e = a.event;
       switch (e.type) {
@@ -127,8 +138,13 @@ export function giveUpButton(s: HudState): ButtonView {
     visible: true,
     enabled: s.phase !== 'waiting',
     label: 'Give Up',
-    attention: s.mode === 'level' && s.allLost,
+    attention: (s.mode === 'level' && s.allLost) || s.stuck,
   };
+}
+
+/** S6T #5: the "Stuck?" hint (with a Retry button) — only while running. */
+export function stuckHint(s: HudState): string {
+  return s.stuck && s.phase === 'running' ? 'Stuck?' : '';
 }
 
 /** Drive buttons only make sense once the simulation is live. */

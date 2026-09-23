@@ -484,6 +484,18 @@
   color: rgba(255, 255, 255, 0.95);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
+.pr-stuck {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  font-size: 1em;
+  background: var(--pr-hud-glass);
+  border-radius: 12px;
+  padding: 0.3em 0.4em 0.3em 0.8em;
+}
+.pr-stuck__retry {
+  min-height: 40px;
+}
 .pr-hud__banner {
   position: absolute;
   top: 38%;

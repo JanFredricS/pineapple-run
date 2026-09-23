@@ -10,7 +10,7 @@
  *      overlay drives the manual pause cause, INTEGRATION #8).
  *
  * Drive = keyboard (S1 DriveInput: ←/→, A/D) OR the HUD's touch buttons.
- * Escape goes back to the builder. Audio goes through the AudioHooks seam
+ * Escape goes back to the builder; R restarts the run (S6T #5). Audio goes through the AudioHooks seam
  * (S6V: the App passes S7's GameAudio adapted by gameAudioHooks; every hook
  * is wrapped by safeHooks, so audio can never break the run).
  */
@@ -262,7 +262,7 @@ async function mountRunOnce(
     // ----------------------------------------------------------------- HUD
     const hud = mountRunHudScreen(hudHost, state, dispatch, {
       source: s,
-      telemetry: { furthestMetres: () => s.furthestMetres(), aboard: () => s.aboard() },
+      telemetry: { furthestMetres: () => s.furthestMetres(), aboard: () => s.aboard(), stuck: () => s.stuck },
       controls: {
         release: () => void s.release(),
         giveUp: () => void s.giveUp(),
