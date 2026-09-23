@@ -233,11 +233,12 @@ describe('excitement audit: endless at three depths', () => {
     });
   }
 
-  it('the generator labels its hazards honestly: >= 99% of hazard labels are confirmed by the geometry', () => {
+  it('the generator labels its hazards honestly: every hazard label is confirmed by the geometry', () => {
     const hazardLabels = perDepth.reduce((n, d) => n + d.feats.length, 0);
     const unconfirmed = perDepth.flatMap((d) => d.cs.flatMap((c) => c.unconfirmedLabels));
-    // a small tolerance for detector edge cases; measured (audit-2, exact surface): 0 of 843
-    expect(unconfirmed.length / hazardLabels, `${unconfirmed.length} of ${hazardLabels}: ${unconfirmed.join(' ')}`).toBeLessThanOrEqual(0.01);
+    // exact-surface census (audit-2): all labels confirm; the total pins the sampled label population
+    expect(hazardLabels).toBe(843);
+    expect(unconfirmed, `${unconfirmed.length} of ${hazardLabels}`).toEqual([]);
   });
 
   it('it gets harder with depth: more gaps (in the geometry too), taller crests; the opening has short gaps and no launch lips before 120 m', () => {
