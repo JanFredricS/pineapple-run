@@ -26,7 +26,7 @@ import { highlightMap } from './messages';
 import { buildPreview, type PreviewModel } from './preview';
 import { BuilderLoupe, BuilderRenderer, themeFromCss, type StartAreaPx } from './render';
 import { browserCartStore, type CartStore } from './storage';
-import { createSharedPixi, type SharedPixi } from '../render/sharedPixi';
+import { createSharedPixi, initApplication, type SharedPixi } from '../render/sharedPixi';
 import { fitArea, fitView, zoomAbout, type BuilderView } from './view';
 
 export interface BuilderOptions {
@@ -74,22 +74,13 @@ export const TEST_CART_EVENT = 'pineapple:testcart';
  */
 export const builderPixi: SharedPixi = createSharedPixi('builder', async () => {
   const app = new Application();
-  try {
-    await app.init({
-      backgroundAlpha: 0,
-      antialias: true,
-      autoDensity: true,
-      resolution: Math.min(window.devicePixelRatio || 1, 2),
-    });
-  } catch (err) {
-    // a rejected init that produced a renderer still owns a context: release it
-    try {
-      if (app.renderer) app.destroy(true, { children: true });
-    } catch (e) {
-      console.error(e);
-    }
-    throw err;
-  }
+  // a rejected init that produced a renderer still owns a context: initApplication releases it
+  await initApplication(app, {
+    backgroundAlpha: 0,
+    antialias: true,
+    autoDensity: true,
+    resolution: Math.min(window.devicePixelRatio || 1, 2),
+  });
   app.ticker.stop(); // runs only while a builder is mounted
   return app;
 });

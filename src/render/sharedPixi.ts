@@ -28,7 +28,7 @@
  * the documented DOM events on `app.canvas`.
  */
 
-import type { Application } from 'pixi.js';
+import type { Application, ApplicationOptions } from 'pixi.js';
 
 export const CONTEXT_LOST_EVENT = 'webglcontextlost';
 export const CONTEXT_RESTORED_EVENT = 'webglcontextrestored';
@@ -66,6 +66,25 @@ export function contextIsLost(app: Application): boolean {
     return gl?.isContextLost?.() === true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * `app.init(options)`, releasing a partially initialised app when init
+ * rejects AFTER its renderer (and WebGL context) exists — e.g. a plugin
+ * throws late in init — so a failed init followed by "Try again" never leaks
+ * a context per attempt. Rethrows the init error.
+ */
+export async function initApplication(app: Application, options: Partial<ApplicationOptions>): Promise<void> {
+  try {
+    await app.init(options);
+  } catch (err) {
+    try {
+      if (app.renderer) app.destroy(true, { children: true });
+    } catch (e) {
+      console.error(e);
+    }
+    throw err;
   }
 }
 

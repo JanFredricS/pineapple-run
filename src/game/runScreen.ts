@@ -43,7 +43,7 @@ import { courseFor } from './courses';
 import { acquireRunResources } from './runResources';
 import { deviceBeadStorage, detectDeviceInfo, resolveBeadCount, type BeadCountStorage, type DeviceInfo } from './deviceTier';
 import { RunSession, type RunSessionOptions } from './session';
-import { createSharedPixi, MAX_CONTEXT_RECOVERIES, type SharedPixi } from '../render/sharedPixi';
+import { createSharedPixi, initApplication, MAX_CONTEXT_RECOVERIES, type SharedPixi } from '../render/sharedPixi';
 import './game.css';
 
 type Dispatch = (action: AppAction) => Promise<void> | void;
@@ -116,7 +116,8 @@ export function assetsFor(theme: ThemeId): Promise<AssetLibrary> {
  */
 export const runPixi: SharedPixi = createSharedPixi('run', async () => {
   const app = new Application();
-  await app.init({ background: 0x1d2330, antialias: true, autoDensity: true, resolution: Math.min(window.devicePixelRatio || 1, 2) });
+  // a partially initialised app is destroyed if init rejects (no context leaked per retry)
+  await initApplication(app, { background: 0x1d2330, antialias: true, autoDensity: true, resolution: Math.min(window.devicePixelRatio || 1, 2) });
   app.ticker.stop(); // the FrameLoop drives rendering
   return app;
 });

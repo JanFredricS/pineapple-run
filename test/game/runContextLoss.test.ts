@@ -93,8 +93,10 @@ class FakeEl extends FakeNode {
 
 // ------------------------------------------------ Pixi / scene / HUD fakes
 
-const { apps, scenes, FakeApp, FakeScene } = vi.hoisted(() => {
+const { apps, scenes, fakes, FakeApp, FakeScene } = vi.hoisted(() => {
   const apps: FakeApp[] = [];
+  /** initFailsLate: the next init creates its renderer (a WebGL context) and THEN rejects. */
+  const fakes = { initFailsLate: 0 };
   const scenes: FakeScene[] = [];
   class FakeApp {
     renderer: object | undefined;
@@ -122,6 +124,10 @@ const { apps, scenes, FakeApp, FakeScene } = vi.hoisted(() => {
     async init(): Promise<void> {
       this.inits++;
       this.renderer = {};
+      if (fakes.initFailsLate > 0) {
+        fakes.initFailsLate--;
+        throw new Error('plugin failed after the renderer was created');
+      }
     }
     resize(): void {}
     render(): void {}
@@ -149,7 +155,7 @@ const { apps, scenes, FakeApp, FakeScene } = vi.hoisted(() => {
       this.destroyed++;
     }
   }
-  return { apps, scenes, FakeApp, FakeScene };
+  return { apps, scenes, fakes, FakeApp, FakeScene };
 });
 type FakeApp = InstanceType<typeof FakeApp>;
 
@@ -177,6 +183,7 @@ let sessions: RunSession[] = [];
 beforeEach(() => {
   runPixi.discard(); // the singleton outlives tests: isolate each one
   apps.length = 0;
+  fakes.initFailsLate = 0;
   scenes.length = 0;
   sessions = [];
   const win = Object.assign(new FakeTarget(), { devicePixelRatio: 1, innerWidth: 1280, innerHeight: 720, matchMedia: () => ({ matches: false }) });
@@ -314,5 +321,25 @@ describe('GL1: WebGL context loss on the run screen', () => {
     expect(apps).toHaveLength(2);
     expect(runningOn(c, apps[1]!)).toBe(true);
     s3.destroy();
+  });
+
+  it('audit GL1-1: init rejecting AFTER the renderer exists destroys the partial app; each Try again leaks no context', async () => {
+    fakes.initFailsLate = 2;
+    const host = new FakeEl('div');
+    const screen = await mount(host);
+    expect(host.find('screen-error')!.textContent).toContain('plugin failed after the renderer was created');
+    expect(apps).toHaveLength(1);
+    expect(apps[0]!.destroyCalls).toBe(1); // the half-initialised app released its context
+
+    host.find('run-error-retry')!.click();
+    await until(() => apps.length === 2 && host.find('screen-error') !== null, 'second failed init');
+    expect(apps[1]!.destroyCalls).toBe(1);
+
+    host.find('run-error-retry')!.click();
+    await until(() => apps.length === 3 && runningOn(host, apps[2]!), 'run mounted after retry');
+    // no leak across retries: every failed attempt's app is destroyed, only the live one remains
+    expect(apps.filter((a) => a.destroyCalls === 0)).toEqual([apps[2]]);
+    expect(runPixi.isLive(apps[2]! as never)).toBe(true);
+    screen.destroy();
   });
 });
