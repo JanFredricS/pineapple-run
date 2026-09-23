@@ -288,6 +288,15 @@ async function mountRunOnce(
     });
     app.resizeTo = canvasHost;
     app.resize();
+    // M1: Pixi's resizeTo listens to window 'resize' only. The host tracks the dynamic
+    // viewport (index.html: 100dvh), so follow the HOST's size too: iOS Safari's toolbar
+    // collapsing / expanding (and safe-area or orientation changes) then always resize
+    // the canvas instead of leaving it stretched or letterboxed at the old size.
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => app.resize());
+      ro.observe(canvasHost);
+      cleanup.push(() => ro.disconnect());
+    }
     const renderer = new SceneRenderer(lib, { theme: level.theme });
     cleanup.push(() => renderer.destroy());
     renderer.setLevel(level);
