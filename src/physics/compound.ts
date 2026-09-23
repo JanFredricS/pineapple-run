@@ -75,8 +75,15 @@ export interface CartInstance {
   wheelBodies: BodyHandle[];
   /** -1 = left, 0 = coast (no torque), +1 = right. */
   setDrive(dir: DriveDirection): void;
-  /** Call once per fixed step BEFORE world.step(): applies the drive torque. */
+  /** Call once per fixed step BEFORE world.step(): applies the shock bump stops, then the drive torque. */
   preStep(): void;
+  /**
+   * Just the shock bump stops (part of preStep). Safe after some cart bodies
+   * were destroyed: stops whose joint or bodies are gone are skipped. A
+   * damaged cart (run controller) drives its surviving wheels itself and
+   * calls this so the surviving shocks keep their travel limits.
+   */
+  applyShockStops(): void;
   destroy(): void;
 }
 
@@ -148,6 +155,10 @@ export function buildCompound(world: PhysicsWorld, spec: CompoundSpec, offset: V
 
   let drive: DriveDirection = 0;
   let destroyed = false;
+  const applyShockStops = (): void => {
+    if (destroyed) return;
+    for (const s of shockStops) bumpStop(world, s);
+  };
 
   return {
     bodies,
@@ -157,9 +168,10 @@ export function buildCompound(world: PhysicsWorld, spec: CompoundSpec, offset: V
     setDrive(dir) {
       if (!destroyed) drive = dir;
     },
+    applyShockStops,
     preStep() {
       if (destroyed) return;
-      for (const s of shockStops) bumpStop(world, s);
+      applyShockStops();
       if (drive === 0) return;
       for (const { handle, torque, inertia } of poweredWheels) {
         // Spin headroom in the drive direction. Torque is limited to what

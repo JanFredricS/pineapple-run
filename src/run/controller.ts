@@ -496,8 +496,10 @@ export class RunController implements RunEventSource {
       this.cart.preStep();
       return;
     }
-    // compound.preStep would touch removed wheels: same law, survivors only
+    // compound.preStep would touch removed wheels: same law, survivors only.
+    // The surviving shocks keep their bump stops (S6T audit-1 #2).
     this.cart.setDrive(0);
+    this.cart.applyShockStops();
     if (dir === 0) return;
     for (const w of this.poweredWheels) {
       if (!this.attached.has(w.id)) continue;
