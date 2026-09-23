@@ -16,6 +16,13 @@
  * the cart alone (it is what the player is steering; the funnel is fixed and
  * comes back into frame as soon as the cart returns). The cart itself is
  * always fitted, even below READY_MIN_ZOOM if a huge cart needs it.
+ *
+ * UX1 look-ahead (Jan: "70% free air camera [..x.....]"): after the ready
+ * blend the run camera places the cart LOOK_AHEAD_FRACTION (30%) from the
+ * LEFT edge of the screen, so ~70% of the view shows the course ahead.
+ * Horizontal only: the vertical follow is still the run controller's camera
+ * (right-most body y, smoothing 0.1). The placement is fixed to the forward
+ * (+x) direction, also while reversing — see LookAheadFollow.
  */
 
 import { PX_PER_M, type Camera } from '../model/coords';
@@ -141,6 +148,91 @@ export function frameBox(
   const k = PX_PER_M * zoom;
   const cy = (box.minY + box.maxY) / 2 - (READY_PAD.top - READY_PAD.bottom) / 2 / k;
   return { center: { x: (box.minX + box.maxX) / 2, y: cy }, zoom };
+}
+
+/** Course width shown across the screen (m) on narrow screens; the follow zoom is clamped to 0.5–1.5. */
+export const VIEW_WIDTH_M = 24;
+
+/** The run's follow zoom for a viewport width. */
+export function followZoom(viewportWidth: number): number {
+  return Math.min(1.5, Math.max(0.5, viewportWidth / (VIEW_WIDTH_M * PX_PER_M)));
+}
+
+/** UX1: the cart's screen-x as a fraction of the viewport width, from the left edge. */
+export const LOOK_AHEAD_FRACTION = 0.3;
+/** UX1: horizontal follow smoothing per fixed step (the original camera's 0.1). */
+export const LOOK_SMOOTHING = 0.1;
+
+/** Horizontal cart anchor: the centre of the cart's shape AABB (null = no cart). */
+export function cartAnchorX(box: Box | null): number | null {
+  return box ? (box.minX + box.maxX) / 2 : null;
+}
+
+/**
+ * Camera centre x that puts world x `anchorX` at LOOK_AHEAD_FRACTION of the
+ * viewport width from the left edge.
+ */
+export function lookAheadCenterX(anchorX: number, viewportWidth: number, zoom: number): number {
+  return anchorX + ((0.5 - LOOK_AHEAD_FRACTION) * viewportWidth) / (PX_PER_M * zoom);
+}
+
+/**
+ * UX1: smoothed horizontal follow of the cart anchor, stepped at the fixed
+ * 60 Hz (deterministic, frame-rate independent; the renderer interpolates
+ * prev -> curr). Plain exponential smoothing lags a moving cart by
+ * v·(1 − s)/s per step (≈1.8 m at 12 m/s), which would push the cart well
+ * right of the 30% mark exactly when the player needs to see ahead, so the
+ * target leads by the smoothed per-step velocity × (1 − s)/s: zero steady-state lag
+ * at constant speed, the same 0.1 easing on crashes and stops.
+ *
+ * Reversing keeps the same forward placement (no mirror): every course runs
+ * left to right with the goal on the right, and reverse is mostly used to
+ * BRAKE (the pace driver — like a skilled player — taps ← whenever it is
+ * 1.5 m/s over its target), so a mirrored camera would whip 40% of the
+ * screen width across on every brake tap.
+ */
+export class LookAheadFollow {
+  private prev: number;
+  private curr: number;
+  private last: number;
+  private vel = 0;
+
+  constructor(
+    anchorX: number,
+    readonly smoothing = LOOK_SMOOTHING,
+  ) {
+    this.prev = this.curr = this.last = anchorX;
+  }
+
+  /** One fixed step. `anchorX` null (no cart) holds the camera still. */
+  step(anchorX: number | null): void {
+    this.prev = this.curr;
+    if (anchorX === null) return;
+    const s = this.smoothing;
+    this.vel += (anchorX - this.last - this.vel) * s;
+    this.last = anchorX;
+    const target = anchorX + (this.vel * (1 - s)) / s;
+    this.curr += (target - this.curr) * s;
+  }
+
+  get x(): number {
+    return this.curr;
+  }
+
+  /** Render-time anchor interpolated between the last two steps. */
+  interpolated(alpha: number): number {
+    const a = Math.min(1, Math.max(0, alpha));
+    return this.prev + (this.curr - this.prev) * a;
+  }
+}
+
+/**
+ * The run's follow camera: horizontal look-ahead around `anchorX` (the
+ * LookAheadFollow output), vertical from the controller's follow `y`, at the
+ * follow `zoom`.
+ */
+export function followCamera(anchorX: number, y: number, zoom: number, viewportWidth: number, viewportHeight: number): Camera {
+  return { center: { x: lookAheadCenterX(anchorX, viewportWidth, zoom), y }, zoom, viewportWidth, viewportHeight };
 }
 
 const smooth = (t: number) => t * t * (3 - 2 * t);

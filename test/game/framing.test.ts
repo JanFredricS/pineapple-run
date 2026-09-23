@@ -1,4 +1,7 @@
 /**
+ * UX1 (Jan: "70% free air camera [..x.....]"): after the ready blend the
+ * cart sits ~30% from the left edge while driving forward.
+ *
  * S6T backlog #13: before Release the camera frames the whole funnel and the
  * waiting cart (inside the HUD-free area), then blends into the follow camera.
  * S6T audit-1 #3: the cart is framed by its real shape AABBs (not body
@@ -7,7 +10,26 @@
 import { describe, expect, it } from 'vitest';
 import { exampleCart } from '../../src/builder/exampleCart';
 import { courseFor } from '../../src/game/courses';
-import { blendCamera, bodiesBox, bodyAabb, boxOf, frameBox, READY_BLEND_SECONDS, READY_MIN_ZOOM, READY_PAD, readyFrame, type Box } from '../../src/game/framing';
+import {
+  blendCamera,
+  bodiesBox,
+  bodyAabb,
+  boxOf,
+  cartAnchorX,
+  followCamera,
+  followZoom,
+  frameBox,
+  LOOK_AHEAD_FRACTION,
+  LookAheadFollow,
+  READY_BLEND_SECONDS,
+  READY_MIN_ZOOM,
+  READY_PAD,
+  readyFrame,
+  type Box,
+} from '../../src/game/framing';
+import { PREMADE } from '../../tools/levels/premade';
+import { ORIGINAL_EXPERT_LINE, paceDrive } from '../integration/driver';
+import type { PaceNote } from '../../tools/levels/track';
 import type { CartDesign } from '../../src/model/cart';
 import type { Vec2 } from '../../src/model/geometry';
 import { RunSession } from '../../src/game/session';
@@ -142,4 +164,80 @@ describe('ready-phase framing', () => {
     expect(blendCamera(follow, ready, READY_BLEND_SECONDS)).toBe(follow);
     expect(blendCamera(follow, null, null)).toBe(follow);
   });
+});
+
+describe('UX1 look-ahead follow camera', () => {
+  it('LookAheadFollow has no steady-state lag at constant speed, eases to a stop, and holds without a cart', () => {
+    const f = new LookAheadFollow(0);
+    let x = 0;
+    for (let i = 0; i < 600; i++) f.step((x += 0.2)); // 12 m/s
+    expect(f.x).toBeCloseTo(x, 6);
+    for (let i = 0; i < 600; i++) f.step(x); // stopped
+    expect(f.x).toBeCloseTo(x, 6);
+    const held = f.x;
+    f.step(null);
+    expect(f.x).toBe(held);
+    expect(f.interpolated(0.5)).toBe(held);
+  });
+
+  it('lookahead: the anchor lands at LOOK_AHEAD_FRACTION of the width at every follow zoom', () => {
+    for (const [w, h] of VIEWPORTS) {
+      const cam = followCamera(100, 5, followZoom(w), w, h);
+      expect(worldToScreen({ x: 100, y: 5 }, cam).x / w).toBeCloseTo(LOOK_AHEAD_FRACTION, 9);
+      expect(worldToScreen({ x: 100, y: 5 }, cam).y).toBeCloseTo(h / 2, 9); // vertical follow unchanged
+    }
+  });
+
+  const lines: [string, readonly PaceNote[]][] = [
+    ['beach', PREMADE.beach().pace],
+    ['kitchen', PREMADE.kitchen().pace],
+    ['workbench', PREMADE.workbench().pace],
+    ['original', ORIGINAL_EXPERT_LINE],
+    ['endless:PINE', [{ x: 0, speed: 7 }]],
+  ];
+  for (const [id, pace] of lines) {
+    it(`${id}: driving forward at speed the cart sits at ~30% from the left edge (70% of the view ahead), at every viewport`, async () => {
+      const s = await RunSession.create(exampleCart(), courseFor(id)!);
+      try {
+        const look = new LookAheadFollow(cartAnchorX(s.controller.cartBounds())!);
+        const step = () => {
+          s.step();
+          look.step(cartAnchorX(s.controller.cartBounds()));
+        };
+        s.start();
+        for (let i = 0; i < 60; i++) step();
+        s.release();
+        let sinceRelease = 0;
+        const fractions: number[] = [];
+        let worst = 0;
+        for (let n = 0; n < 60 * 20 && s.controller.phase !== 'ended'; n++) {
+          s.setDrive(n < 180 ? 0 : paceDrive(s, pace));
+          step();
+          sinceRelease += 1 / 60;
+          const box = s.controller.cartBounds();
+          const h = s.controller.cart.bodies.get(s.controller.chassisId);
+          if (!box || h === undefined || !s.world.hasBody(h)) continue;
+          const vx = s.world.getLinearVelocity(h).x;
+          for (const [w, vh] of VIEWPORTS) {
+            if (sinceRelease < READY_BLEND_SECONDS) continue; // still blending from the ready frame
+            const cam = followCamera(look.x, s.controller.camera.position.y, followZoom(w), w, vh);
+            const frac = worldToScreen({ x: cartAnchorX(box)!, y: 0 }, cam).x / w;
+            // the cart never drifts past screen centre: most of the view is always ahead
+            expect(frac, `${id} ${w}x${vh} t=${sinceRelease.toFixed(2)}`).toBeLessThan(0.5);
+            if (vx > 4 && sinceRelease > READY_BLEND_SECONDS + 3) {
+              fractions.push(frac);
+              worst = Math.max(worst, Math.abs(frac - LOOK_AHEAD_FRACTION));
+            }
+          }
+        }
+        expect(fractions.length).toBeGreaterThan(100);
+        const mean = fractions.reduce((a, b) => a + b, 0) / fractions.length;
+        expect(Math.abs(mean - LOOK_AHEAD_FRACTION), `${id} mean ${mean}`).toBeLessThan(0.01);
+        // measured: mean 0.300, worst deviation 0.007-0.011 on every course
+        expect(worst, `${id} worst |fraction - 0.3|`).toBeLessThan(0.03);
+      } finally {
+        s.destroy();
+      }
+    }, 60_000);
+  }
 });

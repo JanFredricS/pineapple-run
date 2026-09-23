@@ -34,7 +34,7 @@ import { el } from '../ui/dom';
 import { isPortraitBlocked, onPortraitChange } from '../ui/orientation';
 import type { DriveIntent } from '../ui/screens/runHud';
 import type { SoundControl } from '../ui/sound';
-import { blendCamera, bodiesBox, boxOf, READY_BLEND_SECONDS, readyFrame, type Box } from './framing';
+import { blendCamera, bodiesBox, boxOf, cartAnchorX, followCamera, followZoom, LookAheadFollow, READY_BLEND_SECONDS, readyFrame, type Box } from './framing';
 import { NO_AUDIO, RunAudioFeed, safeHooks, type AudioHooks } from './audioHooks';
 import { mountMissingCourse } from './buildScreen';
 import { mountScreenError } from './errorScreen';
@@ -60,8 +60,7 @@ export interface RunScreenDeps {
   };
 }
 
-/** Course width shown across the screen (m) on narrow screens; zoom is clamped. */
-const VIEW_WIDTH_M = 24;
+
 /** Blender fill animation duration after the goal (s). */
 const GOAL_FILL_SECONDS = 1.2;
 
@@ -240,7 +239,8 @@ async function mountRunOnce(
     let sinceRelease: number | null = null;
     app.stage.addChild(renderer.view);
     cleanup.push(() => app.stage.removeChild(renderer.view));
-    const camera: Camera = { center: s.controller.camera.position, zoom: 1, viewportWidth: 1, viewportHeight: 1 };
+    // UX1: horizontal look-ahead follow (cart at 30% from the left edge)
+    const look = new LookAheadFollow(cartAnchorX(s.controller.cartBounds()) ?? s.spawn.x);
 
     // --------------------------------------------------------------- input
     const input = new DriveInput();
@@ -303,6 +303,7 @@ async function mountRunOnce(
         }
         s.setDrive(dir);
         s.step();
+        look.step(cartAnchorX(s.controller.cartBounds()));
         audioFeed.step(s.controller.rightmostCartBody()?.x ?? null, s.furthestMetres());
         if (goalAt !== null) goalAt += 1 / 60;
         if (sinceRelease !== null && sinceRelease < READY_BLEND_SECONDS) sinceRelease += 1 / 60;
@@ -313,10 +314,7 @@ async function mountRunOnce(
         lastRenderMs = now;
         const w = app.screen.width;
         const h = app.screen.height;
-        camera.viewportWidth = w;
-        camera.viewportHeight = h;
-        camera.zoom = Math.min(1.5, Math.max(0.5, w / (VIEW_WIDTH_M * 30)));
-        camera.center = s.controller.camera.interpolated(alpha);
+        const camera: Camera = followCamera(look.interpolated(alpha), s.controller.camera.interpolated(alpha).y, followZoom(w), w, h);
         // ready phase: frame funnel + cart (tracks a cart driven before Release); then blend to follow
         if (sinceRelease === null) readyView = readyFrame(funnelBox, cartBox(), w, h, camera.zoom);
         const view = blendCamera(camera, readyView, sinceRelease);
