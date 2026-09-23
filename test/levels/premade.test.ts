@@ -149,11 +149,14 @@ describe('premade level design', () => {
     for (const id of ['beach', 'kitchen', 'workbench'] as const) expect(authored[id].level.zones, id).toEqual([]);
   });
 
-  it('difficulty rises: beach has no gaps, kitchen several, workbench the widest', () => {
+  it('difficulty: beach has no gaps; kitchen several, among them the widest (K1: the sink, a hole wider than the example cart can cross); workbench a launch gap', () => {
     const gaps = (id: (typeof ids)[number]) => authored[id].features.filter((f) => f.kind === 'gap').map((f) => f.x1 - f.x0);
     expect(gaps('beach')).toHaveLength(0);
     expect(gaps('kitchen').length).toBeGreaterThanOrEqual(2);
-    expect(Math.max(...gaps('workbench'))).toBeGreaterThan(Math.max(...gaps('kitchen')));
+    expect(gaps('workbench').length).toBeGreaterThanOrEqual(1);
+    // the gap feature spans the hole plus the far side's 0.35 m bevel
+    expect(Math.max(...gaps('kitchen')) - 0.35).toBeCloseTo(5.5, 6);
+    expect(Math.max(...gaps('kitchen'))).toBeGreaterThan(Math.max(...gaps('workbench')));
   });
 });
 

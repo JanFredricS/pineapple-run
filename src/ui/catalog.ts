@@ -20,7 +20,7 @@ export interface CourseInfo {
 
 export const COURSES: readonly CourseInfo[] = [
   { levelId: 'beach', name: 'Beach Run', blurb: 'Dunes, driftwood and a blender at the tiki bar.', theme: 'beach', bonus: false },
-  { levelId: 'kitchen', name: 'Kitchen Bench', blurb: 'Cutting-board ramps and gaps between the tiles.', theme: 'kitchen', bonus: false },
+  { levelId: 'kitchen', name: 'Kitchen Bench', blurb: 'Rough tiles and a sink too wide for the example cart: build long.', theme: 'kitchen', bonus: false },
   { levelId: 'workbench', name: 'Workbench', blurb: 'Rulers, planks and a pegboard sky.', theme: 'workbench', bonus: false },
   { levelId: 'tikibar', name: 'Zero-G Tiki Bar', blurb: 'Moon-gravity hops, a gravity shooter and an ocean of cocktail beads.', theme: 'tiki', bonus: false },
   { levelId: 'original', name: 'The Original Course', blurb: 'The recovered 2008 course, vertex for vertex. Expert: it forgives only the right speed.', theme: 'workbench', bonus: true },

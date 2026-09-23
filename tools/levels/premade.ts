@@ -4,10 +4,11 @@
  * test/levels/premade.test.ts (UPDATE_FIXTURES=1 rewrites the JSON).
  *
  * Difficulty ramp: beach (gentle, classic original-style profile) ->
- * kitchen (cutting-board ramps and real gaps between the tiles) ->
+ * kitchen (K1: the original's rough slab profile, and a sink too wide for
+ * the example cart: the first course that asks for a purpose-built cart) ->
  * workbench (steep plank ramps, a big launch gap, a long washboard, a
- * trap drop). The recovered 2008 course (levels/original-course.json) is
- * the bonus.
+ * trap drop) -> tikibar (exotic physics). The recovered 2008 course
+ * (levels/original-course.json) is the bonus.
  */
 
 import type { Vec2 } from '../../src/model/geometry';
@@ -91,46 +92,58 @@ export function beach(): AuthoredLevel {
   return withDecor(t.build({ id: 'beach', name: 'Beach Run', theme: 'beach' }), 'palm', [-4, 22, 58, 96, 140, 176], 1);
 }
 
+/** A run of straight slabs, [dx, dy] each (y-down): the recovered original's angular rock-slab profile. */
+function slabs(t: Track, runs: readonly (readonly [number, number])[]): Track {
+  for (const [dx, dy] of runs) t.line(dx, dy);
+  return t;
+}
+
 /**
- * Kitchen Bench — cutting-board ramps, tile grout, and real gaps (a sink to
- * jump). Pace notes are a skilled line: a steady 10 m/s through the gaps
- * and the stairs, then faster home; holding right loses pineapples on the
- * stairs and the kicker.
+ * Kitchen Bench (K1, TUNING.md "K1: Kitchen difficulty"): rough tile slabs
+ * like the original's rock slabs, a cutting board, tile-grout washboard,
+ * and THE SINK: a 5.5 m hole to a counter 0.5 m higher. The example cart
+ * (5 m wheelbase) cannot cross it: it falls in or stops at the far wall. A
+ * long cart with a wheel on each side of the hole at every moment can
+ * (test/integration/kitchenBridger.ts), so the pit's landing strip is long
+ * enough for a 17.5 m cart (`finish({ frontGap: 20 })`). Pace notes are the
+ * Kitchen Bridger's line: 6.5 m/s (it clears at a steady 4-9 m/s), then
+ * 10 m/s from the kicker through the drainer.
  */
 export function kitchen(): AuthoredLevel {
   const t = new Track(0, 10);
-  // pace 10 -> 10.5 m/s in S8a: with real shock limits the 10 m/s line
-  // lost 3 on the kicker (12/15); 10.5 delivers 15/15 (see TUNING.md)
-  t.speed(10.5).flat(16, 'plateau')
-    // first cutting board: ramp on, ride the board, drop off
-    .line(6, -1.2, 'ramp').flat(9).line(1.2, 1.2, 'drop')
-    .flat(7)
-    // gap between two counter tops
-    .gap(1.4)
-    .flat(9)
-    // tile grout washboard
-    .washboard(12, 0.3, 1)
-    .flat(6)
-    // cutting-board launch ramp over the sink: land a little lower
-    .flat(4).line(9, -1.6, 'launchLip')
-    .gap(3, 1.2)
-    .flat(10)
+  t.speed(6.5).flat(16, 'plateau');
+  // rough counter: angular tile slabs like the original's rock slabs
+  slabs(t, [[6, -2.2], [3, -0.3], [5, 2.5], [5, -1.8], [5, 1.8]]);
+  // first cutting board: ramp on, ride the board, drop off
+  t.line(4, -1.0, 'ramp').flat(3).line(1.2, 1.2, 'drop');
+  slabs(t, [[2, -0.5], [2, 0.5]]);
+  // gap between two counter tops
+  t.gap(1.4)
+    .flat(4)
+    // tile grout washboard (the original's teeth: ~0.5 m, 4/3 m pitch)
+    .washboard(10, 0.45, 4 / 3)
+    // a calm run-up: a long cart still pitching from the grout noses into the sink
+    .flat(12)
+    // THE SINK: a 5.5 m hole to a counter 0.5 m higher
+    .gap(5.5, -0.5)
+    // a long landing: the stairs must not meet a long cart's front while its rear is still over the hole
+    .flat(12)
     // stacked boards: up three steps, then off the edge and over a gap
     .steps(3, 3.5, -0.5)
     .flat(3)
-    .line(1.5, 1.5, 'drop')
-    .flat(5)
-    .gap(2, 0.4)
-    .flat(6)
-    .speedAt(120, 12)
-    .ease(12, 1.5, 'valley').ease(10, -1.5)
-    .kicker(2.5, 0.7, 2, 1.1)
-    .speed(13).flat(8)
-    // the shortcut: jump the sink (a ribbed drainer floor) or rattle through it
-    .pool(pool((t) => t.washboard(6, 0.35, 1)))
-    .ease(12, -1.2, 'ramp')
-    .flat(5)
-    .finish();
+    .line(1.5, 1.5, 'drop');
+  slabs(t, [[3, -0.9], [3, 0.9]]);
+  t.gap(2, 0.4).flat(3);
+  // rough bench: more slabs
+  slabs(t, [[7, -2.6], [4, 0.6], [5, -1.6], [7, 3.2], [6, -2.4], [6, 2.8]]);
+  // the drainer run-in: faster (the long cart rattles through the pool quicker than a careful line)
+  t.speed(10).kicker(2.5, 0.7, 2, 1.1)
+    .flat(8)
+    // the shortcut: jump the drainer (a ribbed floor) or rattle through it
+    .pool(pool((t) => t.washboard(6, 0.35, 1)));
+  slabs(t, [[4, -1.3], [3, 0.5], [5, -1.4], [2, 0.5]]);
+  t.flat(5)
+    .finish({ frontGap: 20 });
   return t.build({ id: 'kitchen', name: 'Kitchen Bench', theme: 'kitchen' });
 }
 

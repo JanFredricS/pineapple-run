@@ -201,6 +201,30 @@ describe('excitement audit: premade courses', () => {
     expect(targetSpeed(b.pace, lip!.at!)).toBeLessThanOrEqual(6);
     expect(targetSpeed(b.pace, lip!.x1 + 12)).toBeGreaterThan(10);
   });
+
+  // K1 (TUNING.md "K1: Kitchen difficulty"): pinned counts. Before K1:
+  // 12 hazards, 6 kinds (drop 2, gap 3, washboard 2, launchLip 3, steps 1,
+  // crest 1), 6.45 / 100 m, worst dull stretch 1.94 s, widest gap 3 m.
+  it('K1 kitchen: the census finds the 5.5 m sink and the slab bumps in the geometry; counts pinned; no duller than before', () => {
+    const k = censuses.kitchen;
+    expect(k.hazards).toEqual({ crest: 2, drop: 1, launchLip: 7, gap: 3, washboard: 2, steps: 1, kicker: 1 });
+    expect(k.hazardCount).toBe(17);
+    expect(k.hazardKinds).toBe(7);
+    expect(k.hazardsPer100m).toBeCloseTo(8.26, 2);
+    // the sink: exactly one detected gap at least 5.5 m wide, where the authored sink is
+    const sink = PREMADE.kitchen().features.filter((f) => f.kind === 'gap').reduce((a, b) => (b.x1 - b.x0 > a.x1 - a.x0 ? b : a));
+    const wide = k.detected.filter((h) => h.kind === 'gap' && h.x1 - h.x0 >= 5.5);
+    expect(wide).toHaveLength(1);
+    expect(wide[0]!.x0).toBeLessThanOrEqual(sink.x0);
+    expect(wide[0]!.x1).toBeGreaterThanOrEqual(sink.x1);
+    // the slab fields (16-40 m, 117-123 m, 128-163 m, 201-216 m) show up as bumps: 10 crests / lips / kickers (was 4)
+    const bumps = k.detected.filter((h) => h.kind === 'crest' || h.kind === 'launchLip' || h.kind === 'kicker');
+    expect(bumps).toHaveLength(10);
+    for (const [x0, x1] of [[16, 40], [128, 164]] as const) expect(bumps.filter((h) => h.x0 < x1 && h.x1 > x0).length, `slabs ${x0}-${x1} m`).toBeGreaterThanOrEqual(2);
+    // the worst dull stretch stays inside the rule, and below its pre-K1 1.94 s
+    expect(k.longestDullSeconds).toBeLessThanOrEqual(PREMADE_RULES.maxDullSeconds);
+    expect(k.longestDullSeconds).toBeLessThan(1.94);
+  });
 });
 
 describe('excitement audit: endless at three depths', () => {

@@ -38,11 +38,12 @@ import {
 import { BLENDER_SIZE } from '../../src/model/goal';
 import { PREMADE } from '../../tools/levels/premade';
 import { ORIGINAL_EXPERT_LINE, paceDrive } from '../integration/driver';
-import type { PaceNote } from '../../tools/levels/track';
+import { kitchenBridger } from '../integration/kitchenBridger';
+import { BLENDER_FRONT_GAP, type PaceNote } from '../../tools/levels/track';
 import type { CartDesign } from '../../src/model/cart';
 import type { Vec2 } from '../../src/model/geometry';
 import { RunSession } from '../../src/game/session';
-import { worldToScreen, type Camera } from '../../src/model/coords';
+import { PX_PER_M, worldToScreen, type Camera } from '../../src/model/coords';
 import { TOTAL_PINEAPPLES } from '../../src/model/score';
 import { funnelGeometry } from '../../src/run/funnel';
 
@@ -287,16 +288,32 @@ describe('UX1 look-ahead follow camera', () => {
    * and the cart are on screen (below the HUD pad). `framed` false renders the
    * bare look-ahead follow camera instead (finish framing bypassed): the
    * negative control.
+   *
+   * K1: Kitchen's reference cart is the 17.5 m Kitchen Bridger (its sink is
+   * too wide for the example cart), and its pit has a 20 m landing strip so
+   * the whole cart fits in. The checked stretch is the last 4.75 m of a
+   * standard pit: the cart's front within BLENDER_FRONT_GAP - 1 m of the
+   * blender. (From 5.75 m, the bridger's anchor, its centre, sits 8.75 m
+   * behind its front, and the blender's far edge is 0.35 m (12 px) past a
+   * phone's right edge for 3 steps (0.05 s); measured.) And a cart
+   * longer than the look-ahead's rear allowance
+   * (LOOK_AHEAD_FRACTION of the view, ~7.2 m on a phone) cannot have its
+   * rear on screen at the 30% anchor anywhere on any course. So for it the
+   * front half is checked, and the rear clip is measured (`rearClipM`,
+   * bounded by the caller; RESIDUALS R30).
    */
   async function finishPitRun(id: (typeof PIT_COURSES)[number], framed: boolean) {
     const course = courseFor(id)!;
     const line = id === 'original' ? ORIGINAL_EXPERT_LINE : PREMADE[id]().pace;
-    const s = await RunSession.create(exampleCart(), course);
+    // K1: only the long Kitchen Bridger reaches Kitchen's pit (the example cart stops at the sink)
+    const s = await RunSession.create(id === 'kitchen' ? kitchenBridger() : exampleCart(), course);
     const blender = goalBlenderBox(course.level);
     const lineX = course.level.goal.lineX;
+    const longCart = id === 'kitchen';
     const violations: string[] = [];
     let inPit = 0;
     let minZoomSeen = Infinity;
+    let rearClipM = 0;
     try {
       const look = new LookAheadFollow(cartAnchorX(s.controller.cartBounds())!);
       s.start();
@@ -311,6 +328,8 @@ describe('UX1 look-ahead follow camera', () => {
         look.step(cartAnchorX(s.controller.cartBounds()));
         const cart = s.controller.cartBounds();
         if (!cart || cart.maxX < lineX) continue; // the cart's front is over the goal line: dropping into / in the pit
+        // K1: the standard pit's final stretch (1 m shorter: see the doc above)
+        if (longCart && cart.maxX < blender.minX - (BLENDER_FRONT_GAP - 1)) continue;
         inPit++;
         for (const [w, vh] of PIT_VIEWPORTS) {
           const followY = s.controller.camera.position.y;
@@ -319,12 +338,14 @@ describe('UX1 look-ahead follow camera', () => {
             : followCamera(look.x, followY, followZoom(w), w, vh);
           minZoomSeen = Math.min(minZoomSeen, cam.zoom / followZoom(w));
           const where = `${id} ${w}x${vh} step ${n}`;
+          const rear = longCart ? (cart.minX + cart.maxX) / 2 : cart.minX;
+          if (longCart) rearClipM = Math.max(rearClipM, -worldToScreen({ x: cart.minX, y: cart.minY }, cam).x / (PX_PER_M * cam.zoom));
           for (const p of [
             { x: blender.minX, y: blender.minY },
             { x: blender.maxX, y: blender.minY },
             { x: blender.minX, y: blender.maxY },
             { x: blender.maxX, y: blender.maxY },
-            { x: cart.minX, y: cart.minY },
+            { x: rear, y: cart.minY },
             { x: cart.maxX, y: cart.maxY },
           ]) {
             const q = worldToScreen(p, cam);
@@ -338,16 +359,19 @@ describe('UX1 look-ahead follow camera', () => {
     } finally {
       s.destroy();
     }
-    return { inPit, violations, minZoomSeen };
+    return { inPit, violations, minZoomSeen, rearClipM };
   }
 
   for (const id of PIT_COURSES) {
     it(`${id}: with the cart in the finish pit the WHOLE blender and the cart are on screen (844x390, 1280x720)`, async () => {
       const r = await finishPitRun(id, true);
-      expect(r.inPit, `${id}: the cart reached the pit`).toBeGreaterThan(30);
+      // K1: the Kitchen Bridger's window is its last 4.75 m (29 steps measured: it arrives at pace and the run ends)
+      expect(r.inPit, `${id}: the cart reached the pit`).toBeGreaterThan(id === 'kitchen' ? 20 : 30);
       expect(r.violations, `${id}: blender / cart off screen`).toEqual([]);
       // it zooms out only as far as it must (the blender is 9 m; the phone view ~11 m tall)
       expect(r.minZoomSeen).toBeGreaterThan(0.75);
+      // K1: the 17.5 m Kitchen Bridger's rear overhangs the 30% look-ahead by at most 2 m (R30); every other cart: 0
+      expect(r.rearClipM).toBeLessThanOrEqual(id === 'kitchen' ? 2 : 0);
     }, 120_000);
   }
 
@@ -355,7 +379,7 @@ describe('UX1 look-ahead follow camera', () => {
   it('control: with finish framing disabled, every one of those courses clips the blender or cart', async () => {
     for (const id of PIT_COURSES) {
       const r = await finishPitRun(id, false);
-      expect(r.inPit, `${id}: the cart reached the pit`).toBeGreaterThan(30);
+      expect(r.inPit, `${id}: the cart reached the pit`).toBeGreaterThan(id === 'kitchen' ? 20 : 30);
       expect(r.violations.length, `${id}: the bare follow camera should clip the blender`).toBeGreaterThan(0);
       expect(r.violations.some((v) => v.includes('above the HUD pad')), `${id}: clipped at the top`).toBe(true);
     }

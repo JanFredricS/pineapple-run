@@ -21,9 +21,16 @@ import { plateauRange } from '../../src/game/startArea';
 import { census } from '../../tools/levels/census';
 import type { PaceNote } from '../../tools/levels/track';
 import { FLOOR_IT, ORIGINAL_EXPERT_LINE, paceDrive, runWithPace, targetSpeed } from './driver';
+import { kitchenBridger } from './kitchenBridger';
 
 const LEVELS = ['beach', 'kitchen', 'workbench'] as const;
 const pace = (id: (typeof LEVELS)[number]) => PREMADE[id]().pace;
+/**
+ * The reference cart a course's pace notes are written for. K1: Kitchen's
+ * sink is too wide for the example cart (test/integration/kitchen.test.ts),
+ * so its line is driven by the purpose-built Kitchen Bridger.
+ */
+const cartFor = (id: string): CartDesign => (id === 'kitchen' ? kitchenBridger() : exampleCart());
 
 async function session(design: CartDesign, levelId: string): Promise<RunSession> {
   const c = courseFor(levelId);
@@ -98,10 +105,10 @@ function scripted(s: RunSession, drive: (step: number) => -1 | 0 | 1, steps: num
   return { events, trace };
 }
 
-describe('example cart completes every premade level (pace-note scripted driver)', () => {
+describe('the reference cart completes every premade level (pace-note scripted driver; example cart, the Kitchen Bridger on kitchen)', () => {
   for (const id of LEVELS) {
     it(`${id}: goalReached with pineapples delivered and a non-zero rating`, async () => {
-      const s = await session(exampleCart(), id);
+      const s = await session(cartFor(id), id);
       try {
         runWithPace(s, pace(id));
         const last = s.events.at(-1)!;
@@ -119,16 +126,17 @@ describe('example cart completes every premade level (pace-note scripted driver)
 
 describe('S6T: pacing beats flooring it (every premade level)', () => {
   // The pace notes are a skilled line: fast, braking for the level's
-  // hazards (beach: the dune jump; kitchen: the gaps/stairs; workbench: the
-  // saw-horse jump). Holding → the whole way must score clearly less.
+  // hazards (beach: the dune jump; kitchen: the sink, K1: 6.5 m/s, 10 for the drainer,
+  // with the Kitchen Bridger; workbench: the saw-horse jump). Holding → the
+  // whole way must score clearly less.
   const rated = (s: RunSession) => {
     const last = s.events.at(-1)!;
     return last.type === 'goalReached' ? { rating: efficiencyRating(last.simTime, last.delivered), delivered: last.delivered } : { rating: 0, delivered: 0 };
   };
   for (const id of LEVELS) {
     it(`${id}: the pace-note line out-scores holding → by >= 5 points`, async () => {
-      const a = await session(exampleCart(), id);
-      const b = await session(exampleCart(), id);
+      const a = await session(cartFor(id), id);
+      const b = await session(cartFor(id), id);
       try {
         runWithPace(a, pace(id));
         runWithPace(b, FLOOR_IT);
@@ -151,8 +159,10 @@ describe('S6T audit-1 #4: every premade level has a risk/reward shortcut (PLAN S
   // driver proves it. The skilled line (the pace notes) jumps it; the
   // careful line brakes to SAFE_SPEED 20 m before it and stays careful to
   // the goal. Measured (example cart), jump vs careful: beach 2.05 s vs
-  // 4.62 s through the pool, rating 89 vs 85; kitchen 2.17 vs 5.13 s, 92 vs
-  // 87; workbench 2.02 vs 4.92 s, 88 vs 82 — all 15/15.
+  // 4.62 s through the pool, rating 89 vs 85; workbench 2.02 vs 4.92 s, 88
+  // vs 82 — all 15/15. K1: kitchen's reference cart is the 17.5 m Kitchen
+  // Bridger, which never flies the pool (its wheels reach the floor at any
+  // approach speed, 7.5-14 m/s measured): see the kitchen test below and RESIDUALS R30.
   const SAFE_SPEED = 5;
   interface Line {
     delivered: number;
@@ -167,7 +177,7 @@ describe('S6T audit-1 #4: every premade level has a risk/reward shortcut (PLAN S
     const pool = a.features.find((f) => f.kind === 'shortcut')!;
     const floor = a.features.find((f) => f.kind === 'washboard' && f.x0 >= pool.x0 && f.x1 <= pool.x1)!;
     const floorY = Math.max(...a.level.terrain.spans.flatMap((sp) => sp.points.filter((q) => q.x >= floor.x0 && q.x <= floor.x1).map((q) => q.y)));
-    const s = await session(exampleCart(), id);
+    const s = await session(cartFor(id), id);
     try {
       s.start();
       for (let i = 0; i < 60; i++) s.step();
@@ -200,18 +210,22 @@ describe('S6T audit-1 #4: every premade level has a risk/reward shortcut (PLAN S
     }
   };
 
-  for (const id of LEVELS) {
-    it(`${id}: the jump is taken by the skilled line and is faster; the careful detour through the pool is viable`, async () => {
-      const a = PREMADE[id]();
-      const pool = a.features.find((f) => f.kind === 'shortcut')!;
-      // the census finds exactly this shortcut in the geometry
-      const c = census(a.level, { x0: plateauRange(a.level.cartStart).maxX, x1: a.level.goal.lineX }, (x) => targetSpeed(a.pace, x));
-      expect(c.shortcuts).toHaveLength(1);
-      expect(c.shortcuts[0]!.lipX).toBeGreaterThan(pool.x0);
-      expect(c.shortcuts[0]!.landX).toBeLessThan(pool.x1);
+  const censusFinds = (id: (typeof LEVELS)[number]) => {
+    const a = PREMADE[id]();
+    const pool = a.features.find((f) => f.kind === 'shortcut')!;
+    // the census finds exactly this shortcut in the geometry
+    const c = census(a.level, { x0: plateauRange(a.level.cartStart).maxX, x1: a.level.goal.lineX }, (x) => targetSpeed(a.pace, x));
+    expect(c.shortcuts).toHaveLength(1);
+    expect(c.shortcuts[0]!.lipX).toBeGreaterThan(pool.x0);
+    expect(c.shortcuts[0]!.landX).toBeLessThan(pool.x1);
+    const brake = pool.x0 - 20;
+    const careful: PaceNote[] = [...a.pace.filter((n) => n.x < brake), { x: brake, speed: SAFE_SPEED }];
+    return { a, careful };
+  };
 
-      const brake = pool.x0 - 20;
-      const careful: PaceNote[] = [...a.pace.filter((n) => n.x < brake), { x: brake, speed: SAFE_SPEED }];
+  for (const id of ['beach', 'workbench'] as const) {
+    it(`${id}: the jump is taken by the skilled line and is faster; the careful detour through the pool is viable`, async () => {
+      const { a, careful } = censusFinds(id);
       const jump = await drive(id, a.pace);
       const safe = await drive(id, careful);
       // the skilled line flies over the floor (its wheels never get within 2 m of it)
@@ -225,6 +239,22 @@ describe('S6T audit-1 #4: every premade level has a risk/reward shortcut (PLAN S
       expect(jump.rating - safe.rating, `jump ${jump.rating} vs careful ${safe.rating}`).toBeGreaterThanOrEqual(3);
     }, 60_000);
   }
+
+  // K1: the Kitchen Bridger rolls through the drainer at pace instead of
+  // flying it. Measured: pace line 3.90 s through the pool, 15/15 rating 75;
+  // careful 5.60 s, 15/15 rating 63.
+  it('kitchen: the pool is still found in the geometry; the bridger at pace rattles through it faster than the careful line, both keeping the load', async () => {
+    const { a, careful } = censusFinds('kitchen');
+    const paced = await drive('kitchen', a.pace);
+    const safe = await drive('kitchen', careful);
+    expect(paced.delivered).toBe(TOTAL_PINEAPPLES);
+    expect(safe.delivered).toBe(TOTAL_PINEAPPLES);
+    // both roll across the floor (the long cart never flies it)
+    expect(paced.deepest).toBeGreaterThan(-2);
+    expect(safe.deepest).toBeGreaterThan(-2);
+    expect(safe.section - paced.section, `paced ${paced.section.toFixed(2)} s vs careful ${safe.section.toFixed(2)} s`).toBeGreaterThanOrEqual(1);
+    expect(paced.rating - safe.rating, `paced ${paced.rating} vs careful ${safe.rating}`).toBeGreaterThanOrEqual(5);
+  }, 60_000);
 });
 
 describe('S6T #6: the original course (bonus, expert) is clearable', () => {
@@ -296,7 +326,7 @@ describe('scoring boundaries through the real results model', () => {
     const st = store();
     for (const id of [...LEVELS, 'tikibar'] as const) {
       if (id === 'tikibar') expect(isUnlocked(st.load(), 'original')).toBe(false);
-      const s = await session(exampleCart(), id);
+      const s = await session(cartFor(id), id);
       runWithPace(s, PREMADE[id]().pace);
       const r = results(st, id, s.events.at(-1)!);
       s.destroy();
