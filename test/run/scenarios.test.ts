@@ -8,6 +8,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { LevelDef } from '../../src/model/level';
 import type { RunEvent } from '../../src/model/runEvents';
+import { FIXED_DT } from '../../src/physics/clock';
 import { PhysicsWorld } from '../../src/physics/engine';
 import { LEVEL_ALL_LOST_SECONDS, RunController } from '../../src/run/controller';
 import { loadFixtureCart, loadFlatGoalLevel, loadOpenBedCart } from '../../src/run/fixtures';
@@ -62,8 +63,8 @@ describe('S1 run scenarios', () => {
     // measured: 8.683 s, 14 delivered (the one left bounces back over the goal line)
     console.info(`[S1 full] goal ${goal.simTime.toFixed(3)} s, delivered ${goal.delivered}`);
     expect(goal.delivered).toBe(14);
-    expect(goal.simTime).toBeGreaterThan(8.683 - 0.25);
-    expect(goal.simTime).toBeLessThan(8.683 + 0.25);
+    // pinned exactly: a fixed-step, deterministic run (8.683 s = step 521); S8a left it bit-identical
+    expect(goal.simTime).toBe(521 * FIXED_DT);
     expect(rc.delivered).toBe(goal.delivered);
     expect(rc.phase).toBe('ended');
     expect(rc.simTime()).toBe(goal.simTime);
@@ -80,8 +81,8 @@ describe('S1 run scenarios', () => {
     console.info(`[S1 cruise3] goal ${goal.simTime.toFixed(3)} s, delivered ${goal.delivered}`);
     // measured: 17.25 s, 15 delivered
     expect(goal.delivered).toBe(15);
-    expect(goal.simTime).toBeGreaterThan(17.25 - 0.3);
-    expect(goal.simTime).toBeLessThan(17.25 + 0.3);
+    // pinned exactly: a fixed-step, deterministic run (17.25 s = step 1035); S8a left it bit-identical
+    expect(goal.simTime).toBe(1035 * FIXED_DT);
   });
 
   it('a 5 m/s cruise tips the cart on the blender blade: all 15 delivered', async () => {
@@ -95,8 +96,8 @@ describe('S1 run scenarios', () => {
     console.info(`[S1 cruise5] goal ${goal.simTime.toFixed(3)} s, delivered ${goal.delivered}`);
     // measured: 13.05 s, 15 delivered
     expect(goal.delivered).toBe(15);
-    expect(goal.simTime).toBeGreaterThan(13.05 - 0.3);
-    expect(goal.simTime).toBeLessThan(13.05 + 0.3);
+    // pinned exactly: a fixed-step, deterministic run (13.05 s = step 783); S8a left it bit-identical
+    expect(goal.simTime).toBe(783 * FIXED_DT);
   });
 
   it('is deterministic: two identical runs emit identical events', async () => {
@@ -140,8 +141,8 @@ describe('S1 run scenarios', () => {
     console.info(`[S1 spill] lost ${lost.length} (first at ${lost[0]?.simTime}), goal ${goal.simTime.toFixed(3)} s, delivered ${goal.delivered}, remaining ${rc.remaining}`);
     expect(goal.delivered).toBe(past);
     expect(goal.delivered).toBe(9);
-    expect(goal.simTime).toBeGreaterThan(11.917 - 0.3);
-    expect(goal.simTime).toBeLessThan(11.917 + 0.3);
+    // pinned exactly: a fixed-step, deterministic run (11.917 s = step 715); S8a left it bit-identical
+    expect(goal.simTime).toBe(715 * FIXED_DT);
   });
 
   it('pineappleLost: a cart parked away from the funnel loses the whole load 3 s after it lands (including one resting against a wheel)', async () => {
