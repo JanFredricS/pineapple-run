@@ -25,6 +25,7 @@ import {
   hasSolidBody,
   LEVEL_DEF_VERSION,
   LevelDef,
+  MAX_LEVEL_PROPS,
   PropDef,
   Rect,
   THEME_IDS,
@@ -326,7 +327,7 @@ export function validateLevelDef(raw: unknown): ValidationResult<LevelDef> {
     });
     const g = obj(doc.goal, 'goal');
     const zones = arr(doc.zones ?? [], 'zones', 1000).map((z, i) => zone(z, `zones[${i}]`));
-    const props = arr(doc.props ?? [], 'props', 10_000).map((p, i) => prop(p, `props[${i}]`));
+    const props = arr(doc.props ?? [], 'props', MAX_LEVEL_PROPS).map((p, i) => prop(p, `props[${i}]`));
     const level: LevelDef = {
       version: LEVEL_DEF_VERSION,
       id: str(doc.id, 'id', 64),
