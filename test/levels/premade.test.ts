@@ -63,11 +63,13 @@ describe('shipped level conventions', () => {
       const level = levelById(id)!;
 
       it('cartStart is the ground and the plateau is flat across the build area (#3, #6)', () => {
-        // The recovered original's plateau is exactly the 2008 build area
-        // (no margin) and falls 0.5 px over its length; premade are exact.
+        // The recovered original's plateau ends exactly at the 2008 build
+        // area's right edge (no margin) and falls 0.5 px over its length;
+        // premade are exact. UX1: the wider build area reaches left of the
+        // recovered course, over the added flat start plateau (with margin).
         const tol = id === 'original' ? 0.02 : 1e-9;
         const range = plateauRange(level.cartStart);
-        const minX = id === 'original' ? range.minX + 1 : range.minX;
+        const minX = range.minX;
         const maxX = id === 'original' ? range.maxX - 1 : range.maxX;
         for (let x = minX; x <= maxX; x += 0.25) {
           const g = groundAt(level, x);

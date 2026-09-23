@@ -137,9 +137,14 @@ export const ENDLESS_KILL_Y = BASE_Y + 30;
  * cartStart + (115, −225) px — the same offset as src/game/startArea.ts
  * funnelFor() (kept literal here so terrain does not import game; an S6
  * integration test asserts the two agree).
+ *
+ * UX1: the build area grew left to design x −190 px, so the cart start moved
+ * from x 3 to 7.5 m: the plateau (build area + 1 m either side) then spans
+ * 0.17–19.83 m, inside the start wall (0.1) and START_FLAT_END (20). The
+ * generated terrain itself is unchanged.
  */
-export const START_CART = { x: 3, y: BASE_Y } as const;
-export const START_FUNNEL = { x: 3 + 115 / 30, y: BASE_Y - 225 / 30 } as const;
+export const START_CART = { x: 7.5, y: BASE_Y } as const;
+export const START_FUNNEL = { x: 7.5 + 115 / 30, y: BASE_Y - 225 / 30 } as const;
 
 /** Generated LevelDefs are capped so they always pass model/validate limits. */
 export const MAX_GENERATED_BLOCKS = 1500;

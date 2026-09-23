@@ -25,7 +25,7 @@ import {
   type TerrainSpan,
   type ThemeId,
 } from '../../src/model/level';
-import { funnelFor } from '../../src/game/startArea';
+import { funnelFor, plateauRange } from '../../src/game/startArea';
 import { roundCrests } from '../../src/terrain/rounding';
 
 export type FeatureKind = 'plateau' | 'valley' | 'crest' | 'drop' | 'ramp' | 'launchLip' | 'washboard' | 'kicker' | 'gap' | 'steps' | 'shortcut' | 'finish';
@@ -87,18 +87,24 @@ export class Track {
   private wallBefore = new Set<string>();
 
   /**
-   * Start wall at `x0`, ground at `groundY`; the cart starts `cartOffset`
-   * metres right of the wall (design x = 0 there).
+   * Course start at `x0`, ground at `groundY`; the cart starts `cartOffset`
+   * metres right of x0 (design x = 0 there). The start wall sits at x0, or
+   * further left when the shared start plateau (src/game/startArea.ts
+   * plateauRange: the build area + 1 m) reaches past x0 — UX1 grew the build
+   * area to the left, so every Track course gets the longer plateau behind
+   * the cart without moving anything from x0 on.
    */
   constructor(
     x0: number,
     groundY: number,
     cartOffset = 2.5,
   ) {
-    this.pts.push({ x: x0 - 0.1, y: groundY - 8 }, { x: x0, y: groundY });
+    this.cartStart = { x: x0 + cartOffset, y: groundY };
+    const wallX = Math.min(x0, Math.floor(plateauRange(this.cartStart).minX));
+    this.pts.push({ x: wallX - 0.1, y: groundY - 8 }, { x: wallX, y: groundY });
+    if (wallX < x0) this.pts.push({ x: x0, y: groundY });
     this.x = x0;
     this.y = groundY;
-    this.cartStart = { x: x0 + cartOffset, y: groundY };
   }
 
   private push(x: number, y: number): void {

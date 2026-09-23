@@ -425,7 +425,8 @@ describe('endless streaming', () => {
       expect(s.controller.cartLost).toBe(false);
       expect(recreated).toBeGreaterThan(0); // chunks really were unloaded and rebuilt
       expect(created).toBeGreaterThan(seen.size);
-      expect(s.furthestMetres()).toBeGreaterThan(160);
+      // furthest is measured from the spawn (UX1 moved the endless start to x 7.5 for the wider build area)
+      expect(s.furthestMetres()).toBeGreaterThan(160 - s.spawn.x);
     } finally {
       s.destroy();
     }

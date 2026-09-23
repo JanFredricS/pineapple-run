@@ -20,12 +20,23 @@ export interface Area {
 /**
  * Where parts may be drawn (design px). Draft points are clamped into it —
  * the original likewise ignored build clicks outside its start area.
- * 360 x 210 px = 12 m x 7 m.
+ * UX1 (Jan: "The build area is too small"): 360 x 210 px (12 x 7 m) ->
+ * 530 x 210 px = 17.67 m x 7 m (1.47x wider, 1.47x the area).
+ *  - It grows LEFT (behind the cart): the right edge stays at 340 px because
+ *    the recovered 2008 course's plateau ends at 355.7 px (its vertices are
+ *    fixed) and the premade courses' first hazards start right after their
+ *    plateau. The funnel (design x 115) ends up near the middle of the area.
+ *  - It does NOT grow taller: the funnel outlet must clear the area's top
+ *    (startArea.ts FUNNEL_OFFSET_PX), and raising it even 0.5 m changed the
+ *    tuned pour into the example cart chaotically (measured: the original
+ *    course's expert line lost the load at 87 m, the kitchen pace line fell
+ *    to 12/15 while flooring it got 15/15; at 1.5x height, workbench 3/15).
+ * Old designs (inside the old area) all still fit.
  */
-export const BUILD_AREA: Area = { minX: -20, minY: -210, maxX: 340, maxY: 0 };
+export const BUILD_AREA: Area = { minX: -190, minY: -210, maxX: 340, maxY: 0 };
 
-/** Mock start-area props (drawn only; S3/S6 replace with the real level). */
-export const MOCK_FUNNEL = { x: 115, y: -250, topWidth: 110, bottomWidth: 36, height: 50 };
+/** Mock start-area props (drawn only; S3/S6 replace with the real level): 40 px above the build area. */
+export const MOCK_FUNNEL = { x: 115, y: BUILD_AREA.minY - 40, topWidth: 110, bottomWidth: 36, height: 50 };
 
 /**
  * A second pointer landing within this many ms of the first one's
