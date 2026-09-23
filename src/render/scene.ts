@@ -51,6 +51,7 @@ import { cameraTransform, type Camera } from '../model/coords';
 import type { Vec2 } from '../model/geometry';
 import { hasSolidBody, type LevelDef, type PropDef, type ThemeId } from '../model/level';
 import type { BodyTransform, RenderBodyInfo, RenderShape, RenderSnapshot, SceneManifest } from '../model/snapshot';
+import { BLENDER_SIZE } from '../model/goal';
 import { ART, BLENDER_LAYOUT, PROP_ART } from './artCatalog';
 import { BlenderView } from './blender';
 import { ParallaxBackground } from './parallax';
@@ -70,8 +71,8 @@ import { SHADE_ID, type TextureProvider } from './textures';
 
 /** How far below the deepest terrain point the fill extends (m). */
 export const TERRAIN_FILL_DEPTH_M = 40;
-/** World height of the blender goal (m). */
-export const BLENDER_HEIGHT_M = 3.6;
+/** World height of the standard blender goal (m): the shared solid body's height (UX1: 3.6 -> 9). */
+export const BLENDER_HEIGHT_M = BLENDER_SIZE.y;
 /** Visual thickness of the shock's guide rod (m). */
 const SHOCK_SHAFT_M = 0.09;
 const PIN_DIAMETER_M = 0.16;
@@ -649,7 +650,9 @@ export class SceneRenderer {
     } else {
       this.blender.view.position.set(g.x + g.width / 2, g.y + g.height);
     }
-    this.blender.view.scale.set(BLENDER_HEIGHT_M / BLENDER_LAYOUT.height);
+    // drawn exactly as tall as its solid collider (UX1: physics and art agree for any blender size)
+    const blenderHeight = blenderProp && hasSolidBody(blenderProp) ? blenderProp.size.y : BLENDER_HEIGHT_M;
+    this.blender.view.scale.set(blenderHeight / BLENDER_LAYOUT.height);
     this.decorLayer.addChild(this.blender.view);
     this.drawFunnel();
   }

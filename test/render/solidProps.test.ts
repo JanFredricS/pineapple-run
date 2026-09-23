@@ -8,7 +8,10 @@ import { describe, expect, it } from 'vitest';
 import { hasSolidBody, type LevelDef, type PropDef } from '../../src/model/level';
 import { validateLevelDef } from '../../src/model/validate';
 import { PhysicsWorld } from '../../src/physics/engine';
-import { SceneRenderer, blenderFoot } from '../../src/render/scene';
+import { BLENDER_HEIGHT_M, SceneRenderer, blenderFoot } from '../../src/render/scene';
+import { BLENDER_LAYOUT } from '../../src/render/artCatalog';
+import { BLENDER_SCALE, BLENDER_SIZE } from '../../src/model/goal';
+import { generateLevel } from '../../src/terrain/generator';
 import { mockLevel } from '../../src/render/styleguide/mockRun';
 import type { TextureProvider } from '../../src/render/textures';
 import { boxPolygon } from '../../src/run/shapes';
@@ -127,5 +130,46 @@ describe('finding 6: the blender view follows its rotated collider', () => {
     expect(blenderFoot(blender(0))).toEqual({ x: 50, y: 12.2 + 1.8 });
     // a decor (non-solid) blender stands on its position
     expect(blenderFoot({ id: 'b', art: 'blender', position: { x: 1, y: 2 }, angle: 1 })).toEqual({ x: 1, y: 2 });
+  });
+});
+
+describe('UX1: the big goal blender — the drawn blender is exactly its solid collider', () => {
+  it('the shared blender is 2.5x its S6 size; every shipped level uses it, standing clear of the lip with free pit floor before it', () => {
+    expect(BLENDER_SIZE.x).toBeCloseTo(1.5 * BLENDER_SCALE, 9);
+    expect(BLENDER_SIZE.y).toBeCloseTo(3.6 * BLENDER_SCALE, 9);
+    expect(BLENDER_SCALE).toBe(2.5);
+    for (const id of SHIPPED_LEVEL_IDS) {
+      const l = levelById(id)!;
+      const b = l.props.find((p) => p.art === 'blender')!;
+      expect(b.size, id).toEqual(BLENDER_SIZE);
+      const front = b.position.x - b.size!.x / 2;
+      const s = l.goal.sensor;
+      // the goal line and the first metres of the pit floor are clear: the cart and its load drop in before the blender
+      expect(front - l.goal.lineX, id).toBeGreaterThan(3);
+      expect(front - s.x, id).toBeGreaterThanOrEqual(3.75 - 1e-9);
+      // and the blender stands inside the pit, clear of its back wall
+      expect(b.position.x + b.size!.x / 2, id).toBeLessThan(s.x + s.width);
+    }
+    // generated finite levels: the (decor) blender's pit fits it with 1 m either side
+    const gen = generateLevel('PINE', 300).level;
+    expect(gen.goal.sensor.width + 0.6).toBeCloseTo(BLENDER_SIZE.x + 2, 9);
+  });
+
+  it('the view is scaled so it is exactly as tall as the collider (any size), standing on its bottom edge', () => {
+    for (const size of [BLENDER_SIZE, { x: 1.5, y: 3.6 }, { x: 5, y: 12 }]) {
+      const p: PropDef = { id: 'blender', art: 'blender', solid: true, position: { x: 50, y: 12.2 }, size };
+      const r = new SceneRenderer(provider, { background: false });
+      r.setLevel({ ...mockLevel('beach'), props: [p] });
+      const v = r.blenderView!.view;
+      expect(v.scale.y * BLENDER_LAYOUT.height).toBeCloseTo(size.y, 9);
+      expect(v.position.y).toBeCloseTo(12.2 + size.y / 2, 9);
+      r.destroy();
+    }
+    // a level without a solid blender draws the standard one
+    const r = new SceneRenderer(provider, { background: false });
+    r.setLevel({ ...mockLevel('beach'), props: [] });
+    expect(r.blenderView!.view.scale.y * BLENDER_LAYOUT.height).toBeCloseTo(BLENDER_HEIGHT_M, 9);
+    expect(BLENDER_HEIGHT_M).toBe(BLENDER_SIZE.y);
+    r.destroy();
   });
 });

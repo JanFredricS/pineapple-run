@@ -39,6 +39,7 @@
  * bits vary by engine), so terrain is identical on every platform.
  */
 
+import { BLENDER_SIZE } from '../model/goal';
 import type { Vec2 } from '../model/geometry';
 import {
   DEFAULT_TERRAIN_FRICTION,
@@ -637,6 +638,11 @@ export interface FinishGeometry {
   blenderAt: Vec2;
 }
 
+/**
+ * Pit floor of the finish block (m): S6 4 m; UX1 fits the shared (2.5×)
+ * decor blender standing at the pit centre with 1 m either side.
+ */
+const FINISH_PIT_FLOOR = Math.max(4, BLENDER_SIZE.x + 2);
 /** Run-out length from the finish block's left connector pin to the lip (m). */
 const FINISH_RUNOUT = 20;
 /** Goal line offset past the lip (m). */
@@ -656,7 +662,7 @@ function generateFinish(seed: number, k: number): FinishGeometry {
   const pitDepth = 2.5;
   const floorY = lipY + pitDepth;
   const pitX0 = lipX + pitDepth / 1.6; // drop at slope 1.6 (within every maxDown)
-  const pitX1 = pitX0 + 4;
+  const pitX1 = pitX0 + FINISH_PIT_FLOOR;
   const line: Vec2[] = [
     leftPin,
     { x: lipX - 3, y }, // flat run-out

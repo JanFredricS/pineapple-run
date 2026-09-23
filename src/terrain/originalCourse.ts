@@ -41,6 +41,7 @@
 
 import { pxToM } from '../model/coords';
 import type { Vec2 } from '../model/geometry';
+import { BLENDER_SIZE, blenderPitFloor } from '../model/goal';
 import { DEFAULT_TERRAIN_FRICTION, DEFAULT_TERRAIN_RESTITUTION, LEVEL_DEF_VERSION, type LevelDef } from '../model/level';
 
 /** Parse terrain.txt: one "x y" pair (px) per line. */
@@ -57,10 +58,12 @@ export function parseOriginalTerrain(text: string): Vec2[] {
 }
 
 export const ORIGINAL_GOAL_LINE_PX = 7670;
-/** Added pit floor after the last recovered vertex (m). */
-export const PIT_FLOOR_M = 7;
-/** Solid blender body (m): same as the premade courses (tools/levels/track.ts BLENDER_SIZE). */
-export const ORIGINAL_BLENDER_SIZE = { x: 1.5, y: 3.6 } as const;
+/** Free pit floor in front of the blender (m; S6: centre 4.5 − half the 1.5 m S6 blender). */
+const ORIGINAL_BLENDER_FRONT_GAP = 3.75;
+/** Added pit floor after the last recovered vertex (m). UX1: grows with the shared blender, 7 -> 9.25 m. */
+export const PIT_FLOOR_M = blenderPitFloor(ORIGINAL_BLENDER_FRONT_GAP);
+/** Solid blender body (m): the shared goal blender (src/model/goal.ts), as on the premade courses. */
+export const ORIGINAL_BLENDER_SIZE = BLENDER_SIZE;
 /** The 2008 build area's left edge (design px): design x −20 sits just right of the first recovered vertex. */
 const ORIGINAL_BUILD_MIN_X_PX = -20;
 /** Start-area offsets, design px (must equal src/game/startArea.ts; an integration test checks). */
@@ -105,7 +108,7 @@ export function originalCourseLevel(pxVertices: readonly Vec2[]): LevelDef {
         id: 'blender',
         art: 'blender',
         solid: true,
-        position: { x: last.x + 4.5, y: last.y - ORIGINAL_BLENDER_SIZE.y / 2 },
+        position: { x: last.x + ORIGINAL_BLENDER_FRONT_GAP + ORIGINAL_BLENDER_SIZE.x / 2, y: last.y - ORIGINAL_BLENDER_SIZE.y / 2 },
         size: { ...ORIGINAL_BLENDER_SIZE },
       },
     ],
