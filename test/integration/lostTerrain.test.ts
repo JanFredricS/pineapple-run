@@ -10,6 +10,7 @@
  * streaming anchors.
  */
 import { describe, expect, it } from 'vitest';
+import { exampleCart } from '../../src/builder/exampleCart';
 import { courseFor } from '../../src/game/courses';
 import { RunSession, type Course } from '../../src/game/session';
 import type { CartDesign } from '../../src/model/cart';
@@ -39,7 +40,14 @@ describe('level run: lost pineapples keep their streamed ground', () => {
   it('lost pile survives the cart driving far away, then is bulldozed into the blender and delivered', async () => {
     const level = longFlatGoalLevel();
     const course: Course = { levelId: level.id, mode: 'level', level, source: new LevelChunkSource(level.terrain) };
-    const s = await RunSession.create(loadFixtureCart(), course);
+    // S8a: the example cart. The S1 spike fixture cart's low front wheels
+    // used to claw up the heap at the old 0.9 pineapple–wheel friction; at
+    // 0.3 (backlog #9) they slip on its face and that cart stalls against
+    // it. The example cart pushes the heap into the pit at 0.3 (and was the
+    // one that stalled at 0.9: the heap locked its wheels — backlog #9
+    // itself). This test is about streaming retention and lost-but-delivered
+    // scoring, not about which cart can bulldoze.
+    const s = await RunSession.create(exampleCart(), course);
     try {
       s.start();
       s.release();

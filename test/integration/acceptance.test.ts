@@ -229,14 +229,16 @@ describe('S6T audit-1 #4: every premade level has a risk/reward shortcut (PLAN S
 
 describe('S6T #6: the original course (bonus, expert) is clearable', () => {
   // The reference line delivers 10/15 (deterministic). Nearby lines (the
-  // 6 m/s switch anywhere in 185–215 m, 6–6.5 m/s after it) deliver 9–10, so
-  // the bar is 9. The cruise speed is the knife edge: 8.8 and 9.0 m/s finish,
-  // 8.7, 8.9 and 9.1–9.3 get stuck (measured; see driver.ts).
+  // 6 m/s switch anywhere in 185–215 m, 6.5 m/s from 200–215 m) deliver 10,
+  // so the bar is 9. The cruise speed is the knife edge: 9.3, 10.0 and 10.1
+  // m/s finish; 9.0–9.25, 9.9 and 10.05 get stuck (measured; see driver.ts).
+  // S8a moved the cruise from 9 to 9.3 m/s (real shock limits + 0.3
+  // pineapple–wheel friction; 9 m/s now sticks at ~94 m).
   const variants = [
     ORIGINAL_EXPERT_LINE,
-    [{ x: 0, speed: 9 }, { x: 185, speed: 6 }],
-    [{ x: 0, speed: 9 }, { x: 215, speed: 6.5 }],
-    [{ x: 0, speed: 9 }, { x: 200, speed: 6.5 }],
+    [{ x: 0, speed: 9.3 }, { x: 185, speed: 6 }],
+    [{ x: 0, speed: 9.3 }, { x: 215, speed: 6.5 }],
+    [{ x: 0, speed: 9.3 }, { x: 200, speed: 6.5 }],
   ];
   for (const line of variants) {
     it(`the expert line ${line.map((n) => `${n.x}:${n.speed}`).join(' ')} reaches the goal with the example cart and >= 9 delivered`, async () => {

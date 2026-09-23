@@ -120,8 +120,11 @@ describe('S1 run scenarios', () => {
     const lost = events.filter((e): e is Extract<RunEvent, { type: 'pineappleLost' }> => e.type === 'pineappleLost');
     const goal = events.at(-1) as Extract<RunEvent, { type: 'goalReached' }>;
     expect(goal.type).toBe('goalReached');
-    // measured: 11 lost (first at 6 s), goal at 11.917 s with 4 delivered, 4 remaining
-    expect(lost.length).toBe(11);
+    // measured: 7 lost (first at 6 s), goal at 11.917 s with 9 delivered, 8 remaining.
+    // S8a: was 11 lost / 4 delivered at the old 0.9 pineapple–wheel friction
+    // (the load now slides off the wheels instead of being thrown by them);
+    // the goal time is unchanged to the step.
+    expect(lost.length).toBe(7);
     expect(new Set(lost.map((e) => e.pineappleId)).size).toBe(lost.length);
     lost.forEach((e, i) => {
       expect(e.remaining).toBe(15 - (i + 1));
@@ -136,7 +139,7 @@ describe('S1 run scenarios', () => {
     const past = rc.pineappleStates().filter((p) => p.alive && w.getTransform(p.handle).x > lineX).length;
     console.info(`[S1 spill] lost ${lost.length} (first at ${lost[0]?.simTime}), goal ${goal.simTime.toFixed(3)} s, delivered ${goal.delivered}, remaining ${rc.remaining}`);
     expect(goal.delivered).toBe(past);
-    expect(goal.delivered).toBe(4);
+    expect(goal.delivered).toBe(9);
     expect(goal.simTime).toBeGreaterThan(11.917 - 0.3);
     expect(goal.simTime).toBeLessThan(11.917 + 0.3);
   });
@@ -282,7 +285,16 @@ describe('S1 run scenarios', () => {
 
   it('S0 stability gate re-run: funnel + goal integration, 60 s washboard shuttle, no joint divergence', async () => {
     const w = await world();
-    const rc = new RunController(w, loadFixtureCart(), loadSpikeLevel());
+    // S8a: the goal (blender pit at x 115) is moved out of reach. With the
+    // 0.3 pineapple–wheel friction the load mostly stays aboard (at 0.9 the
+    // wheels flung all 15 off), and a pineapple that leaves the bed at ~12 s
+    // rolls down the washboard into the pit — which correctly ENDS the level
+    // run and would cut this 60 s shuttle short. The goal rule still runs
+    // every step; it just cannot fire. The cart itself is checked against
+    // x 115 below.
+    const spike = loadSpikeLevel();
+    const level = { ...spike, goal: { sensor: { ...spike.goal.sensor, x: spike.goal.sensor.x + 1000 }, lineX: spike.goal.lineX + 1000 } };
+    const rc = new RunController(w, loadFixtureCart(), level);
     const events = record(rc);
     rc.start();
     for (let i = 0; i < 60; i++) rc.step();
@@ -296,6 +308,7 @@ describe('S1 run scenarios', () => {
       }));
     let peakGap = 0;
     let peakSpeed = 0;
+    let cartMaxX = -Infinity;
     let dir: DriveDirection = 0;
     // identical drive script to the S0 stability test (test/physics/scenarios.test.ts)
     for (let s = 0; s < 60 * 60; s++) {
@@ -308,6 +321,7 @@ describe('S1 run scenarios', () => {
       else if (dir === -1 && x < 0) dir = 1;
       rc.setDrive(dir);
       rc.step();
+      cartMaxX = Math.max(cartMaxX, rc.rightmostCartBody()?.x ?? -Infinity);
       peakGap = Math.max(peakGap, maxJointGap());
       for (const h of w.bodyHandles()) {
         const t = w.getTransform(h);
@@ -328,7 +342,9 @@ describe('S1 run scenarios', () => {
     expect(t.x).toBeLessThan(118);
     expect(t.y).toBeLessThan(10);
     // the shuttle never reaches the blender at x 115, and the cart never leaves the world
+    expect(cartMaxX).toBeLessThan(115);
     expect(events.some((e) => e.type === 'goalReached')).toBe(false);
+    expect(rc.phase).toBe('released');
     expect(rc.cartLost).toBe(false);
     console.info(`[S1 stability] peakGap=${peakGap.toFixed(4)} finalGap=${maxJointGap().toFixed(5)} peakSpeed=${peakSpeed.toFixed(2)} lost=${rc.lostCount}`);
   });
