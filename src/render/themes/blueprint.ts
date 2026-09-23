@@ -43,5 +43,5 @@ export const blueprint: Theme = {
     { id: 'rocks', svg: rocks, mode: 'band', factor: 0.35, bottom: 150, fillBelow: '#DDE3EC' },
   ],
   horizonLift: 1,
-  goalOutline: '#2F6DB5',
+  goalOutline: '#2A62A8',
 };

@@ -20,8 +20,8 @@ import { LEGACY_THEME_IDS, THEME_IDS } from '../../src/model/level';
 import { TOTAL_PINEAPPLES } from '../../src/model/score';
 import { validateLevelDef } from '../../src/model/validate';
 import { coreAssetDefs } from '../../src/render/artCatalog';
-import { JAR_GLASS_OUTLINE, JAR_RIM } from '../../src/render/blender';
-import { SceneRenderer } from '../../src/render/scene';
+import { JAR_GLASS_OUTLINE, JAR_OUTLINE_ALPHA, JAR_RIM } from '../../src/render/blender';
+import { FUNNEL_INK_ALPHA, SceneRenderer } from '../../src/render/scene';
 import { THEMES, getTheme, themeAssetDefs } from '../../src/render/themes';
 import type { TextureProvider } from '../../src/render/textures';
 import { funnelGeometry } from '../../src/run/funnel';
@@ -42,6 +42,14 @@ function contrast(a: string, b: string): number {
   };
   const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x) as [number, number];
   return (hi + 0.05) / (lo + 0.05);
+}
+
+/** `fg` drawn at `alpha` over opaque `bg` (straight alpha, sRGB channels, as the renderer composites), as #RRGGBB. */
+function over(fg: string, alpha: number, bg: string): string {
+  const ch = (hex: string, i: number) => Number.parseInt(hex.slice(i, i + 2), 16);
+  return `#${[1, 3, 5]
+    .map((i) => Math.round(alpha * ch(fg, i) + (1 - alpha) * ch(bg, i)).toString(16).padStart(2, '0'))
+    .join('')}`;
 }
 
 describe('B1: the original course is the blueprint of the original game', () => {
@@ -95,15 +103,32 @@ describe('B1: Blueprint completeness', () => {
     expect(paper.svg).not.toMatch(/<rect width="256" height="256" fill="#/);
   });
 
-  it('drafting-blue linework reads on the pale palette', () => {
-    const edgeInk = /<rect x="0" y="2" width="256" height="3" fill="(#[0-9A-F]{6})"\/>/i.exec(t.terrain.edge.svg)![1]!;
-    expect(contrast(edgeInk, t.palette.ground)).toBeGreaterThanOrEqual(4.5); // surface line vs rock
-    expect(contrast(edgeInk, t.palette.skyTop)).toBeGreaterThanOrEqual(7); // surface line vs paper
-    expect(contrast(t.palette.ink, t.palette.skyTop)).toBeGreaterThanOrEqual(7); // funnel / prop outlines
-    expect(contrast(t.goalOutline!, t.palette.skyTop)).toBeGreaterThanOrEqual(4.5); // blender jar
-    expect(contrast(t.goalOutline!, t.palette.skyBottom)).toBeGreaterThanOrEqual(4);
+  // Every ratio is taken on the COMPOSITED colour: the line at the opacity it is actually drawn with,
+  // blended over the background it sits on (B1 audit-1: an opaque-colour check overstated the outline).
+  it('drafting-blue linework reads on the pale palette (composited at its rendered alpha)', () => {
+    // terrain surface line: an opaque rect in the edge texture (no opacity attributes on it)
+    const edgeRect = /<rect x="0" y="2" width="256" height="3"[^>]*>/.exec(t.terrain.edge.svg)![0];
+    expect(edgeRect).not.toMatch(/opacity/);
+    const edgeInk = /fill="(#[0-9A-F]{6})"/i.exec(edgeRect)![1]!;
+    expect(contrast(edgeInk, t.palette.ground)).toBeGreaterThanOrEqual(4.5); // vs rock
+    expect(contrast(edgeInk, t.palette.skyTop)).toBeGreaterThanOrEqual(7); // vs paper
+    // funnel outline: palette.ink at the renderer's FUNNEL_INK_ALPHA (shared by every theme)
+    for (const [bg, min] of [[t.palette.skyTop, 4.5], [t.palette.skyBottom, 4]] as const) {
+      expect(contrast(over(t.palette.ink, FUNNEL_INK_ALPHA, bg), bg), `funnel ink over ${bg}`).toBeGreaterThanOrEqual(min);
+    }
+    // blender jar outline: goalOutline at JAR_OUTLINE_ALPHA, over both skies and over the jar's own cyan stroke
+    for (const [bg, min] of [[t.palette.skyTop, 4.5], [t.palette.skyBottom, 4], ['#A9D8E6', 3]] as const) {
+      expect(contrast(over(t.goalOutline!, JAR_OUTLINE_ALPHA, bg), bg), `jar outline over ${bg}`).toBeGreaterThanOrEqual(min);
+    }
     // the shared jar art alone does not: that is why the outline exists
     expect(contrast('#A9D8E6', t.palette.skyTop)).toBeLessThan(2);
+  });
+
+  it('compositing helper: alpha 1 is the colour itself, alpha 0 the background', () => {
+    expect(over('#2A62A8', 1, '#F9FBFD')).toBe('#2a62a8');
+    expect(over('#2A62A8', 0, '#F9FBFD')).toBe('#f9fbfd');
+    // the audit-1 case: the old #2F6DB5 at 0.85 composites to ~3.8:1 on skyTop, under the 4.5 floor
+    expect(contrast(over('#2F6DB5', 0.85, '#F9FBFD'), '#F9FBFD')).toBeLessThan(4.5);
   });
 
   it('jar outline constants match the jar art', () => {

@@ -597,9 +597,9 @@ The loupe is purely visual:
 | Terrain fill | Seamless (boundary vertices match on opposite edges). Tiles cleanly over long spans and the steep crest/drop (x 39–52 m) and into the 2008 pit (checked live). | Slab lines `#9FAABB` → `#9DB0C9` (bluer); depth shade tint `#3A4658` → `#2E4A72`, alpha 0.25 → 0.22. |
 | Rocks band | Grey outlines. | Outlines `#B8C3D2` → `#A9BCD6`; `fillBelow` unchanged (`#DDE3EC`, matches the rock fill). |
 | Sketch band | Construction lines and dimensions only. | A small drawing title block: "PINEAPPLE RUN / COURSE 01 / REV 2008". |
-| Blender (3.75 × 9 m) | **The real gap.** The shared jar art is pale cyan glass (`#A9D8E6` outline, 1.5:1 on the paper), so an empty jar nearly vanished on graph paper. | New optional `Theme.goalOutline` (NOT a palette key, so the other themes' files are untouched). BlenderView draws a 3 px / 2 px drafting-blue (`#2F6DB5`, 5.1:1 on skyTop, 4.4:1 on skyBottom) outline over the glass body and rim, under the lid. Only blueprint sets it, so other themes build no outline object. The outline constants are pinned to jar.svg's path and rect. |
+| Blender (3.75 × 9 m) | **The real gap.** The shared jar art is pale cyan glass (`#A9D8E6` outline, 1.5:1 on the paper), so an empty jar nearly vanished on graph paper. | New optional `Theme.goalOutline` (NOT a palette key, so the other themes' files are untouched). BlenderView draws a 3 px / 2 px drafting-blue outline (`#2A62A8` at full opacity, `JAR_OUTLINE_ALPHA` = 1: 5.9:1 on skyTop, 5.1:1 on skyBottom, 4.0:1 over the jar's cyan stroke) over the glass body and rim, under the lid. Only blueprint sets it, so other themes build no outline object. The outline constants are pinned to jar.svg's path and rect. |
 | Finish pit | Pit floor, walls and blender read well against the pale rock (checked live). Beyond the pit's end wall the flat rock-band `fillBelow` shows. That is the world edge and looks the same in every theme. | None |
-| Funnel | `accentAlt` orange walls, `accent` plug, `ink` outline. | `ink` `#2B3445` → navy `#1F3A60` (11:1 on the paper, ≥ 7:1 pinned); `accent` `#3A7BD5` → `#2F6DB5`. Orange kept as the drafting "marker" contrast colour. |
+| Funnel | `accentAlt` orange walls, `accent` plug, `ink` outline. | `ink` `#2B3445` → navy `#1F3A60`. The funnel strokes it at the shared `FUNNEL_INK_ALPHA` = 0.7, which composites to 4.6:1 on skyTop and 4.3:1 on skyBottom (pinned ≥ 4.5 / ≥ 4).; `accent` `#3A7BD5` → `#2F6DB5`. Orange kept as the drafting "marker" contrast colour. |
 | Cart / pineapples / springs | Theme-independent art. Red caps, striped straws, grey coils and pineapples all read on the near-white sky (checked live at the start plateau). | None |
 | HUD | The HUD uses the global white-glass pill vars (ui.css `--pr-hud-glass`), not `palette.uiPanel`. Readable on the pale sky. | `uiPanel` → `#1F3A60` for consistency only (no consumer today). |
 | Card art | The `test` card reused the workbench gradient. | New `--pr-theme-blueprint`: a 16/64 px blueprint grid over the sky gradient, a navy ground line, and pale rock. |
@@ -611,9 +611,15 @@ The loupe is purely visual:
 - One Blueprint theme and no `test` id.
 - The legacy alias, including the prototype-key rejection.
 - The sky shows through the graph paper.
-- WCAG contrast floors for the linework.
+- WCAG contrast floors for the linework, taken on the composited colour (see audit-1 below).
 - The jar-outline constants match the art.
 - Outline present only where `goalOutline` is set.
 - A **strict headless render** of the real original course. It uses a real RunSession with the example cart: spawn, pour, and the finish with a full whirring blender, plus all spans skinned. The texture provider holds only core + `blueprint` assets and fails on any lookup or `has()` miss. Every theme asset is asserted as actually drawn.
 
 Mutation-checked: removing the alias, or dropping one layer from the strict set, fails the matching test.
+
+**Audit-1 fix (contrast measured at the drawn opacity).** The first cut drew the jar outline in `#2F6DB5` at alpha 0.85. The test measured the opaque colour (5.1:1 / 4.4:1), but the composited stroke is only about 3.8:1 / 3.4:1 on the skies, under the test's own 4.5 / 4.0 floors. The funnel-ink check had the same blind spot: it asserted ≥ 7:1 on the opaque `ink`, but the stroke is drawn at 0.7 (4.6:1 composited).
+- **Rendering.** The outline is now `#2A62A8` (a slightly darker drafting blue, between the terrain edge `#2A4A78` and the accent) at full opacity, through the exported `JAR_OUTLINE_ALPHA`.
+- **Tests.** The test alpha-blends each line at the renderer's exported alpha (`JAR_OUTLINE_ALPHA`, `FUNNEL_INK_ALPHA`, previously inline literals in scene.ts; value unchanged, so every theme renders the same) over each background, and asserts the floors on that. The terrain edge line is asserted to be an opaque rect with no opacity attribute.
+- **Checked.** Putting back `#2F6DB5` at 0.85 fails the test at 3.84 < 4.5.
+- **Not covered.** Solid props drawn without art stroke `ink` at 0.6. No blueprint course has such a prop, so this is not covered here.

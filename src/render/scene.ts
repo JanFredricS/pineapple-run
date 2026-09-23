@@ -88,6 +88,9 @@ export const BLENDER_HEIGHT_M = BLENDER_SIZE.y;
 /** Visual thickness of the shock's guide rod (m). */
 const SHOCK_SHAFT_M = 0.09;
 const PIN_DIAMETER_M = 0.16;
+/** Opacity of the funnel's palette.ink outline strokes (exported so contrast tests composite at it). */
+export const FUNNEL_INK_ALPHA = 0.7;
+
 /** LevelDef prop art id of the goal blender (drawn as the animated BlenderView). */
 export const BLENDER_ART = 'blender';
 
@@ -822,13 +825,13 @@ export class SceneRenderer {
         new Graphics()
           .poly(wall.flatMap((p) => [p.x, p.y]))
           .fill({ color: body })
-          .stroke({ color: ink, width: 0.05, alpha: 0.7 }),
+          .stroke({ color: ink, width: 0.05, alpha: FUNNEL_INK_ALPHA }),
       );
     }
     const plug = new Graphics()
       .poly(f.plug.flatMap((p) => [p.x, p.y]))
       .fill({ color: hexToNumber(this.theme.palette.accent) })
-      .stroke({ color: ink, width: 0.05, alpha: 0.7 });
+      .stroke({ color: ink, width: 0.05, alpha: FUNNEL_INK_ALPHA });
     plug.visible = !this.funnelOpen;
     view.addChild(plug);
     // in front of the pineapples: the load shows through the open V top

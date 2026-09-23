@@ -51,6 +51,8 @@ export const JAR_GLASS_OUTLINE: readonly Vec2[] = [
   { x: 36, y: 196 },
 ];
 export const JAR_RIM = { x: 10, y: 10, width: 124, height: 10 } as const;
+/** Opacity of the jar outline strokes (B1 audit-1: the contrast test composites at this alpha). */
+export const JAR_OUTLINE_ALPHA = 1;
 
 /** Drafting-style linework over the jar (jar-local px, positioned like the jar sprite). */
 function jarOutline(color: number): Graphics {
@@ -58,9 +60,9 @@ function jarOutline(color: number): Graphics {
   g.label = 'blender-outline';
   g.position.set(L.jar.x, L.jar.y);
   g.poly(JAR_GLASS_OUTLINE.flatMap((p) => [p.x, p.y]))
-    .stroke({ color, width: 3, alpha: 0.85, join: 'round' })
+    .stroke({ color, width: 3, alpha: JAR_OUTLINE_ALPHA, join: 'round' })
     .roundRect(JAR_RIM.x, JAR_RIM.y, JAR_RIM.width, JAR_RIM.height, 4)
-    .stroke({ color, width: 2, alpha: 0.85 });
+    .stroke({ color, width: 2, alpha: JAR_OUTLINE_ALPHA });
   return g;
 }
 
