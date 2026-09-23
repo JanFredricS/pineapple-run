@@ -2,7 +2,7 @@
  * SceneRenderer (S4): draws a run from the S0 render contract only —
  * SceneManifest (what each body is) + RenderSnapshot (interpolated poses) —
  * plus optional static context (LevelDef for theme/props/goal, CartDesign for
- * part kinds and umbrella shocks, which are joints and so aren't manifest
+ * part kinds and coil-spring shocks, which are joints and so aren't manifest
  * bodies). It never sees a physics object.
  *
  * Layers (back to front): parallax sky/layers (screen space) | world:
@@ -72,7 +72,7 @@ import { SHADE_ID, type TextureProvider } from './textures';
 export const TERRAIN_FILL_DEPTH_M = 40;
 /** World height of the blender goal (m). */
 export const BLENDER_HEIGHT_M = 3.6;
-/** Visual thickness of the umbrella shaft (m). */
+/** Visual thickness of the shock's guide rod (m). */
 const SHOCK_SHAFT_M = 0.09;
 const PIN_DIAMETER_M = 0.16;
 /** LevelDef prop art id of the goal blender (drawn as the animated BlenderView). */
@@ -223,7 +223,7 @@ export class SceneRenderer {
     this.placeLevelDecor();
   }
 
-  /** Cart design (for part kinds + umbrella shocks). Pass null to fall back to geometry heuristics. */
+  /** Cart design (for part kinds + coil-spring shocks). Pass null to fall back to geometry heuristics. */
   setCartDesign(design: CartDesign | null): void {
     this.kinds = partKinds(design);
     this.spec = design ? resolveAttachments(design) : null;
@@ -466,10 +466,10 @@ export class SceneRenderer {
       s.stick.scale.x = p.length / s.stick.texture.width;
       s.pinB.position.set(p.length, 0);
       const { frame, spread } = canopyFor(p.ratio);
-      const tex = this.textures.texture(ART.umbrella[frame].id);
+      const tex = this.textures.texture(ART.spring[frame].id);
       if (s.canopy.texture !== tex) s.canopy.texture = tex;
       const rest = s.binding.restLength;
-      const cs = Math.min(rest, 1.6) * 0.62 / tex.width; // canopy ~62% of rest length along the axis
+      const cs = Math.min(rest, 1.6) * 0.62 / tex.width; // coil frame ~62% of rest length along the axis
       s.canopy.scale.set(cs, cs * (0.92 + 0.16 * spread));
       s.canopy.position.set(Math.min(p.length * 0.12, 0.2), 0);
     }
@@ -477,12 +477,12 @@ export class SceneRenderer {
 
   private buildShock(binding: ShockBinding): ShockVisual {
     const view = new Container();
-    const stickTex = this.textures.texture(ART.umbrellaStick.id);
+    const stickTex = this.textures.texture(ART.springRod.id);
     const stick = new Sprite(stickTex);
     stick.anchor.set(0, 0.5);
     stick.scale.y = SHOCK_SHAFT_M / 5; // 5 px of the 8 px texture is the shaft
-    const canopy = new Sprite(this.textures.texture(ART.umbrella.half.id));
-    canopy.anchor.set(ART.umbrella.apexX / 64, ART.umbrella.axisY / 96);
+    const canopy = new Sprite(this.textures.texture(ART.spring.half.id));
+    canopy.anchor.set(ART.spring.apexX / 64, ART.spring.axisY / 96);
     const pinTex = this.textures.texture(ART.pin.id);
     const pin = () => {
       const p = new Sprite(pinTex);

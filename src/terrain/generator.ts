@@ -25,10 +25,15 @@
  *      between the feature's end heights;
  *   3. slope clamping (slope.ts) with the block's difficulty limits, pinned
  *      at both connectors.
+ *   4. crest rounding (rounding.ts, S6T #10): every sharp crest becomes a
+ *      short ~1.5 m-radius curve; end points and washboard teeth stay exact.
  *
  * Difficulty ramps with distance (difficultyAt): noise amplitude, slope
  * limits, feature intensity/probabilities and gap widths all grow from the
- * start plateau to RAMP_END_X.
+ * start plateau to RAMP_END_X. The opening is deliberately gentle (S6T #7:
+ * small crests, no launch lips before LAUNCH_LIP_MIN_X) and the ramp is
+ * short enough that the 100–600 m stretch is not flat (S6T #8: short gaps
+ * from ~90 m, crest height capped at 2 + 1.5 d).
  *
  * Only +, -, *, /, sqrt and floor are used (no Math.sin/cos/exp, whose last
  * bits vary by engine), so terrain is identical on every platform.
@@ -47,6 +52,7 @@ import { MAX_TERRAIN_POINTS_TOTAL, MAX_TERRAIN_SPANS } from '../model/validate';
 import { CHUNK_WIDTH, chunkSpans, makeChunk, type TerrainChunk, type TerrainSource } from './chunks';
 import { layerAt, type NoiseLayer } from './noise';
 import { hash32, normalizeSeed, Rng, type TerrainSeed } from './prng';
+import { roundCrests } from './rounding';
 import { clampSlopes, type SlopeLimits } from './slope';
 
 // ------------------------------------------------------------------ tuning
@@ -61,9 +67,13 @@ export const BASE_Y = 10;
 export const START_FLAT_END = 20;
 /** Noise fades in between START_FLAT_END and this x (m). */
 export const NOISE_FULL_X = 120;
-/** Difficulty is 0 before RAMP_START_X and 1 after RAMP_END_X (linear between). */
-export const RAMP_START_X = 80;
-export const RAMP_END_X = 1680;
+/**
+ * Difficulty is 0 before RAMP_START_X and 1 after RAMP_END_X (linear
+ * between). S6T #8: was 80 -> 1680 (d = 0.5 only at ~880 m: 100-600 m was
+ * flat and boring); now d = 0.5 at 520 m.
+ */
+export const RAMP_START_X = 40;
+export const RAMP_END_X = 1000;
 /** Base heightfield sample spacing (m), on a global grid. */
 export const SAMPLE_STEP = 2;
 
@@ -78,13 +88,30 @@ export const WASHBOARD_FLANK_SLOPE = WASHBOARD.height / (WASHBOARD.pitch / 2);
  * but the far side is never higher than the take-off lip, so a cart at a
  * moderate speed clears it.
  */
-export const GAP_MIN = 1.2;
+export const GAP_MIN = 1.0;
 export const GAP_MAX = 3;
+/** S6T #8: early gaps are short — GAP_MIN..EARLY_GAP_MAX wide while d < EARLY_GAP_DIFFICULTY. */
+export const EARLY_GAP_MAX = 1.5;
+export const EARLY_GAP_DIFFICULTY = 0.3;
 
 /** Features only from this block on (block 0 is the start plateau). */
 export const FIRST_FEATURE_BLOCK = 1;
-/** Gaps need at least this difficulty (≈ x 240 m). */
-export const GAP_MIN_DIFFICULTY = 0.1;
+/** Gaps need at least this block difficulty (S6T #8: block 2, x 80–120 m — was 0.1, ≈ 240 m). */
+export const GAP_MIN_DIFFICULTY = 0.04;
+/** S6T #7: no launch lips in blocks starting before this x (m). */
+export const LAUNCH_LIP_MIN_X = 120;
+/**
+ * S6T #7: the gentle opening. While d < EASY_DIFFICULTY crests are
+ * EASY_CREST_HEIGHT tall with a drop slope <= EASY_CREST_DOWN, and launch
+ * lips drop at most EASY_LIP_DROP m at a slope <= EASY_LIP_DROP_SLOPE.
+ */
+export const EASY_DIFFICULTY = 0.15;
+export const EASY_CREST_HEIGHT = { min: 0.8, max: 1.8 } as const;
+export const EASY_CREST_DOWN = 0.8;
+export const EASY_LIP_DROP = 0.8;
+export const EASY_LIP_DROP_SLOPE = 1.2;
+/** S6T #8: crest height never exceeds 2 + 1.5 d (was up to 5 m at d = 1: random death). */
+export const crestHeightCap = (d: number): number => 2 + 1.5 * d;
 
 /**
  * Per-segment slope limits (the clamp), y-down, driving left -> right:
@@ -218,12 +245,12 @@ interface Shape {
 }
 
 /** Feature weights by difficulty (the grammar). */
-export function featureWeights(d: number, allowGap: boolean): Record<FeatureKind, number> {
+export function featureWeights(d: number, allowGap: boolean, allowLaunchLip = true): Record<FeatureKind, number> {
   return {
-    none: 3 - 2 * d,
-    valley: 2,
+    none: 2 - 1.5 * d,
+    valley: 1.5,
     crest: 1 + d,
-    launchLip: 1 + d,
+    launchLip: allowLaunchLip ? 1 + d : 0,
     washboard: 1.2,
     kicker: 0.8 + d,
     gap: allowGap ? 0.3 + 1.2 * d : 0,
@@ -270,10 +297,11 @@ function shapeFeature(
       return { length, pts, params: { depth, length } };
     }
     case 'crest': {
+      const easy = d < EASY_DIFFICULTY;
       const up = Math.min(rng.range(0.3, 0.45 + 0.15 * d), 0.95 * rise);
-      const down = Math.min(rng.range(0.9, 1.3 + 0.9 * d), 0.95 * fall);
+      const down = Math.min(rng.range(0.9, 1.3 + 0.9 * d), 0.95 * fall, easy ? EASY_CREST_DOWN : Infinity);
       const recoverSlope = Math.min(0.2, 0.95 * rise);
-      let height = rng.range(1.5, 3 + 2 * d);
+      let height = easy ? rng.range(EASY_CREST_HEIGHT.min, EASY_CREST_HEIGHT.max) : Math.min(rng.range(1.5, 3 + 2 * d), crestHeightCap(d));
       let extra = rng.range(0.3, 1 + d);
       const top = rng.range(2, 4);
       if (!(up > 0.1 && down > 0.3 && recoverSlope > 0.05)) return null;
@@ -301,8 +329,9 @@ function shapeFeature(
       let rise1 = rng.range(0.8, 1.6 + 1.2 * d);
       const s1 = Math.min(0.3, 0.95 * rise);
       const s2 = Math.min(rng.range(0.5, 0.7 + 0.2 * d), 0.95 * rise);
-      let drop = rng.range(0.5, 1.5 + 1.5 * d);
-      const sd = Math.min(rng.range(1.4, 2 + 0.6 * d), 0.95 * fall);
+      const easy = d < EASY_DIFFICULTY;
+      let drop = Math.min(rng.range(0.5, 1.5 + 1.5 * d), easy ? EASY_LIP_DROP : Infinity);
+      const sd = Math.min(rng.range(1.4, 2 + 0.6 * d), 0.95 * fall, easy ? EASY_LIP_DROP_SLOPE : Infinity);
       const rs = Math.min(0.2, 0.95 * rise);
       if (!(s1 > 0.05 && s2 > 0.05 && sd > 0.3 && rs > 0.05)) return null;
       const lengthOf = () => approach + rise1 / 2 / s1 + rise1 / 2 / s2 + (rise1 + drop) / sd + Math.max(4, drop / rs);
@@ -366,7 +395,7 @@ function shapeFeature(
       const lipRise = 0.25;
       const lipSlope = 0.25;
       if (lipSlope > 0.95 * rise) return null;
-      const width = rng.range(GAP_MIN, Math.min(GAP_MAX, 1.6 + 1.4 * d));
+      const width = rng.range(GAP_MIN, d < EARLY_GAP_DIFFICULTY ? EARLY_GAP_MAX : Math.min(GAP_MAX, 1.6 + 1.4 * d));
       // Landing side lower than the take-off edge (easier to clear), never
       // higher — even when the anchor line itself climbs across the gap.
       const q = Math.max(rng.range(0, 0.3 + 0.7 * d), -m * width - lipRise + 0.05);
@@ -402,7 +431,29 @@ export interface BlockGeometry {
   lines: Vec2[][];
   /** Block 0 only: the steep backstop left of the start plateau (its own span). */
   wallBefore?: Vec2[];
+  /**
+   * Gap blocks only: the bottoms of the two gap side walls (S6T backlog #1).
+   * `lines` stay the driving surface; `blockLines()` attaches the walls (the
+   * take-off line ends at `[0]`, the landing line starts at `[1]`).
+   */
+  gapWalls?: [Vec2, Vec2];
   feature: FeatureInstance | null;
+}
+
+/** Gap side walls lean this far into the hole over their depth (span x must strictly increase). */
+export const GAP_WALL_LEAN = 0.05;
+
+/**
+ * A block's terrain polylines as they go to physics / rendering: `lines`
+ * with the gap side walls attached (down to ENDLESS_KILL_Y), so a wheel that
+ * drops into a gap cannot slide under the landing edge and get trapped.
+ */
+export function blockLines(g: BlockGeometry): Vec2[][] {
+  if (!g.gapWalls || g.lines.length !== 2) return g.lines.map((l) => [...l]);
+  return [
+    [...g.lines[0]!, { ...g.gapWalls[0] }],
+    [{ ...g.gapWalls[1] }, ...g.lines[1]!],
+  ];
 }
 
 /** Start-wall geometry: a near-vertical 2-point span like the S0 spike's walls. */
@@ -410,6 +461,20 @@ const START_WALL: Vec2[] = [
   { x: 0, y: BASE_Y - 6 },
   { x: 0.1, y: BASE_Y },
 ];
+
+/** Feature weights of block k (difficulty, gap and launch-lip gates). */
+function blockWeights(k: number): Record<FeatureKind, number> {
+  const d = blockDifficulty(k);
+  return featureWeights(d, d >= GAP_MIN_DIFFICULTY, k * BLOCK_WIDTH >= LAUNCH_LIP_MIN_X);
+}
+
+/** Kinds that give the player something to do (valleys and plain blocks do not). */
+export const isHazardKind = (k: FeatureKind): boolean => k !== 'none' && k !== 'valley';
+
+/** Block k's first (raw) feature-kind draw, before the no-three-plain-blocks rule. */
+function rawKind(seed: number, k: number): FeatureKind {
+  return new Rng(hash32(seed, k, SALT_FEATURE)).weighted(blockWeights(k));
+}
 
 /**
  * Generate block k (k >= 0) — a pure function of (seed, k). `forceNone`
@@ -432,7 +497,12 @@ export function generateBlock(seedIn: TerrainSeed, k: number, forceNone = false)
   // ---- choose the feature (the grammar)
   let kind: FeatureKind = 'none';
   if (!forceNone && k >= FIRST_FEATURE_BLOCK) {
-    kind = rng.weighted(featureWeights(d, d >= GAP_MIN_DIFFICULTY));
+    kind = rng.weighted(blockWeights(k));
+    // S6T excitement: never three plain blocks in a row. Uses the neighbours'
+    // RAW draws (pure, O(1)): if both were plain, this block must carry a hazard.
+    if (!isHazardKind(kind) && k - 2 >= FIRST_FEATURE_BLOCK && !isHazardKind(rawKind(seed, k - 1)) && !isHazardKind(rawKind(seed, k - 2))) {
+      kind = rng.weighted({ ...blockWeights(k), none: 0, valley: 0 });
+    }
   }
   // Placement and shape come from a second stream so the kind draw is stable.
   const frng = new Rng(hash32(seed, k, SALT_FEATURE + 1));
@@ -529,11 +599,27 @@ export function generateBlock(seedIn: TerrainSeed, k: number, forceNone = false)
     if (forceNone) throw new Error(`generateBlock: base terrain infeasible (seed ${seed}, block ${k})`);
     return generateBlock(seed, k, true);
   }
+  // S6T #10: round sharp crests (end points — connectors, gap edges — stay
+  // put; the washboard keeps its exact spec teeth). Chords stay between the
+  // original slopes, so the clamp still holds.
+  if (feature) {
+    const f = feature;
+    const keep = f.kind === 'washboard' ? (p: Vec2) => p.x >= f.x0 - 1e-9 && p.x <= f.x1 + 1e-9 : undefined;
+    for (let i = 0; i < lines.length; i++) lines[i] = roundCrests(lines[i]!, keep ? { keep } : {});
+  } else {
+    for (let i = 0; i < lines.length; i++) lines[i] = roundCrests(lines[i]!);
+  }
   const count = lines.reduce((n, l) => n + l.length, 0);
   if (count > MAX_BLOCK_POINTS) throw new Error(`generateBlock: ${count} points exceeds MAX_BLOCK_POINTS`);
 
   const out: BlockGeometry = { index: k, lines, feature };
   if (k === 0) out.wallBefore = START_WALL.map((p) => ({ ...p }));
+  if (lines.length === 2) {
+    out.gapWalls = [
+      { x: lines[0]!.at(-1)!.x + GAP_WALL_LEAN, y: ENDLESS_KILL_Y },
+      { x: lines[1]![0]!.x - GAP_WALL_LEAN, y: ENDLESS_KILL_Y },
+    ];
+  }
   return out;
 }
 
@@ -650,7 +736,7 @@ export function generateLevel(seedIn: TerrainSeed, length: number, opts: Generat
     const g = generateBlock(seed, k);
     if (g.wallBefore) spans.push({ id: 'start-wall', points: g.wallBefore });
     if (g.feature) features.push(g.feature);
-    g.lines.forEach((line, i) => {
+    blockLines(g).forEach((line, i) => {
       if (i === 0 && current) current.push(...line);
       else {
         flush();
@@ -690,7 +776,9 @@ export function generateLevel(seedIn: TerrainSeed, length: number, opts: Generat
     goal: fin.goal,
     props: [{ id: 'blender', art: 'blender', position: fin.blenderAt }],
     zones: [],
-    killY: maxY + 20,
+    // Gap walls reach down to ENDLESS_KILL_Y, which is below every surface
+    // point by construction, so it is the kill plane here too.
+    killY: Math.max(ENDLESS_KILL_Y, maxY),
   };
   return { level, features, blocks };
 }
@@ -719,10 +807,11 @@ export class ProceduralChunkSource implements TerrainSource {
     const g = generateBlock(this.seed, index);
     const local: Vec2[][] = [];
     if (g.wallBefore) local.push(g.wallBefore);
-    g.lines.forEach((line, i) => {
+    const lines = blockLines(g);
+    lines.forEach((line, i) => {
       const l = [...line];
       if (i === 0 && index > 0) l.unshift(connectorPoints(this.seed, index)[0]);
-      if (i === g.lines.length - 1) l.push(connectorPoints(this.seed, index + 1)[1]);
+      if (i === lines.length - 1) l.push(connectorPoints(this.seed, index + 1)[1]);
       local.push(l);
     });
     return makeChunk(index, chunkSpans(local, this.chunkWidth).get(index) ?? [], this.chunkWidth);

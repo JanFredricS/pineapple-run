@@ -17,6 +17,7 @@ import {
   hudReduce,
   initialHud,
   releaseButton,
+  stuckHint,
   type HudAction,
   type HudState,
   type RunMode,
@@ -39,6 +40,8 @@ export interface RunControls {
    * keeps the cart driving. Same contract as src/run/input bindTouchButton.
    */
   cancelInput?(): void;
+  /** S6T #5: restart the run from scratch (R key, the "Stuck?" hint's Retry). */
+  retry?(): void;
 }
 
 /**
@@ -54,6 +57,8 @@ export interface RunTelemetry {
    * (which counts pineapples not yet declared lost).
    */
   aboard(): number;
+  /** S6T #5: the cart has barely moved for a while (RunSession.stuck). Polled per frame. */
+  stuck?(): boolean;
 }
 
 export interface RunEndInfo {
@@ -107,11 +112,18 @@ export function mountRunHud(host: HTMLElement, opts: RunHudOptions): RunHud {
   const hint = el('div', { class: 'pr-hud__hint' });
   const release = button('', () => dispatch({ type: 'releaseRequested' }), { cls: 'pr-btn--primary pr-release', attrs: { 'data-testid': 'release' } });
   const giveUp = button('Give Up', () => dispatch({ type: 'giveUpRequested' }), { cls: 'pr-giveup', icon: STOP_SVG, attrs: { 'data-testid': 'give-up' } });
+  const stuckText = el('span', { text: 'Stuck?' });
+  const stuckRetry = opts.controls.retry
+    ? button('Retry (R)', () => opts.controls.retry?.(), { cls: 'pr-btn--primary pr-stuck__retry', attrs: { 'data-testid': 'stuck-retry' } })
+    : null;
+  const stuckBox = el('div', { class: 'pr-hud__hint pr-stuck', role: 'status', 'data-testid': 'stuck-hint' }, [stuckText, stuckRetry]);
+  stuckBox.hidden = true;
   const banner = el('div', { class: 'pr-hud__banner', role: 'status' });
   banner.hidden = true;
 
-  const tl = el('div', { class: 'pr-hud__tl' }, [countChip, opts.mode === 'endless' ? distChip : null, hint]);
-  const tc = el('div', { class: 'pr-hud__tc' }, [release]);
+  const tl = el('div', { class: 'pr-hud__tl' }, [countChip, opts.mode === 'endless' ? distChip : null, hint, stuckBox]);
+  // S6T #13: Release sits at the bottom centre, clear of the funnel (framed above it)
+  const tc = el('div', { class: 'pr-hud__bc' }, [release]);
   const tr = el('div', { class: 'pr-hud__tr' }, [timer, giveUp, opts.sound ? soundToggle(opts.sound) : null]);
 
   // ------------------------------------------------------ drive buttons
@@ -193,6 +205,11 @@ export function mountRunHud(host: HTMLElement, opts: RunHudOptions): RunHud {
       k.preventDefault();
       dispatch({ type: 'releaseRequested' });
     }
+    // S6T #5: R restarts the run (any phase; not while typing in a field)
+    if (k.code === 'KeyR' && !k.repeat && !k.ctrlKey && !k.metaKey && !k.altKey && opts.controls.retry && (k.target as { tagName?: string } | null)?.tagName !== 'INPUT') {
+      k.preventDefault();
+      opts.controls.retry();
+    }
   });
 
   // --------------------------------------------------------------- render
@@ -223,6 +240,10 @@ export function mountRunHud(host: HTMLElement, opts: RunHudOptions): RunHud {
     right.disabled = !drive;
     keys.hidden = !drive;
 
+    const st = stuckHint(state);
+    stuckBox.hidden = st === '';
+    stuckText.textContent = st;
+
     const b = endBanner(state);
     banner.hidden = b === '';
     banner.textContent = b;
@@ -250,6 +271,10 @@ export function mountRunHud(host: HTMLElement, opts: RunHudOptions): RunHud {
       const m = formatDistance(endInfo ? endInfo.furthestMetres : (opts.telemetry?.furthestMetres() ?? 0));
       if (m !== lastDist) distText.textContent = lastDist = m;
       renderAboard();
+    }
+    if (opts.telemetry?.stuck) {
+      const stuck = opts.telemetry.stuck();
+      if (stuck !== state.stuck) dispatch({ type: 'stuck', stuck });
     }
     raf = requestAnimationFrame(tick);
   };

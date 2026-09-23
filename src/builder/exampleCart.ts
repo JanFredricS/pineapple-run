@@ -28,7 +28,7 @@ const PARTS: CartPart[] = [
   // two bottle-cap wheels, radius 25 px, resting on y = 0
   { id: 'wheel-l', kind: 'wheel', center: { x: 40, y: -25 }, radius: 25 },
   { id: 'wheel-r', kind: 'wheel', center: { x: 190, y: -25 }, radius: 25 },
-  // four umbrella shocks, two per wheel (rail knee + bed end -> wheel centre)
+  // four coil-spring shocks, two per wheel (rail knee + bed end -> wheel centre)
   { id: 'shock-l1', kind: 'shock', a: { x: 43, y: -96 }, b: { x: 40, y: -25 } },
   { id: 'shock-l2', kind: 'shock', a: { x: 67, y: -43 }, b: { x: 40, y: -25 } },
   { id: 'shock-r1', kind: 'shock', a: { x: 187, y: -96 }, b: { x: 190, y: -25 } },

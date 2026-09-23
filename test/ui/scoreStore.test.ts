@@ -152,6 +152,15 @@ describe('buildResults', () => {
     expect(storage.data.has(SCORE_STORAGE_KEY)).toBe(false);
   });
 
+  it('level allLost (S6T #16): unscored like a give-up, but flagged so the screen says why', () => {
+    const { store, storage } = setup();
+    const m = buildResults({ levelId: 'beach', outcome: { type: 'allLost', simTime: 30 } }, store);
+    expect(m).toMatchObject({ kind: 'level', gaveUp: true, allLost: true, delivered: 0, saved: false, nextUnlocked: false });
+    expect(storage.data.has(SCORE_STORAGE_KEY)).toBe(false);
+    const g = buildResults({ levelId: 'beach', outcome: { type: 'gaveUp', simTime: 30 } }, store);
+    expect(g).toMatchObject({ allLost: false });
+  });
+
   it('0 delivered does not unlock the next course', () => {
     const { store } = setup();
     const m = buildResults({ levelId: 'beach', outcome: { type: 'goalReached', simTime: 20, delivered: 0 } }, store);

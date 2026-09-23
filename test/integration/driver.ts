@@ -30,6 +30,25 @@ export interface DriveResult {
   maxX: number;
 }
 
+/**
+ * S6T #6: the reference expert line for the recovered original course (kept
+ * vertex-exact): hold 9 m/s — fast enough to clear the launch lip at 82 m
+ * and the dip behind it, slow enough not to cartwheel on the first hill —
+ * and ease to 6 m/s for the last 55 m. Measured with the example cart:
+ * 10/15 delivered, 38.3 s. The switch point is forgiving (6 m/s from
+ * anywhere in 185–215 m, or 6.5 m/s: 9–10 delivered), the cruise speed is
+ * not: 8.8 and 9.0 m/s finish, 8.7, 8.9 and 9.1–9.3 get stuck (a sweep of
+ * 105 nearby lines: 25 reach the goal). That knife edge is why the course is
+ * labelled Bonus · Expert.
+ */
+export const ORIGINAL_EXPERT_LINE: readonly PaceNote[] = [
+  { x: 0, speed: 9 },
+  { x: 200, speed: 6 },
+];
+
+/** "Flooring it": a pace plan that never brakes (the player who just holds →). */
+export const FLOOR_IT: readonly PaceNote[] = [{ x: -Infinity, speed: Infinity }];
+
 /** Start, settle 1 s, Release, let the load drop 3 s, then drive by pace notes until the run ends. */
 export function runWithPace(s: RunSession, pace: readonly PaceNote[], maxSeconds = 150): DriveResult {
   s.start();

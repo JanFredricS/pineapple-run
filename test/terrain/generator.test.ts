@@ -9,6 +9,7 @@ import {
   blockDifficulty,
   ENDLESS_KILL_Y,
   GAP_MAX,
+  GAP_WALL_LEAN,
   GAP_MIN,
   generateBlock,
   generateLevel,
@@ -24,11 +25,24 @@ import {
   START_CART,
   START_FLAT_END,
   WASHBOARD,
+  crestHeightCap,
+  EARLY_GAP_DIFFICULTY,
+  EARLY_GAP_MAX,
+  EASY_CREST_DOWN,
+  EASY_CREST_HEIGHT,
+  EASY_DIFFICULTY,
+  EASY_LIP_DROP,
+  EASY_LIP_DROP_SLOPE,
+  LAUNCH_LIP_MIN_X,
   type FeatureInstance,
 } from '../../src/terrain/generator';
 import { maxSlopeViolation } from '../../src/terrain/slope';
+import { CREST_SLOPE_DELTA, sharpestCrest } from '../../src/terrain/rounding';
 
-const groundSpans = (level: LevelDef) => level.terrain.spans.filter((s) => !s.id.endsWith('-wall'));
+/** Gap side walls (S6T #1) run from a gap edge down to ENDLESS_KILL_Y: not driving surface. */
+const isWallPoint = (p: Vec2) => p.y >= ENDLESS_KILL_Y - 1e-9;
+const groundSpans = (level: LevelDef) =>
+  level.terrain.spans.filter((s) => !s.id.endsWith('-wall')).map((s) => ({ ...s, points: s.points.filter((p) => !isWallPoint(p)) }));
 const pointsIn = (level: LevelDef, x0: number, x1: number): Vec2[] =>
   groundSpans(level).flatMap((s) => s.points.filter((p) => p.x >= x0 - 1e-9 && p.x <= x1 + 1e-9));
 
@@ -231,7 +245,52 @@ describe('feature grammar', () => {
       expect(right).toBeDefined();
       expect(pointsIn(level, f.gapX0! + 1e-6, f.gapX1! - 1e-6)).toEqual([]);
       expect(right!.points[0]!.y).toBeGreaterThanOrEqual(left!.points.at(-1)!.y - 1e-9);
-      expect(f.x0).toBeGreaterThan(200); // no gaps in the easy opening
+      // S6T #1: both edges carry a side wall down to the kill plane, leaning into the hole
+      const raw = (id: string) => level.terrain.spans.find((s) => s.id === id)!.points;
+      expect(raw(left!.id).at(-1)).toEqual({ x: f.gapX0! + GAP_WALL_LEAN, y: ENDLESS_KILL_Y });
+      expect(raw(right!.id)[0]).toEqual({ x: f.gapX1! - GAP_WALL_LEAN, y: ENDLESS_KILL_Y });
+      // S6T #8: gaps from block 2 (~90 m); short (<= EARLY_GAP_MAX) until d = EARLY_GAP_DIFFICULTY
+      expect(f.x0).toBeGreaterThanOrEqual(2 * BLOCK_WIDTH);
+      if (blockDifficulty(f.block) < EARLY_GAP_DIFFICULTY) expect(width).toBeLessThanOrEqual(EARLY_GAP_MAX + 1e-9);
+    }
+    expect(Math.min(...gaps.map((g) => g.f.x0))).toBeLessThan(100);
+  });
+
+  it('S6T #7: a gentle opening — no launch lips before 120 m, small early crests and lips', () => {
+    for (const { f } of ofKind('launchLip')) {
+      expect(f.x0).toBeGreaterThanOrEqual(LAUNCH_LIP_MIN_X);
+      if (blockDifficulty(f.block) < EASY_DIFFICULTY) {
+        expect(f.params.drop!).toBeLessThanOrEqual(EASY_LIP_DROP + 1e-9);
+        expect(f.params.dropSlope!).toBeLessThanOrEqual(EASY_LIP_DROP_SLOPE + 1e-9);
+      }
+    }
+    const early = ofKind('crest').filter(({ f }) => blockDifficulty(f.block) < EASY_DIFFICULTY);
+    expect(early.length).toBeGreaterThan(10);
+    for (const { f } of early) {
+      expect(f.params.height!).toBeLessThanOrEqual(EASY_CREST_HEIGHT.max + 1e-9);
+      expect(f.params.down!).toBeLessThanOrEqual(EASY_CREST_DOWN + 1e-9);
+    }
+  });
+
+  it('S6T #8: crest height is capped at 2 + 1.5 d everywhere', () => {
+    const all = [...ofKind('crest').map((x) => x.f)];
+    for (let seed = 0; seed < 20; seed++) for (const k of [100, 500, 5000]) {
+      const f = generateBlock(seed, k).feature;
+      if (f?.kind === 'crest') all.push(f);
+    }
+    for (const f of all) expect(f.params.height!).toBeLessThanOrEqual(crestHeightCap(blockDifficulty(f.block)) + 1e-9);
+    expect(all.some((f) => blockDifficulty(f.block) === 1)).toBe(true);
+  });
+
+  it('S6T #10: no sharp crest is left (slope jump <= 0.6) outside the washboard teeth', () => {
+    for (const { gen } of corpus.slice(0, 40)) {
+      const wbs = gen.features.filter((f) => f.kind === 'washboard');
+      const keep = (p: Vec2) => wbs.some((f) => p.x >= f.x0 - 1e-9 && p.x <= f.x1 + 1e-9);
+      for (const s of groundSpans(gen.level)) {
+        // the finish lip (a fixed 2.5 m pit drop) is the goal, not a crest
+        const pts = s.points.filter((p) => p.x < gen.level.goal.lineX - 1);
+        expect(sharpestCrest(pts, keep)).toBeLessThanOrEqual(CREST_SLOPE_DELTA + 1e-9);
+      }
     }
   });
 

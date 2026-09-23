@@ -6,12 +6,20 @@
  * seconds since Release (0 before Release) — steps × 1/60, never wall clock.
  *
  * Terminal events (exactly one per run, nothing is emitted after it):
- *   - goalReached: level runs — a pineapple touched the blender base.
- *   - gaveUp:      the player gave up (any mode).
- *   - allLost:     ENDLESS runs only — the last pineapple was lost (emitted
- *                  right after the final pineappleLost with remaining 0).
- *                  Level runs never emit it: there the lost flag is advisory
- *                  and the run continues (S1 audit ruling, 2026-09-22).
+ *   - goalReached: level runs — a pineapple touched the blender base, then
+ *                  the goal settle window (GOAL_SETTLE_SECONDS) elapsed or
+ *                  every live pineapple crossed the goal line (S6T #2).
+ *                  simTime is the FIRST-touch time; delivered is counted at
+ *                  the end of the window.
+ *   - gaveUp:      the player gave up (any mode). Give Up during the goal
+ *                  settle window finalises goalReached instead.
+ *   - allLost:     endless — the last pineapple was lost (emitted right after
+ *                  the final pineappleLost with remaining 0).
+ *                  Level runs (S6T #16): only once NOTHING is recoverable —
+ *                  every pineapple is lost AND (the cart is gone or no
+ *                  pineapple body is left in the world) — for
+ *                  LEVEL_ALL_LOST_SECONDS. While the cart and a lost pile
+ *                  both exist, the lost flag stays advisory (S1 ruling).
  */
 
 export type RunEvent =

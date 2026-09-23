@@ -436,6 +436,15 @@
   transform: translateX(-50%);
   align-items: center;
 }
+.pr-hud__bc {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--pr-gap) + var(--pr-safe-b) + 28px); /* above the key hint */
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
 .pr-chip {
   background: var(--pr-hud-glass);
   border: 1px solid var(--pr-hud-edge);
@@ -483,6 +492,18 @@
   font-weight: 700;
   color: rgba(255, 255, 255, 0.95);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.pr-stuck {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  font-size: 1em;
+  background: var(--pr-hud-glass);
+  border-radius: 12px;
+  padding: 0.3em 0.4em 0.3em 0.8em;
+}
+.pr-stuck__retry {
+  min-height: 40px;
 }
 .pr-hud__banner {
   position: absolute;

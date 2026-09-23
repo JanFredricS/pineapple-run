@@ -10,7 +10,7 @@
  *      overlay drives the manual pause cause, INTEGRATION #8).
  *
  * Drive = keyboard (S1 DriveInput: ←/→, A/D) OR the HUD's touch buttons.
- * Escape goes back to the builder. Audio goes through the AudioHooks seam
+ * Escape goes back to the builder; R restarts the run (S6T #5). Audio goes through the AudioHooks seam
  * (S6V: the App passes S7's GameAudio adapted by gameAudioHooks; every hook
  * is wrapped by safeHooks, so audio can never break the run).
  */
@@ -34,6 +34,7 @@ import { el } from '../ui/dom';
 import { isPortraitBlocked, onPortraitChange } from '../ui/orientation';
 import type { DriveIntent } from '../ui/screens/runHud';
 import type { SoundControl } from '../ui/sound';
+import { blendCamera, bodiesBox, boxOf, READY_BLEND_SECONDS, readyFrame, type Box } from './framing';
 import { NO_AUDIO, RunAudioFeed, safeHooks, type AudioHooks } from './audioHooks';
 import { mountMissingCourse } from './buildScreen';
 import { mountScreenError } from './errorScreen';
@@ -229,7 +230,14 @@ async function mountRunOnce(
     renderer.setLevel(level);
     renderer.setCartDesign(design); // INTEGRATION #11: always
     renderer.resetSource(); // RESIDUALS R5: new world
-    renderer.setFunnel(funnelGeometry(level.funnel, TOTAL_PINEAPPLES));
+    const funnel = funnelGeometry(level.funnel, TOTAL_PINEAPPLES);
+    renderer.setFunnel(funnel);
+    // S6T #13: before Release, frame the whole funnel + the waiting cart
+    // (real shape AABBs; the cart alone when it was driven too far away)
+    const funnelBox = boxOf([...funnel.walls[0], ...funnel.walls[1]]);
+    const cartBox = (): Box | null => bodiesBox(s.world.manifest().bodies, s.controller.cartBodyHandles(), (id) => s.world.getTransform(id));
+    let readyView: { center: { x: number; y: number }; zoom: number } | null = null;
+    let sinceRelease: number | null = null;
     app.stage.addChild(renderer.view);
     cleanup.push(() => app.stage.removeChild(renderer.view));
     const camera: Camera = { center: s.controller.camera.position, zoom: 1, viewportWidth: 1, viewportHeight: 1 };
@@ -250,7 +258,10 @@ async function mountRunOnce(
     let goalFill = 0;
     cleanup.push(
       s.on((e: RunEvent) => {
-        if (e.type === 'released') renderer.setFunnelOpen(true);
+        if (e.type === 'released') {
+          renderer.setFunnelOpen(true);
+          sinceRelease = 0;
+        }
         if (e.type === 'goalReached') {
           goalAt = 0;
           goalFill = Math.min(1, e.delivered / TOTAL_PINEAPPLES);
@@ -262,7 +273,7 @@ async function mountRunOnce(
     // ----------------------------------------------------------------- HUD
     const hud = mountRunHudScreen(hudHost, state, dispatch, {
       source: s,
-      telemetry: { furthestMetres: () => s.furthestMetres(), aboard: () => s.aboard() },
+      telemetry: { furthestMetres: () => s.furthestMetres(), aboard: () => s.aboard(), stuck: () => s.stuck },
       controls: {
         release: () => void s.release(),
         giveUp: () => void s.giveUp(),
@@ -294,6 +305,7 @@ async function mountRunOnce(
         s.step();
         audioFeed.step(s.controller.rightmostCartBody()?.x ?? null, s.furthestMetres());
         if (goalAt !== null) goalAt += 1 / 60;
+        if (sinceRelease !== null && sinceRelease < READY_BLEND_SECONDS) sinceRelease += 1 / 60;
       },
       render(alpha) {
         const now = performance.now();
@@ -305,8 +317,11 @@ async function mountRunOnce(
         camera.viewportHeight = h;
         camera.zoom = Math.min(1.5, Math.max(0.5, w / (VIEW_WIDTH_M * 30)));
         camera.center = s.controller.camera.interpolated(alpha);
+        // ready phase: frame funnel + cart (tracks a cart driven before Release); then blend to follow
+        if (sinceRelease === null) readyView = readyFrame(funnelBox, cartBox(), w, h, camera.zoom);
+        const view = blendCamera(camera, readyView, sinceRelease);
         if (goalAt !== null) renderer.setGoal(goalFill * Math.min(1, goalAt / GOAL_FILL_SECONDS), goalAt < GOAL_FILL_SECONDS + 1 ? 1 : 0.3);
-        renderer.render(s.world.manifest(), s.world.snapshot(alpha), camera, dt);
+        renderer.render(s.world.manifest(), s.world.snapshot(alpha), view, dt);
         app.render();
       },
       onPauseChange(paused) {

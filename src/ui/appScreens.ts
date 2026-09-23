@@ -112,6 +112,8 @@ export function mountRunHudScreen(
   const target = parseRunTarget(state.levelId);
   return mountRunHud(host, {
     ...opts,
+    // S6T #5: Retry mid-run = a fresh run of the same course
+    controls: { ...opts.controls, retry: opts.controls.retry ?? (() => void dispatch({ type: 'startRun' })) },
     mode: target.kind,
     courseName: target.kind === 'level' ? (target.course?.name ?? target.levelId) : `Endless ${target.seed}`,
     onEnded: (info) => {

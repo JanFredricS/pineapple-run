@@ -4,7 +4,7 @@
  * `resolveAttachments`, its bodies emitted as a SceneManifest, and poses
  * computed analytically from time — the cart follows a bumpy terrain with a
  * gap, wheels spin by distance, the sprung front wheel tracks the ground so
- * the umbrella shocks visibly compress, and a load of pineapples jiggles in
+ * the coil-spring shocks visibly compress, and a load of pineapples jiggles in
  * the bed. Deterministic in `time`. No physics.
  */
 

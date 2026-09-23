@@ -117,7 +117,7 @@ describe('classifyShape', () => {
   });
 });
 
-describe('umbrella shocks', () => {
+describe('coil-spring shocks', () => {
   const spec = resolveAttachments(MOCK_CART);
   const { bodies, ids } = manifestFromSpec(spec, 10);
   const manifest: SceneManifest = { revision: 1, bodies };

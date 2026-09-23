@@ -111,13 +111,13 @@ describe('art catalog', () => {
     }
   });
 
-  it('nine-slice cube border fits the texture; umbrella frames share one size', () => {
+  it('nine-slice cube border fits the texture; spring coil frames share one size', () => {
     const cube = parseSvgSize(ART.cube.svg);
     expect(ART.cube.border * 2).toBeLessThan(Math.min(cube.width, cube.height));
-    const sizes = [ART.umbrella.open, ART.umbrella.half, ART.umbrella.closed].map((f) => parseSvgSize(f.svg));
+    const sizes = [ART.spring.open, ART.spring.half, ART.spring.closed].map((f) => parseSvgSize(f.svg));
     expect(sizes[1]).toEqual(sizes[0]);
     expect(sizes[2]).toEqual(sizes[0]);
-    expect(ART.umbrella.axisY).toBe(sizes[0]!.height / 2);
+    expect(ART.spring.axisY).toBe(sizes[0]!.height / 2);
   });
 
   it('blender layout matches the part textures', () => {

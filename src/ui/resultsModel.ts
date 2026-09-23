@@ -17,6 +17,8 @@ export interface LevelResults {
   courseName: string;
   /** Run ended by Give Up (scored as 0 delivered, not saved). */
   gaveUp: boolean;
+  /** Run ended because every pineapple was lost with nothing recoverable (S6T #16). Implies gaveUp (unscored). */
+  allLost: boolean;
   seconds: number;
   delivered: number;
   rating: RatingView;
@@ -90,6 +92,7 @@ export function buildResults(input: ResultsInput, store: ScoreStore): ResultsMod
     levelId: target.levelId,
     courseName: target.course?.name ?? target.levelId,
     gaveUp: !scored,
+    allLost: e?.type === 'allLost',
     seconds,
     delivered: scored ? Math.max(0, Math.floor(delivered)) : 0,
     rating: ratingView(seconds, scored ? delivered : 0),

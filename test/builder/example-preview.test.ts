@@ -138,7 +138,7 @@ describe('validation messages', () => {
   };
 
   it('labels parts per kind in draw order', () => {
-    expect([...partLabels(d).values()]).toEqual(['Straw 1', 'Sugar cube 1', 'Umbrella shock 1']);
+    expect([...partLabels(d).values()]).toEqual(['Straw 1', 'Sugar cube 1', 'Coil spring 1']);
   });
 
   it('has readable text for every code in the closed error union', () => {
@@ -153,7 +153,7 @@ describe('validation messages', () => {
     const msgs = describeErrors(d, all);
     expect(msgs.map((m) => m.code)).toEqual(all.map((e) => e.code));
     expect(msgs[0]!.text).toMatch(/missing wheels/);
-    expect(msgs[1]!.text).toMatch(/^Umbrella shock 1: Both ends are loose/);
+    expect(msgs[1]!.text).toMatch(/^Coil spring 1: Both ends are loose/);
     expect(msgs[2]!.text).toMatch(/3 separate pieces/);
     // every island is highlighted; largest first (dim tone 0), detached pieces bright 1, 2, ...
     expect(msgs[2]!.partIds).toEqual(['x', 'y', 'z', 'b', 'c', 'a']);

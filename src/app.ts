@@ -73,6 +73,8 @@ export function transition(state: AppState, action: AppAction): AppState {
         };
       }
       if (action.type === 'backToBuild') return { name: 'build', levelId: state.levelId };
+      // S6T #5: Retry mid-run (R key / "Stuck?" hint) — a NEW run state, so it remounts fresh
+      if (action.type === 'startRun') return { name: 'run', levelId: state.levelId };
       return state;
     case 'results':
       if (action.type === 'backToBuild') return { name: 'build', levelId: state.levelId };

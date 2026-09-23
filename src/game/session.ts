@@ -22,8 +22,10 @@ import type { CartDesign } from '../model/cart';
 import type { LevelDef } from '../model/level';
 import type { RunEvent, RunEventListener, RunEventSource } from '../model/runEvents';
 import type { DriveDirection } from '../physics/compound';
+import { FIXED_DT } from '../physics/clock';
 import { PhysicsWorld } from '../physics/engine';
 import { RunController, type RunMode } from '../run/controller';
+import { StuckDetector } from '../run/stuck';
 import type { TerrainSource } from '../terrain/chunks';
 import { TerrainStreamer } from '../terrain/runtime';
 import { designBottomPx } from './startArea';
@@ -54,6 +56,8 @@ export class RunSession implements RunEventSource {
   readonly controller: RunController;
   /** Actual cart spawn (cartStart, lifted if the design reaches below its ground line). */
   readonly spawn: { x: number; y: number };
+  /** S6T #5: the cart has barely moved for a while (HUD shows "Stuck?"). */
+  readonly stuckDetector = new StuckDetector();
   private destroyed = false;
 
   private constructor(
@@ -142,6 +146,15 @@ export class RunSession implements RunEventSource {
     if (this.destroyed) return;
     this.controller.step();
     if (this.controller.steps % STREAM_EVERY_STEPS === 0) this.stream();
+    const c = this.controller;
+    const h = c.cart.bodies.get(c.chassisId);
+    const pos = !c.cartLost && h !== undefined && this.world.hasBody(h) ? this.world.getTransform(h) : null;
+    this.stuckDetector.sample(pos, FIXED_DT, c.phase === 'released' && !c.goalSettling);
+  }
+
+  /** S6T #5: the cart has moved less than STUCK_DISPLACEMENT for STUCK_SECONDS of live run. */
+  get stuck(): boolean {
+    return this.stuckDetector.stuck;
   }
 
   /**

@@ -26,8 +26,9 @@ import {
   type ThemeId,
 } from '../../src/model/level';
 import { funnelFor } from '../../src/game/startArea';
+import { roundCrests } from '../../src/terrain/rounding';
 
-export type FeatureKind = 'plateau' | 'valley' | 'crest' | 'drop' | 'ramp' | 'launchLip' | 'washboard' | 'kicker' | 'gap' | 'steps' | 'finish';
+export type FeatureKind = 'plateau' | 'valley' | 'crest' | 'drop' | 'ramp' | 'launchLip' | 'washboard' | 'kicker' | 'gap' | 'steps' | 'shortcut' | 'finish';
 
 export interface Feature {
   kind: FeatureKind;
@@ -51,9 +52,24 @@ export interface AuthoredLevel {
 /** Blender goal: solid body size (m); centre sits on the pit floor (S1 props: position = box centre). */
 export const BLENDER_SIZE: Readonly<Vec2> = { x: 1.5, y: 3.6 };
 /** Goal pit: depth below the lip, floor length, drop run, sensor height above the floor (m). */
-export const PIT = { depth: 2.5, floor: 9, dropRun: 1.5, sensor: 2.2, lineAfterLip: 0.3, blenderFromDrop: 6.5 } as const;
+/**
+ * Goal pit. `wall` is the far wall's height; `shelf` (S6T #17) is the flat
+ * ground that continues from the wall top past the level end, so the far side
+ * renders as solid bench/sand instead of a hairline wall into a void.
+ */
+export const PIT = { depth: 2.5, floor: 9, dropRun: 1.5, sensor: 2.2, lineAfterLip: 0.3, blenderFromDrop: 6.5, wall: 8, shelf: 30 } as const;
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
+
+/**
+ * Gap side walls (S6T backlog #1): every span end at a gap gets a wall
+ * from the edge straight down to the level's killY, leaning GAP_WALL_LEAN m
+ * into the hole over its whole depth (span x must strictly increase, and the
+ * one-sided chain's solid side then faces the gap). Without them a wheel
+ * that drops in slides sideways under the far span's surface and is trapped
+ * for good; with them it can only fall (and die cleanly) or be dragged out.
+ */
+export const GAP_WALL_LEAN = 0.05;
 
 export class Track {
   private spans: TerrainSpan[] = [];
@@ -66,6 +82,9 @@ export class Track {
   readonly cartStart: Vec2;
   private goal: LevelDef['goal'] | null = null;
   private spanNo = 0;
+  /** Span ids whose end / start borders a gap (walls are added in build(), once killY is known). */
+  private wallAfter = new Set<string>();
+  private wallBefore = new Set<string>();
 
   /**
    * Start wall at `x0`, ground at `groundY`; the cart starts `cartOffset`
@@ -101,6 +120,12 @@ export class Track {
   /** Target speed (m/s) for the scripted driver from here on. */
   speed(v: number): this {
     this.pace.push({ x: this.x, speed: v });
+    return this;
+  }
+
+  /** Target speed from an explicit x (braking points inside a long feature); notes are sorted in build(). */
+  speedAt(x: number, v: number): this {
+    this.pace.push({ x, speed: v });
     return this;
   }
 
@@ -169,6 +194,45 @@ export class Track {
     });
   }
 
+  /**
+   * Risk/reward SHORTCUT (S6T audit-1 #4): a take-off lip over a pool with a
+   * slow floor, and a far rim with a landing slope.
+   *
+   *   lip: rise `lipRise` over `lipRun`; entry: down `lipRise + depth` over
+   *   `entryRun` to the pool floor; `floor` (e.g. a washboard or a stair;
+   *   must end at the floor height); climb: up over `climbRun` to the rim,
+   *   `rimBelowLip` below the lip; landing: a cosine ease down `landDrop`
+   *   over `landRun`.
+   *
+   * Fast carts jump from the lip over the pool onto the landing slope (the
+   * shortcut: the slow floor is skipped); slow carts roll down into the pool,
+   * cross the floor and climb out (the safe detour). The ground under the
+   * jump is continuous and every slope is rollable, so the jump is optional.
+   * Tagged 'shortcut' (an annotation; the census finds it from geometry).
+   */
+  pool(o: {
+    lipRun: number;
+    lipRise: number;
+    entryRun: number;
+    depth: number;
+    floor: (t: Track) => void;
+    climbRun: number;
+    rimBelowLip: number;
+    landRun: number;
+    landDrop: number;
+  }): this {
+    return this.feature('shortcut', () => {
+      this.line(o.lipRun, -o.lipRise, 'launchLip');
+      const lipY = this.y;
+      this.line(o.entryRun, o.lipRise + o.depth);
+      const floorY = this.y;
+      o.floor(this);
+      if (Math.abs(this.y - floorY) > 1e-6) throw new Error('Track.pool: the floor must end at the floor height');
+      this.line(o.climbRun, lipY + o.rimBelowLip - this.y);
+      this.ease(o.landRun, o.landDrop);
+    });
+  }
+
   /** Staircase: n steps of `rise` (negative = up) each `tread` long, with a short `riser` run. */
   steps(n: number, tread: number, rise: number, riser = 0.3): this {
     return this.feature('steps', () => {
@@ -186,7 +250,9 @@ export class Track {
    */
   gap(width: number, dy = 0): this {
     return this.feature('gap', () => {
+      this.wallAfter.add(`span-${this.spanNo}`);
       this.endSpan();
+      this.wallBefore.add(`span-${this.spanNo}`);
       const x = this.x + width;
       const y = this.y + dy;
       this.pts = [{ x: r3(x), y: r3(y + 0.25) }, { x: r3(x + 0.35), y: r3(y) }];
@@ -221,7 +287,8 @@ export class Track {
       const pitX0 = this.x;
       this.push(this.x + PIT.floor, this.y);
       const pitX1 = this.x;
-      this.push(this.x + 0.1, this.y - 8);
+      this.push(this.x + 0.1, this.y - PIT.wall);
+      this.push(this.x + PIT.shelf, this.y);
       this.goal = {
         sensor: { x: pitX0, y: r3(floorY - PIT.sensor), width: r3(pitX1 - pitX0), height: PIT.sensor },
         lineX: r3(lipX + PIT.lineAfterLip),
@@ -239,22 +306,35 @@ export class Track {
   build(meta: { id: string; name: string; theme: ThemeId }): AuthoredLevel {
     if (!this.goal) throw new Error('Track: call finish() before build()');
     this.endSpan();
+    // S6T #10: round every sharp crest (src/terrain/rounding.ts), except the
+    // washboard's teeth (the texture IS the feature) and the goal pit's lip.
+    const sharp = this.features.filter((f) => f.kind === 'washboard' || f.kind === 'finish');
+    const keep = (p: Vec2) => sharp.some((f) => p.x >= f.x0 - 1e-6 && p.x <= f.x1 + 1e-6);
+    this.spans = this.spans.map((s) => ({ id: s.id, points: roundCrests(s.points, { keep, snap: (p) => ({ x: r3(p.x), y: r3(p.y) }) }) }));
     let maxY = -Infinity;
     for (const s of this.spans) for (const p of s.points) maxY = Math.max(maxY, p.y);
+    const killY = Math.ceil(maxY + 15);
+    const spans = this.spans.map((s) => {
+      const points = [...s.points];
+      if (this.wallBefore.has(s.id)) points.unshift({ x: r3(points[0]!.x - GAP_WALL_LEAN), y: killY });
+      if (this.wallAfter.has(s.id)) points.push({ x: r3(points[points.length - 1]!.x + GAP_WALL_LEAN), y: killY });
+      return { id: s.id, points };
+    });
     const funnel = funnelFor(this.cartStart);
     const level: LevelDef = {
       version: LEVEL_DEF_VERSION,
       id: meta.id,
       name: meta.name,
       theme: meta.theme,
-      terrain: { spans: this.spans, friction: DEFAULT_TERRAIN_FRICTION, restitution: DEFAULT_TERRAIN_RESTITUTION },
+      terrain: { spans, friction: DEFAULT_TERRAIN_FRICTION, restitution: DEFAULT_TERRAIN_RESTITUTION },
       cartStart: { ...this.cartStart },
       funnel: { x: r3(funnel.x), y: r3(funnel.y) },
       goal: this.goal,
       props: this.props,
       zones: [],
-      killY: Math.ceil(maxY + 15),
+      killY,
     };
-    return { level, features: this.features, pace: this.pace };
+    const pace = [...this.pace].sort((a, b) => a.x - b.x);
+    return { level, features: this.features, pace };
   }
 }
