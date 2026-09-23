@@ -3,7 +3,8 @@ import { resolveAttachments } from '../../src/model/attach';
 import { MAX_PARTS, type CartDesign, type CartPart } from '../../src/model/cart';
 import { validateCartDesign } from '../../src/model/validate';
 import { BUILD_AREA } from '../../src/builder/constants';
-import { applyStroke, clampToArea, hitTest, makeDraft, nextPartId, snapAngle } from '../../src/builder/edits';
+import { applyStroke, clampToArea, hitTest, makeDraft, maxRadiusInArea, nextPartId, snapAngle } from '../../src/builder/edits';
+import { FUNNEL_OFFSET_PX } from '../../src/game/startArea';
 import { initialEditorState, reduceEditor, type EditorAction, type EditorState } from '../../src/builder/editor';
 import { EXAMPLE_CART } from '../../src/builder/exampleCart';
 
@@ -45,6 +46,41 @@ describe('draft creation', () => {
     expect(lime).toEqual({ id: 'p1', kind: 'lime', center: P(100, -50), radius: 50 });
     const wheel = makeDraft('wheel', P(100, -50), P(100, -25), 'p2', opts).part;
     expect(wheel).toEqual({ id: 'p2', kind: 'wheel', center: P(100, -50), radius: 25 });
+  });
+
+  it('S6V: a corner-to-corner lime / wheel drag stays fully inside the build area', () => {
+    const A = BUILD_AREA;
+    const inside = (p: CartPart) =>
+      p.kind === 'lime' || p.kind === 'wheel'
+        ? p.center.x - p.radius >= A.minX && p.center.x + p.radius <= A.maxX && p.center.y - p.radius >= A.minY && p.center.y + p.radius <= A.maxY
+        : false;
+    const corners = [P(A.minX, A.minY), P(A.maxX, A.maxY), P(A.minX, A.maxY), P(A.maxX, A.minY)];
+    for (const tool of ['lime', 'wheel'] as const) {
+      // exactly corner-to-corner: the centre sits ON an edge -> radius 0 -> too small, never committed
+      const c2c = makeDraft(tool, corners[0]!, corners[1]!, 'p1', opts);
+      expect(inside(c2c.part)).toBe(true);
+      expect(c2c.tooSmall).toBe(true);
+      expect(applyStroke({ version: 1, parts: [] }, tool, corners[0]!, corners[1]!, opts).outcome.kind).toBe('rejected');
+      // near-corner press dragged far past the opposite corner
+      for (const [s, e] of [[P(A.minX + 12, A.minY + 12), P(A.maxX + 500, A.maxY + 500)], [P(A.maxX - 30.337, A.maxY - 9.994), P(-1e4, -1e4)]] as const) {
+        const d = makeDraft(tool, s, e, 'p1', opts);
+        expect(inside(d.part), JSON.stringify(d.part)).toBe(true);
+        expect(d.part.kind === tool && d.part.radius).toBe(maxRadiusInArea(d.part.kind === tool ? d.part.center : s));
+      }
+      // from the middle: the disc grows to the nearest edge (area height / 2), no further
+      const mid = P((A.minX + A.maxX) / 2, (A.minY + A.maxY) / 2);
+      const big = makeDraft(tool, mid, P(A.maxX, A.minY), 'p1', opts);
+      expect(big.part).toEqual({ id: 'p1', kind: tool, center: mid, radius: (A.maxY - A.minY) / 2 });
+      expect(big.label).toBe(`r ${(A.maxY - A.minY) / 2} px`);
+      expect(inside(big.part)).toBe(true);
+      // ...so its top never reaches the funnel outlet (above the area)
+      expect(mid.y - (big.part.kind === tool ? big.part.radius : 0)).toBeGreaterThan(FUNNEL_OFFSET_PX.y);
+      // a drag short of the edge is untouched, and the min-size rule is unchanged
+      expect(makeDraft(tool, mid, P(mid.x + 40, mid.y), 'p1', opts).part).toEqual({ id: 'p1', kind: tool, center: mid, radius: 40 });
+    }
+    // a custom (smaller) area clamps too
+    const area = { minX: 0, minY: -50, maxX: 100, maxY: 0 };
+    expect(makeDraft('wheel', P(10, -25), P(90, -25), 'p1', { snap: false, area }).part).toEqual({ id: 'p1', kind: 'wheel', center: P(10, -25), radius: 10 });
   });
 
   it('shock = segment between the two drag points', () => {

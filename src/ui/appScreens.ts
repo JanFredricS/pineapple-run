@@ -13,6 +13,7 @@ import { mountResultsScreen } from './screens/results';
 import { mountRunHud, type RunControls, type RunHud, type RunTelemetry } from './screens/runHud';
 import { mountSelectScreen } from './screens/select';
 import { mountTitleScreen } from './screens/title';
+import type { SoundControl } from './sound';
 import { showToast } from './toast';
 
 type Dispatch = (action: AppAction) => Promise<void> | void;
@@ -46,14 +47,25 @@ export function resultIdOf(state: Extract<AppState, { name: 'results' }>): strin
 
 const ALWAYS_CURRENT: MountContext = { isCurrent: () => true };
 
-export function mountAppScreen(host: HTMLElement, state: AppState, dispatch: Dispatch, ctx: MountContext = ALWAYS_CURRENT): Screen {
+export interface AppScreenOptions {
+  /** Mute toggle (S6V: the app's GameAudio); omitted = no button. */
+  sound?: SoundControl;
+}
+
+export function mountAppScreen(
+  host: HTMLElement,
+  state: AppState,
+  dispatch: Dispatch,
+  ctx: MountContext = ALWAYS_CURRENT,
+  opts: AppScreenOptions = {},
+): Screen {
   // A stale mount (superseded while its module loaded) renders nothing and,
   // crucially, never records a score.
   if (!ctx.isCurrent()) return { destroy() {} };
   const go = (a: AppAction) => void dispatch(a);
   switch (state.name) {
     case 'title':
-      return mountTitleScreen(host, { onPlay: () => go({ type: 'play' }) });
+      return mountTitleScreen(host, { onPlay: () => go({ type: 'play' }), ...(opts.sound ? { sound: opts.sound } : {}) });
     case 'select':
       return mountSelectScreen(host, {
         store: getScoreStore(),
@@ -82,6 +94,8 @@ export interface RunHudScreenOptions {
   telemetry?: RunTelemetry;
   touchControls?: 'auto' | 'always' | 'never';
   endDelayMs?: number;
+  /** Mute toggle in the HUD (S6V). */
+  sound?: SoundControl;
 }
 
 /**

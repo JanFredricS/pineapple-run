@@ -69,6 +69,17 @@ export interface PropDef {
   size?: Vec2;
 }
 
+/**
+ * The ONE rule for "this prop is a physics body" (S6V): `solid` AND a size
+ * with strictly positive, finite components. Shared by the validator (which
+ * rejects a solid prop failing it), the physics builder (src/run/props.ts,
+ * which builds exactly these) and the renderer (which draws a solid prop only
+ * when it is one of these), so the three can never disagree.
+ */
+export function hasSolidBody(p: Pick<PropDef, 'solid' | 'size'>): p is { solid: true; size: Vec2 } {
+  return p.solid === true && !!p.size && Number.isFinite(p.size.x) && Number.isFinite(p.size.y) && p.size.x > 0 && p.size.y > 0;
+}
+
 export interface LevelDef {
   version: typeof LEVEL_DEF_VERSION;
   id: string;

@@ -746,3 +746,22 @@ html.pr-portrait .pr-rotate,
   background: var(--pr-accent);
   color: var(--pr-accent-ink);
 }
+
+/* S6V: sound (mute) toggle — HUD top-right cluster and title screen corner. */
+.pr-sound {
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0.3em 0.5em;
+}
+.pr-sound .pr-ico {
+  width: 1.4em;
+  height: 1.4em;
+}
+.pr-sound[aria-pressed='true'] .pr-ico {
+  color: var(--pr-band-red);
+}
+.pr-title .pr-sound {
+  position: absolute;
+  top: calc(var(--pr-gap) + var(--pr-safe-t));
+  right: calc(var(--pr-gap) + var(--pr-safe-r));
+}

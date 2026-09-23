@@ -21,6 +21,7 @@ import {
   type HudState,
   type RunMode,
 } from '../hud';
+import { soundToggle, type SoundControl } from '../sound';
 import { ARROW_LEFT_SVG, ARROW_RIGHT_SVG, CLOCK_SVG, DISTANCE_SVG, PINEAPPLE_SVG, STOP_SVG } from '../icons';
 
 export type DriveIntent = -1 | 0 | 1;
@@ -30,6 +31,14 @@ export interface RunControls {
   release(): void;
   giveUp(): void;
   setDrive(direction: DriveIntent): void;
+  /**
+   * A drive touch was CANCELLED (pointercancel, or pointer capture lost while
+   * the finger was still held — a system gesture / interruption). The HUD has
+   * already released every touch it tracks; the host clears every other held
+   * input source too (keyboard: DriveInput.touchCancel()), so nothing stale
+   * keeps the cart driving. Same contract as src/run/input bindTouchButton.
+   */
+  cancelInput?(): void;
 }
 
 /**
@@ -71,6 +80,8 @@ export interface RunHudOptions {
   /** Touch drive buttons: 'auto' = coarse pointers only. */
   touchControls?: 'auto' | 'always' | 'never';
   courseName?: string;
+  /** Mute toggle (S6V), shown in the top-right cluster; omitted = no button. */
+  sound?: SoundControl;
 }
 
 export interface RunHud {
@@ -101,7 +112,7 @@ export function mountRunHud(host: HTMLElement, opts: RunHudOptions): RunHud {
 
   const tl = el('div', { class: 'pr-hud__tl' }, [countChip, opts.mode === 'endless' ? distChip : null, hint]);
   const tc = el('div', { class: 'pr-hud__tc' }, [release]);
-  const tr = el('div', { class: 'pr-hud__tr' }, [timer, giveUp]);
+  const tr = el('div', { class: 'pr-hud__tr' }, [timer, giveUp, opts.sound ? soundToggle(opts.sound) : null]);
 
   // ------------------------------------------------------ drive buttons
   const pressed = { left: new Set<number>(), right: new Set<number>() };
@@ -136,12 +147,23 @@ export function mountRunHud(host: HTMLElement, opts: RunHudOptions): RunHud {
       set.add(e.pointerId);
       emitDrive();
     });
+    // pointerup: only that finger. pointercancel: FULL clear (every finger on
+    // both buttons + the host's other inputs). lostpointercapture while the
+    // finger is still held is a cancellation too; after a normal pointerup
+    // the finger is already gone and it is a no-op (other fingers survive).
     const up = (e: PointerEvent) => {
       if (set.delete(e.pointerId)) emitDrive();
     };
+    const cancel = () => {
+      clearDrive();
+      opts.controls.cancelInput?.();
+    };
+    const lost = (e: PointerEvent) => {
+      if (set.has(e.pointerId)) cancel();
+    };
     b.addEventListener('pointerup', up);
-    b.addEventListener('pointercancel', up);
-    b.addEventListener('lostpointercapture', up);
+    b.addEventListener('pointercancel', cancel);
+    b.addEventListener('lostpointercapture', lost);
     b.addEventListener('contextmenu', (e) => e.preventDefault());
     return b;
   };

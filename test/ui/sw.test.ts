@@ -25,8 +25,14 @@ class FakeCaches {
       put: async (req: string | { url: string }, res: Response) => {
         store.set(typeof req === 'string' ? req : req.url, await res.text());
       },
-      match: async (req: string | { url: string }) => {
-        const body = store.get(typeof req === 'string' ? req : req.url);
+      match: async (req: string | { url: string }, opts?: { ignoreSearch?: boolean }) => {
+        let key = typeof req === 'string' ? req : req.url;
+        if (opts?.ignoreSearch) {
+          const u = new URL(key);
+          u.search = '';
+          key = u.href;
+        }
+        const body = store.get(key);
         return body === undefined ? undefined : new Response(body);
       },
     };
@@ -45,7 +51,17 @@ class FakeCaches {
 type Server = Record<string, { status: number; body: string }>;
 
 function deploy(version: string, opts: { missing?: string; manifestVersion?: string } = {}): Server {
-  const assets = ['assets/main-AAAAAA.js', 'assets/page-BBBBBB.js', 'assets/Box2D.compat-CCCCCC.wasm', 'assets/ui-DDDDDD.css', 'manifest.json', 'icons/icon-192.png'];
+  const assets = [
+    'assets/main-AAAAAA.js',
+    'assets/page-BBBBBB.js',
+    'assets/Box2D.compat-CCCCCC.wasm',
+    'assets/ui-DDDDDD.css',
+    'index.html',
+    'mapbuilder.html',
+    'audio-harness.html',
+    'manifest.json',
+    'icons/icon-192.png',
+  ];
   const server: Server = {
     [SCOPE]: { status: 200, body: `<html>${version}</html>` },
     [`${SCOPE}precache-manifest.json`]: { status: 200, body: JSON.stringify({ version: opts.manifestVersion ?? version, assets }) },
@@ -74,7 +90,15 @@ function loadWorker(version: string, caches: FakeCaches, server: Server, active:
     handlers.get(type)!({ waitUntil: (x: Promise<unknown>) => (p = x) });
     return p;
   };
-  return { install: () => lifecycle('install'), activate: () => lifecycle('activate') };
+  /** Dispatch a fetch event; resolves to the response body the worker answered with (null = not handled). */
+  const request = async (url: string, mode: 'navigate' | 'no-cors' = 'navigate') => {
+    let answer: Promise<Response> | null = null;
+    handlers.get('fetch')!({ request: { url, method: 'GET', mode }, respondWith: (r: Promise<Response>) => (answer = r) });
+    if (!answer) return null;
+    const res = await (answer as Promise<Response>);
+    return res.type === 'error' ? 'ERROR' : res.text();
+  };
+  return { install: () => lifecycle('install'), activate: () => lifecycle('activate'), request };
 }
 
 describe('service worker lifecycle (fake CacheStorage)', () => {
@@ -84,7 +108,20 @@ describe('service worker lifecycle (fake CacheStorage)', () => {
     expect([...caches.stores.keys()]).toEqual([cacheNameFor(V_NEW)]);
     const store = caches.stores.get(cacheNameFor(V_NEW))!;
     expect([...store.keys()].sort()).toEqual(
-      [SCOPE, ...['assets/main-AAAAAA.js', 'assets/page-BBBBBB.js', 'assets/Box2D.compat-CCCCCC.wasm', 'assets/ui-DDDDDD.css', 'manifest.json', 'icons/icon-192.png'].map((a) => SCOPE + a)].sort(),
+      [
+        SCOPE,
+        ...[
+          'assets/main-AAAAAA.js',
+          'assets/page-BBBBBB.js',
+          'assets/Box2D.compat-CCCCCC.wasm',
+          'assets/ui-DDDDDD.css',
+          'index.html',
+          'mapbuilder.html',
+          'audio-harness.html',
+          'manifest.json',
+          'icons/icon-192.png',
+        ].map((a) => SCOPE + a),
+      ].sort(),
     );
     expect(store.get(SCOPE + 'assets/Box2D.compat-CCCCCC.wasm')).toBe(`assets/Box2D.compat-CCCCCC.wasm@${V_NEW}`);
   });
@@ -94,7 +131,7 @@ describe('service worker lifecycle (fake CacheStorage)', () => {
     await loadWorker(V_OLD, caches, deploy(V_OLD)).install();
     await loadWorker(V_OLD, caches, deploy(V_OLD)).activate();
     const before = caches.snapshot();
-    for (const missing of ['icons/icon-192.png', 'assets/Box2D.compat-CCCCCC.wasm']) {
+    for (const missing of ['icons/icon-192.png', 'assets/Box2D.compat-CCCCCC.wasm', 'mapbuilder.html']) {
       await expect(loadWorker(V_NEW, caches, deploy(V_NEW, { missing }), V_OLD).install()).rejects.toThrow(/404/);
       expect(caches.snapshot()).toBe(before);
       expect(caches.stores.has(cacheNameFor(V_NEW))).toBe(false);
@@ -123,5 +160,25 @@ describe('service worker lifecycle (fake CacheStorage)', () => {
     caches.stores.set('other-app', new Map());
     await nw.activate();
     expect([...caches.stores.keys()].sort()).toEqual([cacheNameFor(V_NEW), 'other-app'].sort());
+  });
+});
+
+describe('offline navigation (S6V finding 3)', () => {
+  it('serves the precached copy of the requested HTML page, not the game shell', async () => {
+    const caches = new FakeCaches();
+    const server = deploy(V_NEW);
+    const w = loadWorker(V_NEW, caches, server);
+    await w.install();
+    const stored = caches.stores.get(cacheNameFor(V_NEW))!;
+    for (const page of ['index.html', 'mapbuilder.html', 'audio-harness.html']) expect(stored.has(SCOPE + page), page).toBe(true);
+    // online: network-first
+    expect(await w.request(`${SCOPE}mapbuilder.html`)).toBe(`mapbuilder.html@${V_NEW}`);
+    // offline
+    for (const k of Object.keys(server)) delete server[k];
+    expect(await w.request(`${SCOPE}mapbuilder.html`)).toBe(`mapbuilder.html@${V_NEW}`);
+    expect(await w.request(`${SCOPE}audio-harness.html?seed=3`)).toBe(`audio-harness.html@${V_NEW}`);
+    expect(await w.request(SCOPE)).toBe(`<html>${V_NEW}</html>`);
+    // an in-scope page that was never deployed still gets the shell
+    expect(await w.request(`${SCOPE}unknown.html`)).toBe(`<html>${V_NEW}</html>`);
   });
 });

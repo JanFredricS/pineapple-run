@@ -1,9 +1,12 @@
 import { button, disposer, el, icon } from '../dom';
 import { PINEAPPLE_SVG } from '../icons';
 import { tryLockLandscape } from '../orientation';
+import { soundToggle, type SoundControl } from '../sound';
 
 export interface TitleScreenOptions {
   onPlay(): void;
+  /** Mute toggle (S6V); omitted = no button. */
+  sound?: SoundControl;
 }
 
 export function mountTitleScreen(host: HTMLElement, opts: TitleScreenOptions): { destroy(): void } {
@@ -17,6 +20,7 @@ export function mountTitleScreen(host: HTMLElement, opts: TitleScreenOptions): {
     el('p', { class: 'pr-title__tag', text: 'Build a cart. Haul 15 pineapples. Feed the blender.' }),
     play,
     el('p', { class: 'pr-title__credit', text: 'A tribute to Coconut Run (2008), the Flash-era cart-building classic.' }),
+    opts.sound ? soundToggle(opts.sound) : null,
   ]);
   host.appendChild(root);
   d.listen(window, 'keydown', (e) => {

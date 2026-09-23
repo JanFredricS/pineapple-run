@@ -8,6 +8,7 @@
  * harnesses and tests.
  */
 
+import type { AppAudioPort } from './game/appAudio';
 import type { RunEvent } from './model/runEvents';
 
 /**
@@ -121,6 +122,12 @@ export interface AppOptions {
   screens?: Partial<Record<AppState['name'], ScreenFactory>>;
   /** Register the PWA service worker (production builds only). Default true. */
   pwa?: boolean;
+  /**
+   * App-wide audio (S6V; main.ts passes `createAppAudio()`): music per
+   * screen, the run-screen hooks, the mute toggle. Destroyed with the App.
+   * Omitted = silent (tests, harnesses).
+   */
+  audio?: AppAudioPort;
 }
 
 /** Minimal dependency-free error state (see App.mount). */
@@ -189,6 +196,7 @@ export class App {
     this.host.replaceChildren();
     this.uninstallChrome?.();
     this.uninstallChrome = null;
+    this.options.audio?.destroy();
   }
 
   dispatch(action: AppAction): Promise<void> {
@@ -209,6 +217,11 @@ export class App {
     this.host.replaceChildren();
     if (this.state.name === 'results' && !this.state.resultId) this.state = { ...this.state, resultId: newResultId() };
     const ctx: MountContext = { isCurrent: () => gen === this.generation && !this.destroyed };
+    try {
+      this.options.audio?.enterState(this.state);
+    } catch (err) {
+      console.error('[app] audio', err);
+    }
     let screen: Screen;
     try {
       screen = await this.createScreen(this.state, ctx);
@@ -230,17 +243,18 @@ export class App {
   private async createScreen(state: AppState, ctx: MountContext): Promise<Screen> {
     const override = this.options.screens?.[state.name];
     if (override) return override(this.host, state, (a) => this.dispatch(a), ctx);
+    const audio = this.options.audio;
     switch (state.name) {
       case 'run': {
         const { mountRunScreen } = await import('./game/runScreen');
-        return mountRunScreen(this.host, state, (a) => this.dispatch(a), ctx);
+        return mountRunScreen(this.host, state, (a) => this.dispatch(a), ctx, audio ? { audio: audio.hooks, sound: audio.sound } : {});
       }
       case 'title':
       case 'select':
       case 'results': {
         // S5 screens.
         const { mountAppScreen } = await import('./ui/appScreens');
-        return mountAppScreen(this.host, state, (a) => this.dispatch(a), ctx);
+        return mountAppScreen(this.host, state, (a) => this.dispatch(a), ctx, audio ? { sound: audio.sound } : {});
       }
       case 'build': {
         const { mountBuildScreen } = await import('./game/buildScreen');

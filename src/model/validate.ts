@@ -22,6 +22,7 @@ import { MAX_SCORE_ID_LENGTH, MAX_SCORE_LEVELS, MAX_SCORE_SEEDS, MAX_SCORE_VALUE
 import {
   DEFAULT_TERRAIN_FRICTION,
   DEFAULT_TERRAIN_RESTITUTION,
+  hasSolidBody,
   LEVEL_DEF_VERSION,
   LevelDef,
   PropDef,
@@ -289,6 +290,9 @@ function prop(v: unknown, path: string): PropDef {
   }
   if (o.size !== undefined) out.size = vec2(o.size, `${path}.size`);
   if (out.solid && !out.size) fail(`${path}.size`, 'solid props need a size');
+  // S6V: a solid prop must be a real body (physics skips non-positive boxes;
+  // the renderer would otherwise draw a collider that does not exist).
+  if (out.solid && !hasSolidBody(out)) fail(`${path}.size`, 'solid props need a strictly positive size');
   return out;
 }
 
