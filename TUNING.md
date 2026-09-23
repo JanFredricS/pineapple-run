@@ -1,4 +1,4 @@
-# Tuning log (S6T)
+# Tuning log (S6T, S8a, UX1)
 
 Every constant changed in slice S6T (Tuning & playability), as **old → new → why**.
 The input was the headless-Chrome playtest in `research/s6t-playtest-backlog.md`; `#n` refers to its items.
@@ -298,3 +298,102 @@ Pool shortcut, jump vs careful line:
 | Workbench | 2.02 s, 88 | 4.92 s, 82 |
 
 Every one of these runs delivers 15/15.
+
+## UX1: Jan's playtest feedback (camera, blender, builder)
+
+Slice UX1 made five changes from Jan's playtest feedback, listed as **old → new → why**. `src/physics/engine.ts` is untouched.
+
+### 1. Look-ahead run camera (src/game/framing.ts, src/game/runScreen.ts)
+
+Jan: the cart should sit about 30% from the left edge with about 70% of the view ahead of it ("[..x.....]").
+
+| Constant / rule | Old → new | Why |
+|---|---|---|
+| Follow x | right-most body − 100 px, screen-centred (`CameraFollow`, src/run/camera.ts) → **cart AABB centre placed at `LOOK_AHEAD_FRACTION` of the view width** (`LookAheadFollow` + `followCamera`) | The old camera put the cart's front about 100 px right of centre, so only 40–45% of the view showed what was coming. |
+| `LOOK_AHEAD_FRACTION` | new: **0.3** | Jan's "[..x.....]": 30% behind, 70% ahead. It holds at every zoom (`followZoom` = clamp(w/720, 0.5, 1.5)). |
+| `LOOK_SMOOTHING` | new: **0.1** per 60 Hz step | Same smoothing as the old follow. |
+| Lag compensation | new: target = anchor + vel·(1 − s)/s | A plain exponential follow trails a moving cart by vel·(1 − s)/s, which is about 1.2 m at 9 m/s, or 5% of the view. The estimated per-step velocity is fed forward, so at constant speed the cart sits exactly at 0.3. On beach, kitchen, workbench, the original and endless, the worst deviation while cruising is 0.007–0.011 of the view width (test/game/framing.test.ts). |
+| Vertical | unchanged | y still comes from the controller's `CameraFollow`, centred. Jan asked for no change there. |
+| Ready framing and blend | unchanged | Before Release the camera still frames the funnel and cart (`readyFrame`). After Release it blends into the new follow camera over `READY_BLEND_SECONDS`. |
+
+**Reversing rule:** the look-ahead is always forward (+x). The camera does not mirror to put 70% of the view behind a reversing cart. Reasons:
+- Every course runs left to right. Reversing is a short correction (backing off a lip or rocking out of a hole), and the target is still ahead.
+- Mirroring would swing the whole view by 40% of its width on every brake-and-reverse, which is disorienting.
+- The smoothed follow keeps the cart on screen while it reverses. The lag-compensated lead makes it drift a little toward the left while moving backwards, then settle back to 0.3.
+
+### 2. Bigger goal blender (src/model/goal.ts: one shared size)
+
+Jan: the goal blender should be much bigger (2.5–3.5× suggested).
+
+| Constant | Old → new | Why |
+|---|---|---|
+| `BLENDER_SCALE` | new: **2.5** | This is the low end of Jan's range. At 1280×760 the 2.5× blender already fills most of the screen height at the finish and reads as a landmark. At 3× its top clips at follow zoom on short (landscape phone) screens. |
+| `BLENDER_SIZE` | per-level 1.5 × 3.6 m → **3.75 × 9 m**, shared | One constant feeds the Track DSL (beach, kitchen, workbench), the original course and the generator. No per-level edits. Physics and visuals agree: the solid prop's collider is `BLENDER_SIZE`, and the renderer scales the art so it is exactly the collider's height (test/render/solidProps.test.ts). |
+| Pit floor, premade (tools/levels/track.ts `PIT.floor`) | 9 → **11.25 m** (`blenderPitFloor(5.75)`) | The bigger blender needs a longer floor. It keeps a 5.75 m clear landing strip before the blender and 1.75 m behind it (`BLENDER_BACK_GAP`). |
+| Pit floor, original (src/terrain/originalCourse.ts) | 7 → **9.25 m** (front gap 3.75 m) | The same rule, keeping the original's tighter landing. |
+| Pit floor, generated (src/terrain/generator.ts `FINISH_PIT_FLOOR`) | 4 → **5.75 m** (`BLENDER_SIZE.x + 2`) | The generated blender is decor (non-solid), sized to fit its pit with 1 m either side. |
+
+Re-run pace lines (tools/levels/premade.ts, test/integration/driver.ts). They were measured with the example cart after all of UX1's changes. The results match main before UX1, except workbench careful 82 → 81 (from the build-area change). **No retune was needed.**
+
+| Line | Result |
+|---|---|
+| Beach: pace / floor it / careful | 15/15 26.00 s **89** / 12/15 75 / 15/15 85 |
+| Kitchen: pace / floor it / careful | 15/15 22.12 s **93** / 13/15 83 / 15/15 88 |
+| Workbench: pace / floor it / careful | 15/15 27.02 s **88** / 11/15 67 / 15/15 81 |
+| Original: expert line + 3 variants | 10/15 on all four (52 / 51 / 53 / 52) |
+
+Pacing still beats flooring it by 14, 10 and 21 points (the requirement is ≥ 5).
+
+### 3. The builder opens empty (src/game/cartState.ts)
+
+Jan: the builder should open empty, and the Example Cart button should load the demo.
+
+| Rule | Old → new | Why |
+|---|---|---|
+| First builder entry in a page session | example cart → **empty design** (`draftDesign()` = draft ?? tested ?? empty) | The player should start with a blank build area. The Example Cart button still loads the demo, and the status line suggests it. |
+| Later entries (Retry, back from a run, another course) | unchanged: keep the current draft or tested cart | Rebuilding after every run would be punishing. Retry replays the tested cart. A cleared design stays cleared. |
+
+### 4. Wider build area (src/builder/constants.ts)
+
+Jan: the build area is too small (about 1.5× linear was suggested).
+
+| Constant | Old → new | Why |
+|---|---|---|
+| `BUILD_AREA` | x −20..340, y −210..0 px (12 × 7 m) → **x −190..340, y −210..0 px (17.67 × 7 m, 1.47× wide)** | It grows left, behind the cart start. The funnel outlet stays at design (115, −225), so the load still lands mid-cart, and the area keeps design (0, 0) = cartStart. |
+| Build area height | kept at 210 px | Measured: a taller area moves the funnel up, and the longer fall makes the pour chaotic. At 1.5× height (minY −315), workbench delivered 3/15. Even +15 px (−225) sent the original expert line `pineappleLost` at 87 m and dropped kitchen pace to 12/15. The height is kept and all the extra room goes into width. |
+| `MOCK_FUNNEL.y` | −250 → `BUILD_AREA.minY − 40` (still −250) | Now derived from the area, not a second literal. |
+| Start plateau (`plateauRange` = build area ± 1 m; must be flat) | Track start wall at `x0` → **wall at min(x0, plateau minX)**, flat ground up to x0 | Every Track course (beach, kitchen, workbench) gets a start plateau wide enough for a full-width cart. Their fixtures are regenerated. Beach's palm-0 moved to x −4. |
+| Original course start | 'start-wall' span → **'start-plateau' span** (`BUILD_MIN_X_PX` −190, `START_PLATEAU_MARGIN_M` 1.5) | The recovered 71 vertices and the start x are unchanged (`ORIGINAL_BUILD_MIN_X_PX` −20 keeps startX). Only the flat ground behind the start is extended. |
+| Endless `START_CART.x` | 3 → **7.5 m** (funnel follows: 7.5 + 115/30) | The plateau must reach 1 m left of the wider area. |
+
+Checks (test/integration/wideBuildArea.test.ts plus the existing acceptance and spring suites):
+- A tray cart spanning the full width validates on beach, kitchen, workbench, the original and endless.
+- It spawns resting on flat ground and catches at least 12 of the load.
+- A wheel dragged 10 px below the ground line lifts the whole cart by exactly that much.
+- Fit frames the whole area plus the funnel on every course (test/game/runScreen.test.ts, which is written against `BUILD_AREA`).
+- The wheel and lime radius clamp (`maxRadiusInArea`) follows the area (test/builder/edits.test.ts).
+- Designs saved with the old area still load, because the new area contains the old one.
+
+**Merge note for slice S9 (tikibar):** levels/tikibar.json is built with `Track`, so it must be regenerated after merging with `UPDATE_FIXTURES=1 npx vitest run test/terrain/original-course.test.ts test/levels/premade.test.ts`. This picks up the new start wall and `PIT` (blender) geometry.
+
+### 5. Builder touch loupe (new: src/builder/loupe.ts, `BuilderLoupe` in src/builder/render.ts)
+
+Jan: "Difficult to see where you click due to the finger being in the way". He asked for a magnifier circle next to the finger.
+
+| Parameter (`LOUPE`) | Value | Why |
+|---|---|---|
+| `radius` | **64 px** | Judged in the dev harness at a 740×360 landscape phone size. At 2× it shows about 64 design-view px around the fingertip, enough to see a straw end against a snap ring or a wheel rim, and the circle still leaves most of the build area visible. |
+| `zoom` | **2×** the current builder view | This follows any pinch zoom the player set. |
+| `gap` | **44 px** from the fingertip to the circle's edge | A fingertip pad is about 40–50 px, so the circle is never under the finger. |
+| `lean` | **0.35 × radius** toward the free area's horizontal centre | This keeps the loupe off the nearer screen edge and away from the palette. |
+| `margin` | **8 px** | Minimum distance from the edges of the free area (the canvas minus the palette). |
+| Placement | **above** the finger; near the top edge it **flips beside** the finger (on the side facing the centre, at finger height) | The hand is below the finger, so above is the clear side. Near the top, beside is the only side the hand does not cover. The circle is always clamped inside the free area. |
+| Contents | the same model and overlay the builder draws | Includes the live draft (straw, cube, wheel or spring being drawn), snap rings, pin markers and error or hover outlines. It has an opaque paper backing, a red crosshair at the exact contact point (hollow centre), and a subtle border (a thin ink ring plus a soft shadow ring). |
+| Visibility | **touch only** (`pointerType === 'touch'`) | Follows the first finger from press to release. It hides on pointerup, on lostpointercapture, on pointercancel, on any builder `resetInput` (blur, Escape, Clear or Load), and during pinch or pan. Mouse and pen never show it. |
+| Cost | a second small `BuilderRenderer` into a 128×128 box behind a circular mask | Drawn only while a touch is active. |
+
+The loupe is purely visual:
+- It has its own canvas listeners and never reaches the InputRouter, the gesture machine or the editor.
+- It is display-only (`eventMode 'none'`).
+- It reads the gesture state only to hide during two-finger navigation.
+- Hit-testing, snapping, edit semantics and the multi-touch and cancel rules are unchanged. test/builder/loupeMount.test.ts draws the same stroke with a finger and with a mouse and gets identical designs.
