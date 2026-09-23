@@ -143,18 +143,31 @@ describe('S6T: pacing beats flooring it (every premade level)', () => {
 });
 
 describe('S6T #6: the original course (bonus, expert) is clearable', () => {
-  it('the reference expert line reaches the goal with the example cart and pineapples delivered', async () => {
-    const s = await session(exampleCart(), 'original');
-    try {
-      runWithPace(s, ORIGINAL_EXPERT_LINE);
-      const last = s.events.at(-1)!;
-      expect(last.type).toBe('goalReached');
-      if (last.type !== 'goalReached') return;
-      expect(last.delivered).toBeGreaterThanOrEqual(5);
-    } finally {
-      s.destroy();
-    }
-  }, 60_000);
+  // The reference line delivers 10/15 (deterministic). Nearby lines (the
+  // 6 m/s switch anywhere in 185–215 m, 6–6.5 m/s after it) deliver 9–10, so
+  // the bar is 9. The cruise speed is the knife edge: 8.8 and 9.0 m/s finish,
+  // 8.7, 8.9 and 9.1–9.3 get stuck (measured; see driver.ts).
+  const variants = [
+    ORIGINAL_EXPERT_LINE,
+    [{ x: 0, speed: 9 }, { x: 185, speed: 6 }],
+    [{ x: 0, speed: 9 }, { x: 215, speed: 6.5 }],
+    [{ x: 0, speed: 9 }, { x: 200, speed: 6.5 }],
+  ];
+  for (const line of variants) {
+    it(`the expert line ${line.map((n) => `${n.x}:${n.speed}`).join(' ')} reaches the goal with the example cart and >= 9 delivered`, async () => {
+      const s = await session(exampleCart(), 'original');
+      try {
+        runWithPace(s, line);
+        const last = s.events.at(-1)!;
+        expect(last.type).toBe('goalReached');
+        if (last.type !== 'goalReached') return;
+        expect(last.delivered).toBeGreaterThanOrEqual(9);
+        if (line === ORIGINAL_EXPERT_LINE) expect(last.delivered).toBe(10);
+      } finally {
+        s.destroy();
+      }
+    }, 60_000);
+  }
 });
 
 describe('scoring boundaries through the real results model', () => {

@@ -35,8 +35,11 @@ export interface DriveResult {
  * vertex-exact): hold 9 m/s — fast enough to clear the launch lip at 82 m
  * and the dip behind it, slow enough not to cartwheel on the first hill —
  * and ease to 6 m/s for the last 55 m. Measured with the example cart:
- * 10/15 delivered, 38.3 s. It is a knife edge (8.5 or 9.5 m/s constant gets
- * stuck), which is why the course is labelled Bonus · Expert.
+ * 10/15 delivered, 38.3 s. The switch point is forgiving (6 m/s from
+ * anywhere in 185–215 m, or 6.5 m/s: 9–10 delivered), the cruise speed is
+ * not: 8.8 and 9.0 m/s finish, 8.7, 8.9 and 9.1–9.3 get stuck (a sweep of
+ * 105 nearby lines: 25 reach the goal). That knife edge is why the course is
+ * labelled Bonus · Expert.
  */
 export const ORIGINAL_EXPERT_LINE: readonly PaceNote[] = [
   { x: 0, speed: 9 },
