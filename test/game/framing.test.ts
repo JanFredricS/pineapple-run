@@ -9,14 +9,17 @@
  */
 import { describe, expect, it } from 'vitest';
 import { exampleCart } from '../../src/builder/exampleCart';
-import { courseFor } from '../../src/game/courses';
+import { courseFor, levelById, SHIPPED_LEVEL_IDS } from '../../src/game/courses';
 import {
   blendCamera,
   bodiesBox,
   bodyAabb,
   boxOf,
   cartAnchorX,
+  FINISH_MARGIN_M,
+  FINISH_MIN_ZOOM_RATIO,
   FINISH_PAD,
+  finishFrame,
   finishWeight,
   followCamera,
   followZoom,
@@ -274,58 +277,116 @@ describe('UX1 look-ahead follow camera', () => {
   }
 
   // audit-1 #2: the 9 m blender on a short landscape phone
-  for (const id of ['beach', 'kitchen', 'workbench', 'original']) {
-    it(`${id}: with the cart in the finish pit the WHOLE blender and the cart are on screen (844x390, 1280x720)`, async () => {
-      const course = courseFor(id)!;
-      const line = id === 'original' ? ORIGINAL_EXPERT_LINE : PREMADE[id as 'beach' | 'kitchen' | 'workbench']().pace;
-      const s = await RunSession.create(exampleCart(), course);
-      const blender = goalBlenderBox(course.level);
-      const lineX = course.level.goal.lineX;
-      try {
-        const look = new LookAheadFollow(cartAnchorX(s.controller.cartBounds())!);
-        s.start();
-        for (let i = 0; i < 60; i++) {
-          s.step();
-          look.step(cartAnchorX(s.controller.cartBounds()));
-        }
-        s.release();
-        let inPit = 0;
-        let minZoomSeen = Infinity;
-        for (let n = 0; n < 60 * 60 && s.controller.phase !== 'ended'; n++) {
-          s.setDrive(n < 180 ? 0 : paceDrive(s, line));
-          s.step();
-          look.step(cartAnchorX(s.controller.cartBounds()));
-          const cart = s.controller.cartBounds();
-          if (!cart || cart.maxX < lineX) continue; // the cart's front is over the goal line: dropping into / in the pit
-          inPit++;
-          for (const [w, vh] of [[844, 390], [1280, 720]] as const) {
-            const cam = runCamera({ anchorX: look.x, followY: s.controller.camera.position.y, viewportWidth: w, viewportHeight: vh, blender, cart, ready: null, sinceRelease: null });
-            minZoomSeen = Math.min(minZoomSeen, cam.zoom / followZoom(w));
-            const where = `${id} ${w}x${vh} step ${n}`;
-            for (const p of [
-              { x: blender.minX, y: blender.minY },
-              { x: blender.maxX, y: blender.minY },
-              { x: blender.minX, y: blender.maxY },
-              { x: blender.maxX, y: blender.maxY },
-              { x: cart.minX, y: cart.minY },
-              { x: cart.maxX, y: cart.maxY },
-            ]) {
-              const q = worldToScreen(p, cam);
-              expect(q.x, where).toBeGreaterThanOrEqual(0);
-              expect(q.x, where).toBeLessThanOrEqual(w);
-              expect(q.y, `${where}: y (blender top / cart)`).toBeGreaterThanOrEqual(FINISH_PAD.top - 1e-6);
-              expect(q.y, where).toBeLessThanOrEqual(vh);
-            }
+  const PIT_COURSES = ['beach', 'kitchen', 'workbench', 'original'] as const;
+  const PIT_VIEWPORTS = [[844, 390], [1280, 720]] as const;
+
+  /**
+   * Drive the pace line into the finish pit and check, at every step with the
+   * cart over the pit and at both viewports, that the blender's four corners
+   * and the cart are on screen (below the HUD pad). `framed` false renders the
+   * bare look-ahead follow camera instead (finish framing bypassed): the
+   * negative control.
+   */
+  async function finishPitRun(id: (typeof PIT_COURSES)[number], framed: boolean) {
+    const course = courseFor(id)!;
+    const line = id === 'original' ? ORIGINAL_EXPERT_LINE : PREMADE[id]().pace;
+    const s = await RunSession.create(exampleCart(), course);
+    const blender = goalBlenderBox(course.level);
+    const lineX = course.level.goal.lineX;
+    const violations: string[] = [];
+    let inPit = 0;
+    let minZoomSeen = Infinity;
+    try {
+      const look = new LookAheadFollow(cartAnchorX(s.controller.cartBounds())!);
+      s.start();
+      for (let i = 0; i < 60; i++) {
+        s.step();
+        look.step(cartAnchorX(s.controller.cartBounds()));
+      }
+      s.release();
+      for (let n = 0; n < 60 * 60 && s.controller.phase !== 'ended'; n++) {
+        s.setDrive(n < 180 ? 0 : paceDrive(s, line));
+        s.step();
+        look.step(cartAnchorX(s.controller.cartBounds()));
+        const cart = s.controller.cartBounds();
+        if (!cart || cart.maxX < lineX) continue; // the cart's front is over the goal line: dropping into / in the pit
+        inPit++;
+        for (const [w, vh] of PIT_VIEWPORTS) {
+          const followY = s.controller.camera.position.y;
+          const cam = framed
+            ? runCamera({ anchorX: look.x, followY, viewportWidth: w, viewportHeight: vh, blender, cart, ready: null, sinceRelease: null })
+            : followCamera(look.x, followY, followZoom(w), w, vh);
+          minZoomSeen = Math.min(minZoomSeen, cam.zoom / followZoom(w));
+          const where = `${id} ${w}x${vh} step ${n}`;
+          for (const p of [
+            { x: blender.minX, y: blender.minY },
+            { x: blender.maxX, y: blender.minY },
+            { x: blender.minX, y: blender.maxY },
+            { x: blender.maxX, y: blender.maxY },
+            { x: cart.minX, y: cart.minY },
+            { x: cart.maxX, y: cart.maxY },
+          ]) {
+            const q = worldToScreen(p, cam);
+            if (q.x < 0) violations.push(`${where}: x ${q.x} < 0`);
+            if (q.x > w) violations.push(`${where}: x ${q.x} > ${w}`);
+            if (q.y < FINISH_PAD.top - 1e-6) violations.push(`${where}: y (blender top / cart) ${q.y} above the HUD pad`);
+            if (q.y > vh) violations.push(`${where}: y ${q.y} > ${vh}`);
           }
         }
-        expect(inPit, `${id}: the cart reached the pit`).toBeGreaterThan(30);
-        // it zooms out only as far as it must (the blender is 9 m; the phone view ~11 m tall)
-        expect(minZoomSeen).toBeGreaterThan(0.75);
-      } finally {
-        s.destroy();
       }
+    } finally {
+      s.destroy();
+    }
+    return { inPit, violations, minZoomSeen };
+  }
+
+  for (const id of PIT_COURSES) {
+    it(`${id}: with the cart in the finish pit the WHOLE blender and the cart are on screen (844x390, 1280x720)`, async () => {
+      const r = await finishPitRun(id, true);
+      expect(r.inPit, `${id}: the cart reached the pit`).toBeGreaterThan(30);
+      expect(r.violations, `${id}: blender / cart off screen`).toEqual([]);
+      // it zooms out only as far as it must (the blender is 9 m; the phone view ~11 m tall)
+      expect(r.minZoomSeen).toBeGreaterThan(0.75);
     }, 120_000);
   }
+
+  // audit-2 #3: negative control — the same runs with finish framing bypassed must FAIL the criterion
+  it('control: with finish framing disabled, every one of those courses clips the blender or cart', async () => {
+    for (const id of PIT_COURSES) {
+      const r = await finishPitRun(id, false);
+      expect(r.inPit, `${id}: the cart reached the pit`).toBeGreaterThan(30);
+      expect(r.violations.length, `${id}: the bare follow camera should clip the blender`).toBeGreaterThan(0);
+      expect(r.violations.some((v) => v.includes('above the HUD pad')), `${id}: clipped at the top`).toBe(true);
+    }
+  }, 240_000);
+
+  // audit-2 #1: the 0.75x zoom floor is enforced in code, not just observed on the pace lines
+  it('finish framing never zooms below FINISH_MIN_ZOOM_RATIO x the follow zoom, even when the fit wants less', () => {
+    const blender: Box = { minX: 100, maxX: 103.75, minY: -9, maxY: 0 };
+    // a tall cart flung high above the finish pit: blender + cart span ~20 m
+    const cart: Box = { minX: 92, maxX: 96, minY: -20, maxY: -16 };
+    const [w, h] = [844, 390];
+    const follow = followCamera(94, -12, followZoom(w), w, h);
+    expect(follow.zoom).toBeCloseTo(844 / 720, 9);
+    const top = cart.minY - FINISH_MARGIN_M;
+    const bottom = blender.maxY + FINISH_MARGIN_M;
+    const unclamped = (h - FINISH_PAD.top - FINISH_PAD.bottom) / ((bottom - top) * 30);
+    const floor = follow.zoom * FINISH_MIN_ZOOM_RATIO;
+    expect(FINISH_MIN_ZOOM_RATIO).toBe(0.75);
+    expect(floor).toBeCloseTo(0.879, 3);
+    expect(unclamped).toBeLessThan(floor); // the fit alone would go below the floor...
+    const f = finishFrame(follow, 94, blender, cart);
+    expect(f.zoom).toBeCloseTo(floor, 12); // ...and the clamp engages
+    expect(withFinish(follow, 94, blender, cart).zoom).toBeCloseTo(floor, 12);
+    expect(worldToScreen({ x: 94, y: 0 }, f).x / w).toBeCloseTo(LOOK_AHEAD_FRACTION, 9); // cart still at 30%
+    // a fit above the floor is untouched by it
+    const small: Box = { minX: 92, maxX: 96, minY: -2, maxY: -0.2 };
+    const g = finishFrame(followCamera(94, -1, followZoom(w), w, h), 94, blender, small);
+    expect(g.zoom).toBeGreaterThan(floor);
+    // and the floor never goes under READY_MIN_ZOOM on a tiny viewport
+    const tiny = followCamera(94, -12, followZoom(200), 200, 120);
+    expect(finishFrame(tiny, 94, blender, cart).zoom).toBeGreaterThanOrEqual(READY_MIN_ZOOM);
+  });
 
   it('finish framing: off far from the goal, eases in as the blender nears the view, keeps the cart at 30%, zooms out only if needed', () => {
     const blender: Box = { minX: 100, maxX: 103.75, minY: -9, maxY: 0 };
@@ -353,8 +414,9 @@ describe('UX1 look-ahead follow camera', () => {
   });
 
   it('goalBlenderBox is the drawn blender on every shipped level and generated levels', () => {
-    for (const id of ['beach', 'kitchen', 'workbench', 'original']) {
-      const level = courseFor(id)!.level;
+    expect(SHIPPED_LEVEL_IDS.length).toBeGreaterThanOrEqual(4);
+    for (const id of SHIPPED_LEVEL_IDS) {
+      const level = levelById(id)!;
       const b = level.props.find((p) => p.art === 'blender')!;
       expect(goalBlenderBox(level)).toEqual({
         minX: b.position.x - b.size!.x / 2,

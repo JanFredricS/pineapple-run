@@ -271,6 +271,8 @@ export const FINISH_MARGIN_M = 0.3;
 export const FINISH_LEAD_M = 4;
 /** ...and is fully in after this much more travel (m). */
 export const FINISH_RAMP_M = 6;
+/** The finish frame never zooms out below this fraction of the follow zoom (nor below READY_MIN_ZOOM). */
+export const FINISH_MIN_ZOOM_RATIO = 0.75;
 
 /**
  * World box of the goal blender as the scene draws it (render/scene.ts): the
@@ -304,15 +306,19 @@ export function finishWeight(follow: Camera, blender: Box): number {
  * The finish frame for a follow camera: the smallest change that shows the
  * whole blender (and the cart) between the HUD pads — the look point moves
  * vertically only as far as needed, and the zoom drops below the follow zoom
- * only when blender + cart are taller than the view (never below
- * READY_MIN_ZOOM). The cart anchor stays at LOOK_AHEAD_FRACTION.
+ * only when blender + cart are taller than the view, and never below
+ * FINISH_MIN_ZOOM_RATIO x the follow zoom (nor READY_MIN_ZOOM). The cart
+ * anchor stays at LOOK_AHEAD_FRACTION.
  */
 export function finishFrame(follow: Camera, anchorX: number, blender: Box, cart: Box | null): Camera {
   const top = Math.min(blender.minY, cart?.minY ?? Infinity) - FINISH_MARGIN_M;
   const bottom = Math.max(blender.maxY, cart?.maxY ?? -Infinity) + FINISH_MARGIN_M;
   const h = follow.viewportHeight;
   const avail = Math.max(1, h - FINISH_PAD.top - FINISH_PAD.bottom);
-  const zoom = Math.max(READY_MIN_ZOOM, Math.min(follow.zoom, avail / ((bottom - top) * PX_PER_M)));
+  // floor (audit-2 #1): at most a 25% zoom-out from the follow zoom, so the cart never gets tiny; a box
+  // taller than that (a cart flung far above the pit) is centred and clipped rather than shrunk further
+  const floor = Math.max(READY_MIN_ZOOM, follow.zoom * FINISH_MIN_ZOOM_RATIO);
+  const zoom = Math.max(floor, Math.min(follow.zoom, avail / ((bottom - top) * PX_PER_M)));
   const k = PX_PER_M * zoom;
   // visible y: [cy - h/2k + top pad, cy + h/2k - bottom pad] must contain [top, bottom]
   const lo = bottom - h / 2 / k + FINISH_PAD.bottom / k;
