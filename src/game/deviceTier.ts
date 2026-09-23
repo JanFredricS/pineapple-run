@@ -11,6 +11,7 @@
  *   high (more):                            BEADS_BY_TIER.high
  *
  * Pinned per device (S9 audit-1 #1): the first bead level this browser loads
+ * (only bead levels resolve a count at all — runScreen's runSessionOptions)
  * stores its tier count (localStorage, BEAD_COUNT_KEY) and every later load —
  * a retry, a page reload, a reload after the browser starts reporting
  * different cores / memory — uses the STORED count, never a fresh guess. A

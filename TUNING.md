@@ -329,7 +329,7 @@ Only a world with at least one field zone is created with `sensorVisitors: true`
 - Bead properties: density 0.35, friction 0.2, restitution 0.05. Beads opt out of sensor events.
 - The layout is a hex lattice filled bottom-up, a pure function of (terrain, rect, count).
 - The radius is derived from the count, so the pile keeps its extent and mass: r = 0.090 / 0.075 / 0.064 m at 300 / 450 / 600.
-- The count is fixed **at level load** and **pinned per device** (`resolveBeadCount`, audit-1 #1). The first bead level a browser loads stores its tier count in localStorage (`pineapple-run.beadCount.v1`). Every later load, including retries, page reloads and reloads after the device reports different cores or memory, uses the stored count, so a run and its reload always build the same bead ocean. There is no run/replay save format; saved carts are designs only. Tiers for the first load:
+- The count is fixed **at level load** and **pinned per device** (`resolveBeadCount`, audit-1 #1). The first bead level a browser loads stores its tier count in localStorage (`pineapple-run.beadCount.v1`); courses without a bead zone never resolve or store a count (`runSessionOptions`, audit-2), so Beach or Endless runs cannot pin a stale tier. Every later load, including retries, page reloads and reloads after the device reports different cores or memory, uses the stored count, so a run and its reload always build the same bead ocean. There is no run/replay save format; saved carts are designs only. Tiers for the first load:
 
   | Tier | Reported device | Beads |
   |---|---|---|

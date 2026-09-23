@@ -42,7 +42,7 @@ import { testedDesign } from './cartState';
 import { courseFor } from './courses';
 import { acquireRunResources } from './runResources';
 import { deviceBeadStorage, detectDeviceInfo, resolveBeadCount, type BeadCountStorage, type DeviceInfo } from './deviceTier';
-import { RunSession } from './session';
+import { RunSession, type RunSessionOptions } from './session';
 import './game.css';
 
 type Dispatch = (action: AppAction) => Promise<void> | void;
@@ -74,6 +74,16 @@ export function runBeadCount(deps: Pick<RunScreenDeps, 'beadCount' | 'deviceInfo
     info: deps.deviceInfo ?? detectDeviceInfo(),
     storage: deps.beadStorage !== undefined ? deps.beadStorage : deviceBeadStorage(),
   });
+}
+
+/**
+ * Session options for running `level` (S9 audit-2): the bead count is
+ * resolved — and so pinned — ONLY for a level that has a bead zone. Any other
+ * course touches no bead state, so the device's count is pinned by its first
+ * bead-level load, never by an earlier Beach / Kitchen / Endless run.
+ */
+export function runSessionOptions(level: Pick<LevelDef, 'zones'>, deps: Pick<RunScreenDeps, 'beadCount' | 'deviceInfo' | 'beadStorage'>): RunSessionOptions {
+  return level.zones.some((z) => z.kind === 'beads') ? { beadCount: runBeadCount(deps) } : {};
 }
 
 /** Course width shown across the screen (m) on narrow screens; zoom is clamped. */
@@ -220,8 +230,8 @@ async function mountRunOnce(
     const { app, lib, session: s } = await acquireRunResources({
       app: deps.loaders?.app ?? pixiApp,
       lib: () => (deps.loaders?.assets ?? assetsFor)(level.theme),
-      // S9: the bead count is fixed here, at level load: this device's pinned count (deviceTier.ts)
-      session: () => RunSession.create(design, course, { beadCount: runBeadCount(deps) }),
+      // S9: a bead level's count is fixed here, at level load: this device's pinned count (deviceTier.ts)
+      session: () => RunSession.create(design, course, runSessionOptions(course.level, deps)),
     });
     let started = false;
     cleanup.push(() => {

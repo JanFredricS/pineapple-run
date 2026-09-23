@@ -4,7 +4,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { BEAD_COUNT_KEY, BEADS_BY_TIER, beadCountFor, deviceTier, detectDeviceInfo, readPinnedBeadCount, resolveBeadCount, type BeadCountStorage } from '../../src/game/deviceTier';
-import { runBeadCount } from '../../src/game/runScreen';
+import { runBeadCount, runSessionOptions } from '../../src/game/runScreen';
+import { courseFor } from '../../src/game/courses';
 import { BEAD_COUNT_MAX, BEAD_COUNT_MIN } from '../../src/run/beads';
 
 describe('device tier', () => {
@@ -98,10 +99,34 @@ describe('bead count pin (audit-1 #1: a reload never re-guesses the count)', () 
 });
 
 describe('run screen wiring', () => {
-  it('builds every session with runBeadCount(deps) (no other bead-count source)', async () => {
+  it('builds its one session with runSessionOptions(course.level, deps) (no other bead-count source)', async () => {
     const { readFileSync } = await import('node:fs');
     const src = readFileSync(new URL('../../src/game/runScreen.ts', import.meta.url), 'utf8');
-    expect(src).toContain('RunSession.create(design, course, { beadCount: runBeadCount(deps) })');
+    expect(src).toContain('RunSession.create(design, course, runSessionOptions(course.level, deps))');
     expect(src.match(/RunSession\.create\(/g)).toHaveLength(1);
+    // the resolver is reached only through runSessionOptions' bead-zone branch
+    expect(src.match(/runBeadCount\(deps\)/g)).toHaveLength(1);
+    expect(src).toContain("level.zones.some((z) => z.kind === 'beads') ? { beadCount: runBeadCount(deps) } : {}");
+  });
+
+  it('audit-2: only a bead level resolves (and pins) the count; non-bead courses touch no bead state', () => {
+    const st = new Mem();
+    for (const id of ['beach', 'kitchen', 'workbench', 'original'] as const) {
+      expect(runSessionOptions(courseFor(id)!.level, { deviceInfo: LOW, beadStorage: st })).toEqual({});
+    }
+    expect(runSessionOptions(courseFor('endless:ABC')!.level, { deviceInfo: LOW, beadStorage: st })).toEqual({});
+    expect(st.m.size).toBe(0);
+    expect(runSessionOptions(courseFor('tikibar')!.level, { deviceInfo: LOW, beadStorage: st })).toEqual({ beadCount: 300 });
+    expect(st.m.get(BEAD_COUNT_KEY)).toBe('300');
+  });
+
+  it("audit-2 scenario: Beach on a 300-tier report, then the device reports the 600 tier, then the first Tiki Bar run gets 600", () => {
+    const st = new Mem();
+    expect(runSessionOptions(courseFor('beach')!.level, { deviceInfo: LOW, beadStorage: st })).toEqual({});
+    expect(st.m.has(BEAD_COUNT_KEY)).toBe(false); // Beach pinned nothing
+    expect(runSessionOptions(courseFor('tikibar')!.level, { deviceInfo: HIGH, beadStorage: st })).toEqual({ beadCount: 600 });
+    expect(st.m.get(BEAD_COUNT_KEY)).toBe('600');
+    // and from now on the pin holds
+    expect(runSessionOptions(courseFor('tikibar')!.level, { deviceInfo: LOW, beadStorage: st })).toEqual({ beadCount: 600 });
   });
 });
