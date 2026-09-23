@@ -16,6 +16,8 @@ import {
   bodyAabb,
   boxOf,
   cartAnchorX,
+  FINISH_PAD,
+  finishWeight,
   followCamera,
   followZoom,
   frameBox,
@@ -25,8 +27,12 @@ import {
   READY_MIN_ZOOM,
   READY_PAD,
   readyFrame,
+  runCamera,
+  withFinish,
+  goalBlenderBox,
   type Box,
 } from '../../src/game/framing';
+import { BLENDER_SIZE } from '../../src/model/goal';
 import { PREMADE } from '../../tools/levels/premade';
 import { ORIGINAL_EXPERT_LINE, paceDrive } from '../integration/driver';
 import type { PaceNote } from '../../tools/levels/track';
@@ -195,9 +201,18 @@ describe('UX1 look-ahead follow camera', () => {
     ['original', ORIGINAL_EXPERT_LINE],
     ['endless:PINE', [{ x: 0, speed: 7 }]],
   ];
+  /** The cart's shape box at the RENDERED (interpolated) pose, as the renderer draws it. */
+  const renderedCartBox = (s: RunSession, alpha: number): Box | null => {
+    const snap = s.world.snapshot(alpha);
+    const pose = new Map(snap.bodies.map((b) => [b.id, b]));
+    return bodiesBox(s.world.manifest().bodies, s.controller.cartBodyHandles(), (id) => pose.get(id)!);
+  };
+
   for (const [id, pace] of lines) {
-    it(`${id}: driving forward at speed the cart sits at ~30% from the left edge (70% of the view ahead), at every viewport`, async () => {
-      const s = await RunSession.create(exampleCart(), courseFor(id)!);
+    it(`${id}: on the RENDERED path the cart sits at 30% from the left edge (70% ahead) at every viewport, accelerating and cruising`, async () => {
+      const course = courseFor(id)!;
+      const s = await RunSession.create(exampleCart(), course);
+      const blender = goalBlenderBox(course.level);
       try {
         const look = new LookAheadFollow(cartAnchorX(s.controller.cartBounds())!);
         const step = () => {
@@ -208,36 +223,149 @@ describe('UX1 look-ahead follow camera', () => {
         for (let i = 0; i < 60; i++) step();
         s.release();
         let sinceRelease = 0;
-        const fractions: number[] = [];
-        let worst = 0;
+        const cruise: number[] = [];
+        let worstCruise = 0;
+        let worstInterp = 0;
+        let accelSamples = 0;
         for (let n = 0; n < 60 * 20 && s.controller.phase !== 'ended'; n++) {
           s.setDrive(n < 180 ? 0 : paceDrive(s, pace));
           step();
           sinceRelease += 1 / 60;
-          const box = s.controller.cartBounds();
+          if (sinceRelease < READY_BLEND_SECONDS) continue; // still blending from the ready frame
           const h = s.controller.cart.bodies.get(s.controller.chassisId);
-          if (!box || h === undefined || !s.world.hasBody(h)) continue;
+          if (!s.controller.cartBounds() || h === undefined || !s.world.hasBody(h)) continue;
           const vx = s.world.getLinearVelocity(h).x;
+          const followY = s.controller.camera.position.y;
           for (const [w, vh] of VIEWPORTS) {
-            if (sinceRelease < READY_BLEND_SECONDS) continue; // still blending from the ready frame
-            const cam = followCamera(look.x, s.controller.camera.position.y, followZoom(w), w, vh);
-            const frac = worldToScreen({ x: cartAnchorX(box)!, y: 0 }, cam).x / w;
-            // the cart never drifts past screen centre: most of the view is always ahead
-            expect(frac, `${id} ${w}x${vh} t=${sinceRelease.toFixed(2)}`).toBeLessThan(0.5);
-            if (vx > 4 && sinceRelease > READY_BLEND_SECONDS + 3) {
-              fractions.push(frac);
-              worst = Math.max(worst, Math.abs(frac - LOOK_AHEAD_FRACTION));
+            // exactly what runScreen renders at this alpha: interpolated look anchor, interpolated cart
+            const frac = (alpha: number): number => {
+              const box = renderedCartBox(s, alpha)!;
+              const cam = runCamera({ anchorX: look.interpolated(alpha), followY, viewportWidth: w, viewportHeight: vh, blender, cart: box, ready: null, sinceRelease: null });
+              return worldToScreen({ x: cartAnchorX(box)!, y: 0 }, cam).x / w;
+            };
+            const f0 = frac(0);
+            const f1 = frac(1);
+            for (const alpha of [0, 0.25, 0.5, 0.75, 1]) {
+              const f = frac(alpha);
+              const where = `${id} ${w}x${vh} t=${sinceRelease.toFixed(2)} alpha=${alpha} vx=${vx.toFixed(1)}`;
+              // the cart never drifts past screen centre: most of the view is always ahead
+              expect(f, where).toBeLessThan(0.5);
+              expect(f, where).toBeGreaterThan(0.1);
+              // interpolation adds nothing of its own: a rendered frame lies on the line between its two steps
+              worstInterp = Math.max(worstInterp, Math.abs(f - (f0 + (f1 - f0) * alpha)));
+              if (vx > 4 && sinceRelease > READY_BLEND_SECONDS + 3) {
+                cruise.push(f);
+                worstCruise = Math.max(worstCruise, Math.abs(f - LOOK_AHEAD_FRACTION));
+              } else if (vx > 0.5) accelSamples++;
             }
           }
         }
-        expect(fractions.length).toBeGreaterThan(100);
-        const mean = fractions.reduce((a, b) => a + b, 0) / fractions.length;
-        expect(Math.abs(mean - LOOK_AHEAD_FRACTION), `${id} mean ${mean}`).toBeLessThan(0.01);
-        // measured: mean 0.300, worst deviation 0.007-0.011 on every course
-        expect(worst, `${id} worst |fraction - 0.3|`).toBeLessThan(0.03);
+        expect(cruise.length).toBeGreaterThan(100);
+        expect(accelSamples, 'acceleration / slow samples were checked too').toBeGreaterThan(50);
+        const mean = cruise.reduce((a, b) => a + b, 0) / cruise.length;
+        expect(Math.abs(mean - LOOK_AHEAD_FRACTION), `${id} mean ${mean}`).toBeLessThan(0.005);
+        // measured on the rendered path: worst cruise deviation 0.007-0.011 (TUNING.md)
+        expect(worstCruise, `${id} worst |fraction - 0.3| cruising`).toBeLessThan(0.015);
+        expect(worstInterp, `${id} worst interpolation-only deviation`).toBeLessThan(0.002);
       } finally {
         s.destroy();
       }
-    }, 60_000);
+    }, 120_000);
   }
+
+  // audit-1 #2: the 9 m blender on a short landscape phone
+  for (const id of ['beach', 'kitchen', 'workbench', 'original']) {
+    it(`${id}: with the cart in the finish pit the WHOLE blender and the cart are on screen (844x390, 1280x720)`, async () => {
+      const course = courseFor(id)!;
+      const line = id === 'original' ? ORIGINAL_EXPERT_LINE : PREMADE[id as 'beach' | 'kitchen' | 'workbench']().pace;
+      const s = await RunSession.create(exampleCart(), course);
+      const blender = goalBlenderBox(course.level);
+      const lineX = course.level.goal.lineX;
+      try {
+        const look = new LookAheadFollow(cartAnchorX(s.controller.cartBounds())!);
+        s.start();
+        for (let i = 0; i < 60; i++) {
+          s.step();
+          look.step(cartAnchorX(s.controller.cartBounds()));
+        }
+        s.release();
+        let inPit = 0;
+        let minZoomSeen = Infinity;
+        for (let n = 0; n < 60 * 60 && s.controller.phase !== 'ended'; n++) {
+          s.setDrive(n < 180 ? 0 : paceDrive(s, line));
+          s.step();
+          look.step(cartAnchorX(s.controller.cartBounds()));
+          const cart = s.controller.cartBounds();
+          if (!cart || cart.maxX < lineX) continue; // the cart's front is over the goal line: dropping into / in the pit
+          inPit++;
+          for (const [w, vh] of [[844, 390], [1280, 720]] as const) {
+            const cam = runCamera({ anchorX: look.x, followY: s.controller.camera.position.y, viewportWidth: w, viewportHeight: vh, blender, cart, ready: null, sinceRelease: null });
+            minZoomSeen = Math.min(minZoomSeen, cam.zoom / followZoom(w));
+            const where = `${id} ${w}x${vh} step ${n}`;
+            for (const p of [
+              { x: blender.minX, y: blender.minY },
+              { x: blender.maxX, y: blender.minY },
+              { x: blender.minX, y: blender.maxY },
+              { x: blender.maxX, y: blender.maxY },
+              { x: cart.minX, y: cart.minY },
+              { x: cart.maxX, y: cart.maxY },
+            ]) {
+              const q = worldToScreen(p, cam);
+              expect(q.x, where).toBeGreaterThanOrEqual(0);
+              expect(q.x, where).toBeLessThanOrEqual(w);
+              expect(q.y, `${where}: y (blender top / cart)`).toBeGreaterThanOrEqual(FINISH_PAD.top - 1e-6);
+              expect(q.y, where).toBeLessThanOrEqual(vh);
+            }
+          }
+        }
+        expect(inPit, `${id}: the cart reached the pit`).toBeGreaterThan(30);
+        // it zooms out only as far as it must (the blender is 9 m; the phone view ~11 m tall)
+        expect(minZoomSeen).toBeGreaterThan(0.75);
+      } finally {
+        s.destroy();
+      }
+    }, 120_000);
+  }
+
+  it('finish framing: off far from the goal, eases in as the blender nears the view, keeps the cart at 30%, zooms out only if needed', () => {
+    const blender: Box = { minX: 100, maxX: 103.75, minY: -9, maxY: 0 };
+    const cart: Box = { minX: 90, maxX: 94, minY: -2, maxY: -0.2 };
+    for (const [w, h] of [[844, 390], [1280, 720], [800, 600]] as const) {
+      const far = followCamera(40, -1, followZoom(w), w, h);
+      expect(withFinish(far, 40, blender, cart)).toEqual(far);
+      expect(finishWeight(far, blender)).toBe(0);
+      const near = followCamera(92, -1, followZoom(w), w, h);
+      expect(finishWeight(near, blender)).toBe(1);
+      const f = withFinish(near, 92, blender, cart);
+      expect(worldToScreen({ x: 92, y: 0 }, f).x / w).toBeCloseTo(LOOK_AHEAD_FRACTION, 9);
+      expect(worldToScreen({ x: 100, y: -9 }, f).y).toBeGreaterThanOrEqual(FINISH_PAD.top - 1e-9);
+      expect(worldToScreen({ x: 100, y: 0 }, f).y).toBeLessThanOrEqual(h - FINISH_PAD.bottom + 1e-9);
+      expect(f.zoom).toBeLessThanOrEqual(near.zoom);
+      if (w === 1280) expect(f.zoom).toBe(near.zoom); // tall enough: only the look point moves
+      // monotone ease-in as the cart approaches
+      let last = 0;
+      for (let x = 60; x <= 92; x += 1) {
+        const e = finishWeight(followCamera(x, -1, followZoom(w), w, h), blender);
+        expect(e).toBeGreaterThanOrEqual(last);
+        last = e;
+      }
+    }
+  });
+
+  it('goalBlenderBox is the drawn blender on every shipped level and generated levels', () => {
+    for (const id of ['beach', 'kitchen', 'workbench', 'original']) {
+      const level = courseFor(id)!.level;
+      const b = level.props.find((p) => p.art === 'blender')!;
+      expect(goalBlenderBox(level)).toEqual({
+        minX: b.position.x - b.size!.x / 2,
+        maxX: b.position.x + b.size!.x / 2,
+        minY: b.position.y - b.size!.y / 2,
+        maxY: b.position.y + b.size!.y / 2,
+      });
+    }
+    const gen = courseFor('endless:PINE')!.level;
+    const box = goalBlenderBox(gen);
+    expect(box.maxX - box.minX).toBeCloseTo(BLENDER_SIZE.x, 9);
+    expect(box.maxY - box.minY).toBeCloseTo(BLENDER_SIZE.y, 9);
+  });
 });

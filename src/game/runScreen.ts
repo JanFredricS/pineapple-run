@@ -34,7 +34,7 @@ import { el } from '../ui/dom';
 import { isPortraitBlocked, onPortraitChange } from '../ui/orientation';
 import type { DriveIntent } from '../ui/screens/runHud';
 import type { SoundControl } from '../ui/sound';
-import { blendCamera, bodiesBox, boxOf, cartAnchorX, followCamera, followZoom, LookAheadFollow, READY_BLEND_SECONDS, readyFrame, type Box } from './framing';
+import { bodiesBox, boxOf, cartAnchorX, followZoom, goalBlenderBox, LookAheadFollow, READY_BLEND_SECONDS, readyFrame, runCamera, type Box } from './framing';
 import { NO_AUDIO, RunAudioFeed, safeHooks, type AudioHooks } from './audioHooks';
 import { mountMissingCourse } from './buildScreen';
 import { mountScreenError } from './errorScreen';
@@ -236,6 +236,7 @@ async function mountRunOnce(
     const funnelBox = boxOf([...funnel.walls[0], ...funnel.walls[1]]);
     const cartBox = (): Box | null => bodiesBox(s.world.manifest().bodies, s.controller.cartBodyHandles(), (id) => s.world.getTransform(id));
     let readyView: { center: { x: number; y: number }; zoom: number } | null = null;
+    const blenderBox = goalBlenderBox(level);
     let sinceRelease: number | null = null;
     app.stage.addChild(renderer.view);
     cleanup.push(() => app.stage.removeChild(renderer.view));
@@ -314,10 +315,20 @@ async function mountRunOnce(
         lastRenderMs = now;
         const w = app.screen.width;
         const h = app.screen.height;
-        const camera: Camera = followCamera(look.interpolated(alpha), s.controller.camera.interpolated(alpha).y, followZoom(w), w, h);
+        const cart = cartBox();
         // ready phase: frame funnel + cart (tracks a cart driven before Release); then blend to follow
-        if (sinceRelease === null) readyView = readyFrame(funnelBox, cartBox(), w, h, camera.zoom);
-        const view = blendCamera(camera, readyView, sinceRelease);
+        if (sinceRelease === null) readyView = readyFrame(funnelBox, cart, w, h, followZoom(w));
+        // look-ahead follow, eased into the whole-blender finish frame near the goal (framing.ts)
+        const view: Camera = runCamera({
+          anchorX: look.interpolated(alpha),
+          followY: s.controller.camera.interpolated(alpha).y,
+          viewportWidth: w,
+          viewportHeight: h,
+          blender: blenderBox,
+          cart,
+          ready: readyView,
+          sinceRelease,
+        });
         if (goalAt !== null) renderer.setGoal(goalFill * Math.min(1, goalAt / GOAL_FILL_SECONDS), goalAt < GOAL_FILL_SECONDS + 1 ? 1 : 0.3);
         renderer.render(s.world.manifest(), s.world.snapshot(alpha), view, dt);
         app.render();

@@ -23,10 +23,20 @@
  * Horizontal only: the vertical follow is still the run controller's camera
  * (right-most body y, smoothing 0.1). The placement is fixed to the forward
  * (+x) direction, also while reversing — see LookAheadFollow.
+ *
+ * UX1 finish framing (audit-1 #2): the 9 m goal blender is taller than half
+ * a short landscape phone's view, so as the blender comes into view the
+ * follow camera eases (over FINISH_RAMP_M of travel) into a frame that holds
+ * the WHOLE blender and the cart: it raises/lowers the look point within
+ * the room it has, and zooms out only if blender + cart cannot fit at the
+ * follow zoom. The cart stays at LOOK_AHEAD_FRACTION throughout. `runCamera`
+ * composes follow -> finish -> ready blend; the run screen renders it.
  */
 
 import { PX_PER_M, type Camera } from '../model/coords';
 import type { Vec2 } from '../model/geometry';
+import { BLENDER_SIZE } from '../model/goal';
+import { hasSolidBody, type LevelDef } from '../model/level';
 import type { RenderBodyInfo, RenderShape } from '../model/snapshot';
 
 export interface Box {
@@ -251,4 +261,93 @@ export function blendCamera(follow: Camera, ready: { center: Vec2; zoom: number 
     center: { x: ready.center.x + (follow.center.x - ready.center.x) * e, y: ready.center.y + (follow.center.y - ready.center.y) * e },
     zoom: ready.zoom + (follow.zoom - ready.zoom) * e,
   };
+}
+
+/** HUD room (CSS px) kept clear at the finish: chips/timer on top, a little at the bottom. */
+export const FINISH_PAD = { top: 56, bottom: 16 } as const;
+/** World margin (m) above the blender top / below the lowest of blender and cart. */
+export const FINISH_MARGIN_M = 0.3;
+/** The finish frame starts blending in when the blender's front is this far (m) past the follow view's right edge... */
+export const FINISH_LEAD_M = 4;
+/** ...and is fully in after this much more travel (m). */
+export const FINISH_RAMP_M = 6;
+
+/**
+ * World box of the goal blender as the scene draws it (render/scene.ts): the
+ * level's `blender` prop (solid: its collider box, rotated; decor: standing on
+ * its position at the shared BLENDER_SIZE), or the shared size standing on
+ * the goal sensor's bottom centre when the level has no blender prop.
+ */
+export function goalBlenderBox(level: LevelDef): Box {
+  const prop = level.props.find((p) => p.art === 'blender');
+  if (prop && hasSolidBody(prop)) {
+    const a = prop.angle ?? 0;
+    const c = { x: prop.position.x, y: prop.position.y, angle: a };
+    const hx = prop.size.x / 2;
+    const hy = prop.size.y / 2;
+    return boxOf([rotate(c, { x: -hx, y: -hy }), rotate(c, { x: hx, y: -hy }), rotate(c, { x: hx, y: hy }), rotate(c, { x: -hx, y: hy })]);
+  }
+  const g = level.goal.sensor;
+  const foot = prop ? prop.position : { x: g.x + g.width / 2, y: g.y + g.height };
+  return { minX: foot.x - BLENDER_SIZE.x / 2, maxX: foot.x + BLENDER_SIZE.x / 2, minY: foot.y - BLENDER_SIZE.y, maxY: foot.y };
+}
+
+const clamp01 = (t: number) => Math.min(1, Math.max(0, t));
+
+/** 0..1: how far the follow camera has eased into the finish frame (by the blender's position vs the follow view). */
+export function finishWeight(follow: Camera, blender: Box): number {
+  const right = follow.center.x + follow.viewportWidth / 2 / (PX_PER_M * follow.zoom);
+  return smooth(clamp01((right + FINISH_LEAD_M - blender.minX) / FINISH_RAMP_M));
+}
+
+/**
+ * The finish frame for a follow camera: the smallest change that shows the
+ * whole blender (and the cart) between the HUD pads — the look point moves
+ * vertically only as far as needed, and the zoom drops below the follow zoom
+ * only when blender + cart are taller than the view (never below
+ * READY_MIN_ZOOM). The cart anchor stays at LOOK_AHEAD_FRACTION.
+ */
+export function finishFrame(follow: Camera, anchorX: number, blender: Box, cart: Box | null): Camera {
+  const top = Math.min(blender.minY, cart?.minY ?? Infinity) - FINISH_MARGIN_M;
+  const bottom = Math.max(blender.maxY, cart?.maxY ?? -Infinity) + FINISH_MARGIN_M;
+  const h = follow.viewportHeight;
+  const avail = Math.max(1, h - FINISH_PAD.top - FINISH_PAD.bottom);
+  const zoom = Math.max(READY_MIN_ZOOM, Math.min(follow.zoom, avail / ((bottom - top) * PX_PER_M)));
+  const k = PX_PER_M * zoom;
+  // visible y: [cy - h/2k + top pad, cy + h/2k - bottom pad] must contain [top, bottom]
+  const lo = bottom - h / 2 / k + FINISH_PAD.bottom / k;
+  const hi = top + h / 2 / k - FINISH_PAD.top / k;
+  const cy = lo <= hi ? Math.min(hi, Math.max(lo, follow.center.y)) : (lo + hi) / 2;
+  return { ...follow, zoom, center: { x: lookAheadCenterX(anchorX, follow.viewportWidth, zoom), y: cy } };
+}
+
+/** Follow camera eased into the finish frame by finishWeight (the cart stays at LOOK_AHEAD_FRACTION). */
+export function withFinish(follow: Camera, anchorX: number, blender: Box | null, cart: Box | null): Camera {
+  if (!blender) return follow;
+  const e = finishWeight(follow, blender);
+  if (e <= 0) return follow;
+  const f = finishFrame(follow, anchorX, blender, cart);
+  const zoom = follow.zoom + (f.zoom - follow.zoom) * e;
+  return { ...follow, zoom, center: { x: lookAheadCenterX(anchorX, follow.viewportWidth, zoom), y: follow.center.y + (f.center.y - follow.center.y) * e } };
+}
+
+export interface RunCameraInput {
+  /** LookAheadFollow output (render-interpolated). */
+  anchorX: number;
+  /** The controller's follow y (render-interpolated). */
+  followY: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  /** goalBlenderBox(level). */
+  blender: Box | null;
+  /** The cart's shape AABB at the rendered pose (null = none). */
+  cart: Box | null;
+  ready: { center: Vec2; zoom: number } | null;
+  sinceRelease: number | null;
+}
+
+/** The camera the run screen renders: look-ahead follow -> finish framing -> ready blend. */
+export function runCamera(i: RunCameraInput): Camera {
+  const follow = followCamera(i.anchorX, i.followY, followZoom(i.viewportWidth), i.viewportWidth, i.viewportHeight);
+  return blendCamera(withFinish(follow, i.anchorX, i.blender, i.cart), i.ready, i.sinceRelease);
 }
