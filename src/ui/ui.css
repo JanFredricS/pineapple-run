@@ -746,7 +746,64 @@ html.pr-portrait .pr-rotate,
   display: none !important;
 }
 
+/* FS1: iPhone Safari only collapses its toolbar when the page scrolls. Make the
+   document a bit taller than the viewport and let it pan vertically; #app stays
+   fixed on top and game surfaces keep touch-action:none. */
+html.pr-ios-scroll,
+html.pr-ios-scroll body {
+  overflow: visible;
+  height: auto;
+  touch-action: pan-y;
+}
+html.pr-ios-scroll body {
+  min-height: calc(100vh + 160px);
+}
+.pr-swipe-fs {
+  position: fixed;
+  inset: 0;
+  z-index: 1900;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  background: rgba(29, 35, 48, 0.82);
+  color: #fff;
+  font-family: var(--pr-font);
+  font-size: 22px;
+  font-weight: 700;
+  touch-action: pan-y;
+}
+.pr-swipe-fs[hidden] {
+  display: none;
+}
+.pr-swipe-fs__arrow {
+  font-size: 48px;
+  line-height: 1;
+  animation: pr-swipe-up 1.4s ease-in-out infinite;
+}
+.pr-swipe-fs__hint {
+  font-size: 14px;
+  font-weight: 500;
+  opacity: 0.8;
+}
+.pr-swipe-fs__skip {
+  margin-top: 8px;
+}
+@keyframes pr-swipe-up {
+  0%,
+  100% {
+    transform: translateY(8px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .pr-swipe-fs__arrow,
   .pr-attention,
   .pr-rotate__phone,
   .pr-toast {

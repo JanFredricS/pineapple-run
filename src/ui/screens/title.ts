@@ -1,5 +1,6 @@
 import { button, disposer, el, icon } from '../dom';
 import { PINEAPPLE_SVG } from '../icons';
+import { enterFullscreen } from '../fullscreen';
 import { tryLockLandscape } from '../orientation';
 import { soundToggle, type SoundControl } from '../sound';
 
@@ -12,6 +13,7 @@ export interface TitleScreenOptions {
 export function mountTitleScreen(host: HTMLElement, opts: TitleScreenOptions): { destroy(): void } {
   const d = disposer();
   const play = button('Play', () => {
+    enterFullscreen();
     tryLockLandscape();
     opts.onPlay();
   }, { cls: 'pr-btn--primary pr-btn--big pr-attention' });
